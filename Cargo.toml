@@ -1,0 +1,20 @@
+[package]
+name = "pi_world"
+version = "0.1.0"
+authors = ["suncy <530739162@qq.com>"]
+edition = "2021"
+description = "ecs world"
+repository = "https://github.com/GaiaWorld/pi_world.git"
+license = "MIT OR Apache-2.0"
+keywords = ["pi", "world", "ecs"]
+readme = "README.md"
+categories = ["data-structures", "memory-management", "ecs"]
+
+[dependencies]
+pi_null = "0.2"
+pi_arr = "0.10"
+pi_share = "0.4"
+pi_key_alloter = "0.3"
+pi_phf_map = "0.2"
+pi_slot = "0.1"
+dashmap ="5.5"
