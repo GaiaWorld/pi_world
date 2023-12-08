@@ -1,131 +1,169 @@
 /// system上只能看到Query，Sys参数，资源 实体 组件 事件 命令
+/// world上包含了全部的单例和实体，及实体原型。 加一个监听管理器，
+/// 查询过滤模块会注册监听器来监听新增的原型
+/// world上的数据（单例、实体和原型）的线程安全的保护仅在于保护容器，
+/// 由调度器生成的执行图，来保证正确的读写。
+/// 比如一个原型不可被多线程同时读写，是由执行图时分析依赖，先执行写的sys，再执行读到sys。
+/// 由于sys会进行组件的增删，导致实体对于的原型会变化，执行图可能会产生变化，也可以延迟处理，如果延迟一般是在整个执行图执行完毕后，进行整理操作时，进行相应的调整。举例：
+/// SysA会对ArcheA的实例增加一个新的组件CompA，第一次会产生ArcheB，SysB会读取ArcheB.
+/// 在开始时，SysA和SysB是并行执行的，当
+///
+///
+/// 如果sys上通过Mutate来增删组件，则可以在entity插入时，分析出sys的依赖。除了首次原型创建时，时序不确定，其余的增删，sys会保证先写后读。
+/// 如果sys通过CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在下一帧会看到。
+///
+///
+/// world上tick不是每次调度执行时加1，而是每次sys执行时加1，默认从1开始。
+/// 每个sys执行时，会处理比tick不为0，并且比本次执行时tick小的数据。也就是说会过滤掉本次执行变化的Entity.
 
+///
 use core::fmt::*;
-use std::any::{TypeId, Any};
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::mem::{needs_drop, size_of, transmute};
-use std::ops::{Index, IndexMut, Range};
-use std::ptr::{copy, null_mut, write};
-use std::slice;
-use core::result::Result;
+use std::any::{Any, TypeId};
+use std::mem::transmute;
+use std::ptr::null_mut;
+use std::sync::atomic::Ordering;
 
-use crate::archetype::{ArchetypeKey, Archetype};
-use crate::listener::ListenerMgr;
+use crate::archetype::{Archetype, ArchetypeKey, ShareArchetype, ComponentInfo};
+use crate::listener::{EventListKey, ListenerMgr};
+use crate::raw::*;
+use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
-use pi_arr::Arr;
-use pi_key_alloter::{new_key_type, is_older_version};
-use pi_share::Share;
+use pi_append_vec::AppendVec;
+use pi_key_alloter::new_key_type;
+use pi_share::{Share, ShareUsize};
 use pi_slot::*;
-use pi_null::Null;
 
 new_key_type! {
     pub struct Entity;
 }
-pub enum QueryComponentError {
-    /// The [`Query`] does not have read access to the requested component.
-    ///
-    /// This error occurs when the requested component is not included in the original query.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use bevy_ecs::{prelude::*, system::QueryComponentError};
-    /// #
-    /// # #[derive(Component)]
-    /// # struct OtherComponent;
-    /// #
-    /// # #[derive(Component, PartialEq, Debug)]
-    /// # struct RequestedComponent;
-    /// #
-    /// # #[derive(Resource)]
-    /// # struct SpecificEntity {
-    /// #     entity: Entity,
-    /// # }
-    /// #
-    /// fn get_missing_read_access_error(query: Query<&OtherComponent>, res: Res<SpecificEntity>) {
-    ///     assert_eq!(
-    ///         query.get_component::<RequestedComponent>(res.entity),
-    ///         Err(QueryComponentError::MissingReadAccess),
-    ///     );
-    ///     println!("query doesn't have read access to RequestedComponent because it does not appear in Query<&OtherComponent>");
-    /// }
-    /// # bevy_ecs::system::assert_is_system(get_missing_read_access_error);
-    /// ```
-    MissingReadAccess,
-    /// The [`Query`] does not have write access to the requested component.
-    ///
-    /// This error occurs when the requested component is not included in the original query, or the mutability of the requested component is mismatched with the original query.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use bevy_ecs::{prelude::*, system::QueryComponentError};
-    /// #
-    /// # #[derive(Component, PartialEq, Debug)]
-    /// # struct RequestedComponent;
-    /// #
-    /// # #[derive(Resource)]
-    /// # struct SpecificEntity {
-    /// #     entity: Entity,
-    /// # }
-    /// #
-    /// fn get_missing_write_access_error(mut query: Query<&RequestedComponent>, res: Res<SpecificEntity>) {
-    ///     assert_eq!(
-    ///         query.get_component::<RequestedComponent>(res.entity),
-    ///         Err(QueryComponentError::MissingWriteAccess),
-    ///     );
-    ///     println!("query doesn't have write access to RequestedComponent because it doesn't have &mut in Query<&RequestedComponent>");
-    /// }
-    /// # bevy_ecs::system::assert_is_system(get_missing_write_access_error);
-    /// ```
-    MissingWriteAccess,
-    /// The given [`Entity`] does not have the requested component.
-    MissingComponent,
-    /// The requested [`Entity`] does not exist.
-    NoSuchEntity,
-}
 
 /// A value that tracks when a system ran relative to other systems.
 /// This is used to power change detection.
-#[derive(Copy, Default, Clone, Debug, Eq, PartialEq)]
-pub struct Tick(pub u32);
+pub type Tick = usize;
 
-impl Tick {
-    pub fn is_new_then(self, other: Tick) -> bool {
-        is_older_version(self.0, other.0)
+#[derive(Clone, Debug)]
+pub struct ArchetypeInit<'a>(pub &'a ShareArchetype);
+#[derive(Clone, Debug)]
+pub struct ArchetypeOk<'a>(pub &'a ShareArchetype);
+
+#[derive(Debug)]
+pub struct World {
+    pub(crate) single_map: DashMap<TypeId, Box<dyn Any>>,
+    pub(crate) entitys: SlotMap<Entity, EntityValue>,
+    pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
+    pub(crate) archetype_arr: AppendVec<Option<ShareArchetype>>,
+    pub(crate) listener_mgr: ListenerMgr,
+    archetype_init_key: EventListKey,
+    archetype_ok_key: EventListKey,
+    change_tick: ShareUsize,
+}
+impl World {
+    pub fn new() -> Self {
+        let listener_mgr = ListenerMgr::default();
+        let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
+        let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
+        Self {
+            single_map: DashMap::default(),
+            entitys: SlotMap::default(),
+            archetype_map: DashMap::new(),
+            archetype_arr: AppendVec::default(),
+            listener_mgr,
+            archetype_init_key,
+            archetype_ok_key,
+            change_tick: ShareUsize::new(1),
+        }
+    }
+    pub fn change_tick(&self) -> Tick {
+        self.change_tick.load(Ordering::Acquire)
+    }
+    pub fn increment_change_tick(&self) -> Tick {
+        self.change_tick.fetch_add(1, Ordering::AcqRel)
+    }
+    pub(crate) fn get_archetype(&self, id: u128) -> Option<Ref<u128, ShareArchetype>> {
+        self.archetype_map.get(&id)
+    }
+    
+    // 返回原型及是否新创建
+    pub(crate) fn find_archtype(&self, components: Vec<ComponentInfo>) -> ShareArchetype {
+        // 如果world上没有找到对应的原型，则创建并放入world中
+        let id = ComponentInfo::calc_id(&components);
+        let (ar, b) = match self.archetype_map.entry(id) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => (entry.get().clone(), false),
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                let ar = Share::new(Archetype::new(components));
+                entry.insert(ar.clone());
+                (ar, true)
+            }
+        };
+        if b {
+            // 通知原型创建，让各查询过滤模块初始化原型的记录列表
+            self.listener_mgr.notify_event(self.archetype_init_key, ArchetypeInit(&ar));
+            // 通知后，让原型就绪， 其他线程也就可以获得该原型
+            ar.ready.store(true, Ordering::Relaxed);
+        } else {
+            // 循环等待原型就绪
+            loop {
+                if ar.ready.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+        }
+        ar
+    }
+    // 先事件通知调度器，将原型放入数组，之后其他system可以看到该原型
+    pub(crate) fn archtype_ok(&self, ar: ShareArchetype) {
+        self.listener_mgr.notify_event(self.archetype_ok_key, ArchetypeOk(&ar));
+        let e = self.archetype_arr.insert_entry();
+        ar.set_index(e.index() as u32);
+        *e.value = Some(ar);
+    }
+
+    pub(crate) fn insert(
+        &self,
+        a: &Archetype,
+        key: ArchetypeKey,
+        data: ArchetypeData,
+        tick: Tick,
+    ) -> Entity {
+        data.set_tick(tick);
+        let e = self.entitys.insert(EntityValue::new(a, key, data));
+        *data.entity() = e;
+        e
+    }
+    pub(crate) fn replace(
+        &self,
+        e: Entity,
+        a: &Archetype,
+        key: ArchetypeKey,
+        data: ArchetypeData,
+        tick: Tick,
+    ) {
+        *data.entity() = e;
+        data.set_tick(tick);
+        let value = unsafe { self.entitys.load_unchecked(e) };
+        *value = EntityValue::new(a, key, data);
     }
 }
 
-pub trait Notify {
-    // type Args: Send + Sync + 'static;
-}
-/// A value that tracks when a system ran relative to other systems.
-/// This is used to power change detection.
-// #[derive(Default)]
-pub struct World {
-    res_map: DashMap<u128, Box<dyn Any>>,
-    entitys: SlotMap<Entity, EntityValue>,
-    archetype_map: DashMap<u128, Share<Archetype>>,
-    archetype_arr: Arr<Option<Share<Archetype>>>,
-    archetype_arr_len: Share<u32>,
-    listener_mgr: ListenerMgr,
-    tick: Share<Tick>,
-}
-impl World {
-
-}
-
 #[derive(Debug)]
-pub(crate) struct EntityValue(*mut Archetype, ArchetypeKey, *mut u8);
+pub(crate) struct EntityValue(
+    pub(crate) *mut Archetype,
+    pub(crate) ArchetypeKey,
+    pub(crate) ArchetypeData,
+);
+unsafe impl Sync for EntityValue {}
+unsafe impl Send for EntityValue {}
 impl EntityValue {
+    pub fn new(a: &Archetype, key: ArchetypeKey, data: ArchetypeData) -> Self {
+        EntityValue(unsafe { transmute(a) }, key, data)
+    }
     pub fn get_archetype(&self) -> &Archetype {
-        unsafe { & *self.0 }
+        unsafe { &*self.0 }
     }
     pub fn key(&self) -> ArchetypeKey {
         self.1
     }
-    pub fn value(&self) -> *mut u8 {
+    pub fn value(&self) -> ArchetypeData {
         self.2
     }
 }
@@ -133,92 +171,4 @@ impl Default for EntityValue {
     fn default() -> Self {
         Self(null_mut(), ArchetypeKey::default(), null_mut())
     }
-}
-
-/// Unique mutable borrow of an entity's component
-pub struct Mut<'a, T: ?Sized> {
-    pub(crate) value: &'a mut T,
-    pub(crate) ticks: TicksMut<'a>,
-}
-pub(crate) struct TicksMut<'a> {
-    pub(crate) added: &'a mut Tick,
-    pub(crate) changed: &'a mut Tick,
-    pub(crate) last_run: Tick,
-    pub(crate) this_run: Tick,
-}
-/// Records when a component was added and when it was last mutably dereferenced (or added).
-#[derive(Copy, Clone, Debug)]
-pub struct ComponentTicks {
-    pub(crate) added: Tick,
-    pub(crate) changed: Tick,
-}
-
-/// The metadata of a [`System`].
-#[derive(Clone)]
-pub struct SystemMeta {
-    pub(crate) name: Cow<'static, str>,
-    pub(crate) last_run: Tick,
-}
-
-impl SystemMeta {
-    pub(crate) fn new<T>() -> Self {
-        Self {
-            name: std::any::type_name::<T>().into(),
-            last_run: Tick(0),
-        }
-    }
-
-    /// Returns the system's name
-    #[inline]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-pub unsafe trait SystemParam: Sized {
-    /// Used to store data which persists across invocations of a system.
-    type State: Send + Sync + 'static;
-
-    /// The item type returned when constructing this system param.
-    /// The value of this associated type should be `Self`, instantiated with new lifetimes.
-    ///
-    /// You could think of `SystemParam::Item<'w, 's>` as being an *operation* that changes the lifetimes bound to `Self`.
-    // type Item<'world, 'state>: SystemParam<State = Self::State>;
-
-    /// Registers any [`World`] access used by this [`SystemParam`]
-    /// and creates a new instance of this param's [`State`](Self::State).
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State;
-
-    /// For the specified [`Archetype`], registers the components accessed by this [`SystemParam`] (if applicable).
-    #[inline]
-    fn new_archetype(
-        _state: &mut Self::State,
-        _archetype: &Archetype,
-        _system_meta: &mut SystemMeta,
-    ) {
-    }
-
-    /// Applies any deferred mutations stored in this [`SystemParam`]'s state.
-    /// This is used to apply [`Commands`] during [`apply_deferred`](crate::prelude::apply_deferred).
-    ///
-    /// [`Commands`]: crate::prelude::Commands
-    #[inline]
-    #[allow(unused_variables)]
-    fn apply(state: &mut Self::State, system_meta: &SystemMeta, world: &mut World) {}
-
-    /// Creates a parameter to be passed into a [`SystemParamFunction`].
-    ///
-    /// [`SystemParamFunction`]: super::SystemParamFunction
-    ///
-    /// # Safety
-    ///
-    /// - The passed [`UnsafeWorldCell`] must have access to any world data
-    ///   registered in [`init_state`](SystemParam::init_state).
-    /// - `world` must be the same `World` that was used to initialize [`state`](SystemParam::init_state).
-    unsafe fn get_param<'world, 'state>(
-        state: &'state mut Self::State,
-        system_meta: &SystemMeta,
-        world: &'world World,
-        change_tick: Tick,
-    ) -> Self;
 }
