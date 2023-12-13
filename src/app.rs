@@ -20,6 +20,9 @@ impl App {
     pub fn new() -> Self {
         Self {world: World::new(), vec: Vec::new()}
     }
+    pub fn get_world(&self) -> &World {
+        &self.world
+    }
     pub fn register(&mut self, mut system: BoxedSystem) {
         system.initialize(&self.world);
         self.vec.push(system);

@@ -7,9 +7,11 @@
 /// 目标原型有可能和本system的原型重合，但由于mutate是延迟的，也不会有引用被改写的问题
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::ops::Range;
 
 use pi_null::Null;
+use pi_proc_macros::all_tuples;
 use pi_share::Share;
 
 use crate::archetype::*;
@@ -17,6 +19,7 @@ use crate::raw::{ArchetypeData, ArchetypePtr};
 use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
 use crate::world::*;
+use crate::insert::TState;
 
 #[derive(Debug)]
 pub enum MutateError {
@@ -26,18 +29,19 @@ pub enum MutateError {
     AlreadyMutated,
 }
 
-pub struct Mutate<'world, Q: MutateComponents> {
+pub struct Mutate<'world, A: AddComponents + 'static, D: DelComponents + 'static = ()> {
     world: &'world World,
     meta: &'world SystemMeta,
-    state: &'world mut MutateState<Q>,
+    state: &'world mut MutateState<A>,
     tick: Tick,
+    _k: PhantomData<D>,
 }
 
-impl<'world, Q: MutateComponents> Mutate<'world, Q> {
+impl<'world, A: AddComponents, D: DelComponents> Mutate<'world, A, D> {
     pub fn new(
         world: &'world World,
         meta: &'world SystemMeta,
-        state: &'world mut MutateState<Q>,
+        state: &'world mut MutateState<A>,
         tick: Tick,
     ) -> Self {
         Mutate {
@@ -45,21 +49,22 @@ impl<'world, Q: MutateComponents> Mutate<'world, Q> {
             meta,
             state,
             tick,
+            _k: PhantomData,
         }
     }
     pub fn mutate(
         &mut self,
         e: Entity,
-        components: <Q as MutateComponents>::AddItem,
+        components: <A as AddComponents>::Item,
     ) -> Result<bool, MutateError> {
-        let (key, aid) = MutateState::<Q>::check(&self.meta, &self.world, e)?;
+        let (key, aid) = MutateState::<A>::check(&self.meta, &self.world, e)?;
         if self.state.last.0 != aid {
             // 和上次的原型不一样，更新该原型对应的目标原型，及组件映射
             let vec_index = if let Some(vec_index) = self.state.map.get(&aid) {
                 *vec_index
             } else {
                 // 如果本地没有找到，则创建components，去world上查找或创建
-                let (vec_index, dst) = MutateState::<Q>::mapping(
+                let (vec_index, dst) = MutateState::<A>::mapping(
                     &mut self.state.map,
                     &mut self.state.vec,
                     &mut self.state.move_mem_offsets,
@@ -67,18 +72,18 @@ impl<'world, Q: MutateComponents> Mutate<'world, Q> {
                     &mut self.state.del_mem_offsets,
                     &self.world,
                     aid,
-                    Q::add_components(),
-                    Q::del_components(),
+                    A::components(),
+                    D::components(),
                 );
                 self.state
                     .state_vec
-                    .push(Q::init_add_state(self.world, &dst));
+                    .push(A::init_state(self.world, &dst));
                 vec_index
             };
             self.state.last.0 = aid;
             self.state.last.1 = vec_index;
         }
-        let mut data = MutateState::<Q>::mutate(
+        let mut data = MutateState::<A>::mutate(
             self.world,
             e,
             &mut self.state.vec,
@@ -87,7 +92,7 @@ impl<'world, Q: MutateComponents> Mutate<'world, Q> {
             key,
             self.tick,
         );
-        Q::add(
+        A::add(
             &self.state.state_vec[self.state.last.1 as usize],
             components,
             &mut data,
@@ -97,9 +102,9 @@ impl<'world, Q: MutateComponents> Mutate<'world, Q> {
 }
 // SAFETY: Relevant Insert ComponentId and ArchetypeComponentId access is applied to SystemMeta. If
 // this Insert conflicts with any prior access, a panic will occur.
-impl<Q: MutateComponents + 'static> SystemParam for Mutate<'_, Q> {
-    type State = MutateState<Q>;
-    type Item<'w> = Mutate<'w, Q>;
+impl<A: AddComponents + 'static, D: DelComponents + 'static> SystemParam for Mutate<'_, A, D> {
+    type State = MutateState<A>;
+    type Item<'w> = Mutate<'w, A, D>;
 
     fn init_state(_world: &World, _system_meta: &mut SystemMeta) -> Self::State {
         MutateState::new()
@@ -122,7 +127,7 @@ impl<Q: MutateComponents + 'static> SystemParam for Mutate<'_, Q> {
         world: &World,
         change_tick: Tick,
     ) {
-        MutateState::<Q>::clear(
+        MutateState::<A>::clear(
             world,
             &mut state.vec,
             &mut state.removes,
@@ -163,10 +168,10 @@ impl ArchetypeMapping {
         }
     }
 }
-pub struct MutateState<Q: MutateComponents> {
+pub struct MutateState<A: AddComponents> {
     map: HashMap<u128, u32>,                // 记录源原型对应的本地映射的位置
     vec: Vec<ArchetypeMapping>,             // 记录所有的原型映射
-    state_vec: Vec<Q::AddState>, // 记录所有的原型状态，本突变新增组件在目标原型的状态（新增组件的偏移）
+    state_vec: Vec<A::State>, // 记录所有的原型状态，本突变新增组件在目标原型的状态（新增组件的偏移）
     move_mem_offsets: Vec<(MemOffset, MemOffset, u32)>, // 源目标原型的组件内存位置映射及内存长度列表
     add_indexs: Vec<ComponentIndex>,        // 目标原型的新增加的组件位置列表，主要是给AddFilter用的
     del_mem_offsets: Vec<ComponentIndex>,        // 源原型的被删除的组件内存位置列表
@@ -174,7 +179,7 @@ pub struct MutateState<Q: MutateComponents> {
     removes: Vec<u32>, // 本次突变的原型映射在vec上的索引// todo!() 改成AppendVec来支持并发
     archetype_len: usize, // 记录的本次最新的原型，如果有更新的，则更新到SystemMeta上
 }
-impl<Q: MutateComponents> MutateState<Q> {
+impl<A: AddComponents> MutateState<A> {
     fn new() -> Self {
         Self {
             map: Default::default(),
@@ -364,7 +369,9 @@ impl<Q: MutateComponents> MutateState<Q> {
                     let index = *add_indexs.get_unchecked(i);
                     am.dst.get_component_record(index)
                 };
-                record.added_iter(am.removes.iter().map(|(_, dst_key)| *dst_key));
+                if record.addeds.len() > 0 {
+                    record.added_iter(am.removes.iter().map(|(_, dst_key)| *dst_key));
+                }
             }
             am.removes.clear();
         }
@@ -374,9 +381,7 @@ impl<Q: MutateComponents> MutateState<Q> {
                 let ar = &vec[i].dst;
                 system_meta.write_archetype_map.insert(*ar.get_id());
                 // 如果该原型还没有被加入到世界的原型数组中，则事件通知并加入
-                if ar.get_index().is_null() {
-                    world.archtype_ok(ar.clone());
-                }
+                world.archtype_ok(ar);
             }
             *archetype_len = vec.len();
         }
@@ -402,64 +407,66 @@ impl<Q: MutateComponents> MutateState<Q> {
     }
 }
 
-pub trait MutateComponents {
-    /// The item returned by this [`WorldInsert`]
-    type AddItem;
-    type DelItem;
+pub trait AddComponents {
 
-    /// State used to construct a [`Self::Fetch`](crate::Insert::WorldInsert::Fetch). This will be cached inside [`InsertState`](crate::Insert::InsertState),
-    /// so it is best to move as much data / computation here as possible to reduce the cost of
-    /// constructing [`Self::Fetch`](crate::Insert::WorldInsert::Fetch).
-    type AddState: Send + Sync + Sized;
+    type Item;
 
-    fn add_components() -> Vec<ComponentInfo>;
-    fn del_components() -> Vec<TypeId>;
+    type State: Send + Sync + Sized;
 
-    /// Creates and initializes a [`State`](WorldInsert::State) for this [`WorldInsert`] type.
-    fn init_add_state(world: &World, archetype: &ShareArchetype) -> Self::AddState;
-    fn add(state: &Self::AddState, components: Self::AddItem, data: &mut ArchetypeData);
+    fn components() -> Vec<ComponentInfo>;
+
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State;
+    fn add(state: &Self::State, components: Self::Item, data: &mut ArchetypeData);
 }
 
-impl<T0: 'static> MutateComponents for ((T0,),) {
-    type AddItem = (T0,);
-    type DelItem = ();
-    type AddState = (u32,);
-
-    fn add_components() -> Vec<ComponentInfo> {
-        vec![ComponentInfo::of::<T0>()]
-    }
-
-    fn del_components() -> Vec<TypeId> {
-        vec![]
-    }
-
-    fn init_add_state(_world: &World, archetype: &ShareArchetype) -> Self::AddState {
-        (archetype.get_mem_offset_ti_index(&TypeId::of::<T0>()).0,)
-    }
-
-    fn add(state: &Self::AddState, components: Self::AddItem, data: &mut ArchetypeData) {
-        let r = data.init_component::<T0>(state.0);
-        r.write(components.0);
-    }
+pub trait DelComponents {
+    fn components() -> Vec<TypeId>;
 }
-impl<T0: 'static, T1: 'static> MutateComponents for ((T0,), (T1,)) {
-    type AddItem = (T0,);
-    type DelItem = (T1,);
-    type AddState = (u32,);
 
-    fn add_components() -> Vec<ComponentInfo> {
-        vec![ComponentInfo::of::<T0>()]
-    }
+macro_rules! impl_tuple_add_components {
+    ($(($name: ident, $state: ident)),*) => {
+        #[allow(non_snake_case)]
+        #[allow(clippy::unused_unit)]
+        impl<$($name: 'static),*> AddComponents for ($($name,)*) {
 
-    fn del_components() -> Vec<TypeId> {
-        vec![TypeId::of::<T1>()]
-    }
-    fn init_add_state(_world: &World, archetype: &ShareArchetype) -> Self::AddState {
-        (archetype.get_mem_offset_ti_index(&TypeId::of::<T0>()).0,)
-    }
+            type Item = ($($name,)*);
+            type State = ($(TState<$name>,)*);
 
-    fn add(state: &Self::AddState, components: Self::AddItem, data: &mut ArchetypeData) {
-        let r = data.init_component::<T0>(state.0);
-        r.write(components.0);
-    }
+            fn components() -> Vec<ComponentInfo> {
+                vec![$(ComponentInfo::of::<$name>(),)*]
+            }
+            fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
+                ($(TState::new(_archetype.get_mem_offset_ti_index(&TypeId::of::<$name>())),)*)
+            }
+            fn add(
+                _state: &Self::State,
+                _components: Self::Item,
+                _data: &mut ArchetypeData,
+            ) {
+                let ($($name,)*) = _components;
+                let ($($state,)*) = _state;
+                $(
+                    {let r = _data.init_component::<$name>($state.0);
+                    r.write($name);}
+                )*
+            }
+
+        }
+    };
 }
+all_tuples!(impl_tuple_add_components, 0, 16, F, S);
+
+
+macro_rules! impl_tuple_del_components {
+    ($($name: ident),*) => {
+        #[allow(non_snake_case)]
+        #[allow(clippy::unused_unit)]
+        impl<$($name: 'static),*> DelComponents for ($($name,)*) {
+
+            fn components() -> Vec<TypeId> {
+                vec![$(TypeId::of::<$name>(),)*]
+            }
+        }
+    };
+}
+all_tuples!(impl_tuple_del_components, 0, 16, F);

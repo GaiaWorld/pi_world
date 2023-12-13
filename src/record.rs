@@ -19,6 +19,7 @@ pub struct RecordIndex {
     vec_index: u32,
 }
 impl RecordIndex {
+    #[inline]
     pub fn new(is_changed: bool, component_index: ComponentIndex, vec_index: usize) -> Self {
         let component_index = if is_changed {
             component_index as i32
@@ -30,6 +31,7 @@ impl RecordIndex {
             vec_index: vec_index as u32,
         }
     }
+    #[inline]
     pub(crate) fn get_iter<'a>(self, records: &'a Vec<ComponentRecord>) -> Iter<'a, ArchetypeKey> {
         if self.component_index >= 0 {
             let r = unsafe {
@@ -88,27 +90,31 @@ impl ComponentRecord {
             }
         }
     }
+    #[inline(always)]
     pub(crate) fn added(&self, key: ArchetypeKey) {
-        if self.addeds.len() > 0 {
-            for r in self.addeds.iter() {
-                r.added(key)
-            }
+        for r in self.addeds.iter() {
+            r.added(key)
         }
     }
+    #[inline(always)]
     pub(crate) fn added_iter<I: IntoIterator<Item=ArchetypeKey> + Clone>(&self, it: I) {
-        if self.addeds.len() > 0 {
-            for r in self.addeds.iter() {
-                for k in it.clone().into_iter() {
-                    r.added(k)
-                }
+        for r in self.addeds.iter() {
+            for k in it.clone().into_iter() {
+                r.added(k)
             }
         }
     }
     pub(crate) fn changed(&self, key: ArchetypeKey) {
-        if self.changeds.len() > 0 {
-            for r in self.changeds.iter() {
-                r.changed(key)
-            }
+        for r in self.changeds.iter() {
+            r.changed(key)
+        }
+    }
+    pub(crate) fn collect(&self) {
+        for r in self.addeds.iter() {
+            r.collect()
+        }
+        for r in self.changeds.iter() {
+            r.collect()
         }
     }
 }
@@ -120,6 +126,7 @@ pub struct AddedRecord {
 }
 
 impl AddedRecord {
+    #[inline(always)]
     pub fn new(owner: TypeId) -> Self {
         Self {
             owner,
@@ -128,19 +135,19 @@ impl AddedRecord {
         }
     }
     // 添加新增的条目
+    #[inline(always)]
     pub fn added(&self, key: ArchetypeKey) {
         self.vec.insert(key);
     }
     // 整理方法， 清理修改条目， 检查添加条目是否全部读取，如果全部读取，则也清理
-    pub fn collect(&mut self) {
+    pub fn collect(&self) {
         if self.add_len.load(Ordering::Relaxed) == self.vec.len() {
-            unsafe { self.vec.clear() };
+            unsafe { self.vec.reset() };
             self.add_len.store(0, Ordering::Relaxed);
         }
     }
 }
 
-#[derive(Debug)]
 pub struct ChangedRecord {
     pub(crate) owner: TypeId,     // 那个所有者
     flags: Arr<ShareU32>,         // 该组件类型被修改的脏标记，可能被多线程写，所以用Arr
@@ -148,6 +155,7 @@ pub struct ChangedRecord {
 }
 
 impl ChangedRecord {
+    #[inline(always)]
     pub fn new(owner: TypeId) -> Self {
         Self {
             owner,
@@ -156,6 +164,7 @@ impl ChangedRecord {
         }
     }
     // 设置修改的条目，会进行标记检查
+    #[inline]
     pub fn changed(&self, key: ArchetypeKey) {
         const DIV: u32 = 5;
         const MASK: usize = 0b11111;
@@ -180,5 +189,20 @@ impl ChangedRecord {
             }
         }
         self.vec.insert(key);
+    }
+    // 整理方法， 清理修改条目， 检查添加条目是否全部读取，如果全部读取，则也清理
+    pub fn collect(&self) {
+        unsafe { self.vec.reset();
+        self.flags.clear(); }
+    }
+}
+
+
+impl Debug for ChangedRecord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("ChangedRecord")
+            .field("owner", &self.owner)
+            .field("vec", &self.vec)
+            .finish()
     }
 }

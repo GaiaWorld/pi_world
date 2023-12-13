@@ -154,7 +154,7 @@ impl<L: Listener<Event = E>, E: Clone> ListenerList<L, E> {
         }
     }
     fn notify(&self, event: E) {
-        for (_, listener) in self.vec.iter() {
+        for listener in self.vec.iter() {
             listener.as_ref().unwrap().listen(event.clone())
         }
     }
@@ -170,7 +170,7 @@ impl<E: Clone> EventList<E> {
         }
     }
     fn notify(&self, event: E) {
-        for (_, listener) in self.vec.iter() {
+        for listener in self.vec.iter() {
             listener.as_ref().unwrap().listen(event.clone())
         }
     }

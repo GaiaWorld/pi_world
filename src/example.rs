@@ -1,4 +1,4 @@
-use crate::{query::Query, world::Entity, insert::Insert, mutate::Mutate, filter::Added};
+use crate::{query::Query, world::Entity, insert::Insert, mutate::Mutate, filter::{Added, Changed}};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -12,47 +12,62 @@ pub struct Age2(usize);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age3(usize);
 
+pub struct Age4(usize);
+pub struct Age5([usize;16]);
+pub struct Age6(usize);
+pub struct Age7(usize);
+pub struct Age8(usize);
+pub struct Age9(usize);
+pub struct Age10(usize);
+pub struct Age11(usize);
+pub struct Age12(usize);
+pub struct Age13(usize);
+pub struct Age14(usize);
+pub struct Age15(usize);
+pub struct Age16(usize);
+pub struct Age17(usize);
+pub struct Age18(usize);
+pub struct Age19(usize);
+pub struct Age20(usize);
+
 pub fn insert1(
-    mut i0: Insert<(Age1,Age0,)>,
+    i0: Insert<(Age1,Age0,)>,
 ) {
     println!("insert1 is now");
     let e = i0.insert((Age1(1),Age0(0),));
     println!("insert1 is end, e:{:?}", e);
 }
 pub fn print_changed_entities(
-    mut i0: Insert<(Age2,)>,
-    q0: Query<(Entity, &mut Age0)>,
-    q1: Query<(Entity, &mut Age1)>,
-    q2: Query<(Entity, Option<&mut Age2>)>,
-    q3: Query<(Entity, &mut Age3)>,
+    // i0: Insert<(Age2,)>,
+    mut q0: Query<(Entity, &mut Age0, &mut Age1, &Age2, &Age3, &Age4, &Age5, &Age6, &Age7, &Age8)>,
+    // q1: Query<(Entity, &mut Age1)>,
+    //q2: Query<(Entity, Option<&mut Age2>)>,
+    // q3: Query<(Entity, &mut Age3)>,
 ) {
-    println!("print_changed_entities print1");
-    let e = i0.insert((Age2(2),));
-    println!("print_changed_entities insert: {:?}", e);
-    {
-        for (e, mut age) in q0.iter() {
-        age.0 +=1;
-        println!("print_changed_entities: e {:?}, c0: {:?} is now", e, age);
-        }
+    // let q = q0.iter();
+    // let s = q.size_hint();
+    for (_, mut age0, mut age1, age2, age3, age4, age5, age6, age7, age8) in q0.iter() {
+        let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+        // age0.0 +=1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+        // age1.0 +=1+age5.0[0];
     }
+    // let q = q0.iter();
+    // let s = q.size_hint();
     // {q0.get(e).unwrap().1.0 +=1;}
-    println!("print_changed_entities print3");
-    for (e, mut age) in q1.iter() {
-        age.0 +=1;
-        println!("print_changed_entities1 e {:?}, c1: {:?} is now", e, age);
-    }
-    for (e, age) in q2.iter() {
-        //age.0 +=1;
-        println!("print_changed_entities2 e {:?}, c2: {:?} is now", e, age);
-    }
-    for (_, mut age) in q3.iter() {
-        age.0 +=1;
-        println!("print_changed_entities3 c: {:?} is now", age);
-    }
-    println!("print_changed_entities: end");
+    // for (_, mut age) in q1.iter() {
+    //     age.0 +=1;
+    // }
+    // for (_, age) in q2.iter() {
+    //     if let Some(mut a) = age {
+    //         a.0 +=1;
+    //     };
+    // }
+    // for (_, mut age) in q3.iter() {
+    //     age.0 +=1;
+    // }
 }
 pub fn mutate1(
-    mut i0: Mutate<((Age3,),)>,
+    mut i0: Mutate<(Age3,), (Age4,)>,
     q0: Query<(Entity, &mut Age0, &mut Age1)>,
 ) {
     println!("mutate1");
@@ -62,7 +77,7 @@ pub fn mutate1(
     }
     println!("mutate1: end");
 }
-pub fn add_l(
+pub fn added_l(
     q0: Query<(Entity, &mut Age1, &mut Age0), (Added<Age1>, Added<Age2>)>,
 ) {
     println!("add_l");
@@ -71,6 +86,16 @@ pub fn add_l(
     }
  
     println!("add_l: end");
+}
+pub fn changed_l(
+    q0: Query<(Entity, &mut Age1, &mut Age0), (Changed<Age1>, Changed<Age2>)>,
+) {
+    println!("changed_l");
+    for (e, age1, _) in q0.iter() {
+        println!("e {:?}, age1: {:?}", e, age1);
+    }
+ 
+    println!("changed_l: end");
 }
 
 
@@ -85,6 +110,28 @@ mod test_mod {
     #[test]
     fn test() {
         let mut app = App::new();
+        let world = app.get_world();
+        let state = world.make_insert_state::<(Age1,Age0,)>();
+        let i = Insert::<'_, (Age1,Age0,)>::new(world, &state, world.increment_change_tick());
+        let e1 = i.insert((Age1(1),Age0(0),));
+        let e2 = i.insert((Age1(1),Age0(0),));
+        let s = Box::new(IntoSystem::into_system(print_changed_entities));
+        app.register(s);
+        app.run();
+        println!("app.run, 1");
+        assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 0);
+        // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 1);
+        // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 2);
+        // assert_eq!(app.get_world().get_component::<Age1>(e2).unwrap().0, 2);
+        // app.run();
+        // assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 2);
+        // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 2);
+        // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 3);
+        // assert_eq!(app.get_world().get_component::<Age1>(e2).unwrap().0, 3);
+    }
+    #[test]
+    fn test_insert() {
+        let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
         app.register(s);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
@@ -96,7 +143,7 @@ mod test_mod {
         app.run();
     }
     #[test]
-    fn test_add() {
+    fn test_added() {
         let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
         app.register(s);
@@ -104,7 +151,22 @@ mod test_mod {
         app.register(s);
         let s = Box::new(IntoSystem::into_system(mutate1));
         app.register(s);
-        let s = Box::new(IntoSystem::into_system(add_l));
+        let s = Box::new(IntoSystem::into_system(added_l));
+        app.register(s);
+
+        app.run();
+        app.run();
+    }
+    #[test]
+    fn test_changed() {
+        let mut app = App::new();
+        let s = Box::new(IntoSystem::into_system(insert1));
+        app.register(s);
+        let s = Box::new(IntoSystem::into_system(print_changed_entities));
+        app.register(s);
+        let s = Box::new(IntoSystem::into_system(mutate1));
+        app.register(s);
+        let s = Box::new(IntoSystem::into_system(changed_l));
         app.register(s);
 
         app.run();
@@ -113,6 +175,12 @@ mod test_mod {
     #[bench]
     fn bench_test(b: &mut Bencher) {
         let mut app = App::new();
+        let world = app.get_world();
+        let state = world.make_insert_state::<(Age0,Age1,Age2,Age3,Age4,Age5,Age6,Age7,Age8,Age9,Age10,Age11,Age12,Age13,Age14)>();
+        let i = Insert::<'_, (Age0,Age1,Age2,Age3,Age4,Age5,Age6,Age7,Age8,Age9,Age10,Age11,Age12,Age13,Age14,)>::new(world, &state, world.increment_change_tick());
+        for _ in 0..90 {
+            i.insert((Age0(0),Age1(0),Age2(0),Age3(0),Age4(0),Age5([0;16]),Age6(0),Age7(0),Age8(0),Age9(0),Age10(0),Age11(0),Age12(0),Age13(0),Age14(0)));
+        }
         for _ in 0..500 {
             let s = Box::new(IntoSystem::into_system(print_changed_entities));
             app.register(s);
@@ -137,40 +205,82 @@ mod test_bevy {
     pub struct Age2(usize);
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
     pub struct Age3(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age4(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age5([usize;16]);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age6(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age7(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age8(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age9(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age10(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age11(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age12(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age13(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age14(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age15(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age16(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age17(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age18(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age19(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age20(usize);
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+    pub struct Age21(usize);
     
-    pub fn print_changed_entities(mut set: ParamSet<(Query<(Entity, &mut Age0)>,
-        Query<(Entity, &mut Age1)>,
-        Query<(Entity, &mut Age2)>,
-        Query<(Entity, &mut Age3)>)>
-    ) {
-    // pub fn print_changed_entities(
-    //     mut q0: Query<(Entity, &mut Age0)>,
-    //     mut q1: Query<(Entity, &mut Age1)>,
-    //     mut q2: Query<(Entity, &mut Age2)>,
-    //     mut q3: Query<(Entity, &mut Age3)>,
+    // pub fn print_changed_entities(mut set: ParamSet<(Query<(Entity, &mut Age0)>,
+    //     Query<(Entity, &mut Age1)>,
+    //     Query<(Entity, &mut Age2)>,
+    //     Query<(Entity, &mut Age3)>)>
     // ) {
-        // for (_, mut age) in q0.iter_mut() {
-        //     age.0 +=1;
-        //     //println!("c: {:?} is now", age);
+    pub fn print_changed_entities(
+        mut q0: Query<(Entity, &mut Age0, &mut Age1, &Age2, &Age3, &Age4, &Age5, &Age6, &Age7, &Age8)>,
+        //mut q1: Query<(Entity, &mut Age1)>,
+        //mut q2: Query<(Entity, Option<&mut Age2>)>,
+        //mut q3: Query<(Entity, &mut Age3)>,
+    ) {
+        // let q = q0.iter_mut();
+        // let s = q.size_hint();
+        // for (_, age) in q0.iter_mut() {
+        //     //age.0 +=1;
         // }
-        // for (_, mut age) in q1.iter_mut() {
-        //     age.0 +=1;
-        //     //println!("c: {:?} is now", age);
-        // }
-        // for (_, mut age) in q2.iter_mut() {
-        //     age.0 +=1;
-        //     //println!("c: {:?} is now", age);
+        //let q = q0.iter_mut();
+        //let s = q.size_hint();
+        for (_, mut age0, mut age1, age2, age3, age4, age5, age6, age7, age8) in q0.iter_mut() {
+            let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+            // age0.0 +=1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+            // age1.0 +=1+age5.0[0];
+        }
+        // for (_, age) in q2.iter_mut() {
+        //     if let Some(mut a) = age {
+        //         a.0 +=1;
+        //     };
         // }
         // for (_, mut age) in q3.iter_mut() {
         //     age.0 +=1;
-        //     //println!("c: {:?} is now", age);
         // }
     }
     #[bench]
     fn bench_bevy(b: &mut Bencher) {
         // Create a new empty World to hold our Entities, Components and Resources
         let mut world = World::new();
-
+        for _ in 0..90 {
+            world.spawn((Age0(0),Age1(0),Age2(0),Age3(0),Age4(0),Age5([0;16]),Age6(0),Age7(0),Age8(0),Age9(0),Age10(0),Age11(0),Age12(0),Age13(0),Age14(0)));
+        }
         // Add the counter resource to remember how many entities where spawned
         //world.insert_resource(EntityCounter { value: 0 });
 

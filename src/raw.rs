@@ -3,6 +3,7 @@ use core::fmt::*;
 use std::{mem::{size_of, transmute, ManuallyDrop, MaybeUninit}, sync::atomic::Ordering, ptr};
 
 use pi_arr::{RawArr, RawIter};
+use pi_null::Null;
 use pi_share::ShareUsize;
 
 use crate::{world::*, archetype::MemOffset};
@@ -22,40 +23,42 @@ pub trait ArchetypePtr {
     fn drop_component<T>(&mut self, offset: u32);
 }
 impl ArchetypePtr for *mut u8 {
+    #[inline(always)]
     fn set_null(&self) -> bool {
         let t: &ShareUsize = unsafe { transmute(*self) };
-        if t.load(Ordering::Relaxed) == 0 {
+        if t.load(Ordering::Relaxed).is_null() {
             return false
         }
-        t.store(0, Ordering::Release);
+        t.store(usize::null(), Ordering::Release);
         true
     }
-
+    #[inline(always)]
     fn get_tick(&self) -> Tick {
         let t: &ShareUsize = unsafe { transmute(*self) };
         t.load(Ordering::Acquire)
     }
+    #[inline(always)]
     fn set_tick(&self, tick: Tick) {
         let t: &ShareUsize = unsafe { transmute(*self) };
         t.store(tick, Ordering::Release)
     }
-
+    #[inline(always)]
     fn entity(&self) -> &mut Entity {
         unsafe { transmute(self.add(size_of::<Tick>())) }
     }
-    
+    #[inline(always)]
     fn get<'a, T>(&self, offset: MemOffset) -> &'a T {
         unsafe { transmute(self.add(offset as usize)) }
     }
-
+    #[inline(always)]
     fn get_mut<'a, T>(&mut self, offset: MemOffset) -> &'a mut T {
         unsafe { transmute(self.add(offset as usize)) }
     }
-
+    #[inline(always)]
     fn init_component<'a, T>(&mut self, offset: MemOffset) -> &'a mut MaybeUninit<T> {
         unsafe { transmute(self.add(offset as usize)) }
     }
-
+    #[inline(always)]
     fn drop_component<T>(&mut self, offset: MemOffset) {
         unsafe {
             let item: &mut ManuallyDrop<T> = transmute(self.add(offset as usize));
@@ -106,6 +109,7 @@ pub struct RawVec {
 }
 
 impl RawVec {
+    #[inline(always)]
     pub fn new(components_size: usize) -> Self {
         Self {
             arr: RawArr::default(),
@@ -113,13 +117,15 @@ impl RawVec {
             components_size: components_size,
         }
     }
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len.load(Ordering::Relaxed) == 0
     }
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
     }
-    
+    #[inline(always)]
     pub fn get(&self, index: usize) -> ArchetypeData {
         let len = self.len.load(Ordering::Relaxed);
         if index >= len {
@@ -129,15 +135,18 @@ impl RawVec {
             .get(index, self.components_size)
             .map_or(ptr::null_mut(), |r| unsafe {transmute(r) })
     }
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> ArchetypeData {
         self.arr.get_unchecked(index, self.components_size)
     }
+    #[inline(always)]
     pub fn alloc(&self) -> (usize, ArchetypeData) {
         let len = self.len.fetch_add(1, Ordering::AcqRel);
         unsafe {
             (len, self.arr.load_alloc(len, initialize, self.components_size))
         }
     }
+    #[inline(always)]
     pub fn iter(&self) -> RawIter {
         self.arr.slice(0..self.len(), self.components_size)
     }

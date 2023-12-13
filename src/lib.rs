@@ -1,4 +1,3 @@
-#![feature(ptr_internals)]
 #![feature(test)]
 extern crate test;
 

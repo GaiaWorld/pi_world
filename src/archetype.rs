@@ -18,12 +18,13 @@ use core::fmt::*;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::mem::{needs_drop, size_of, transmute};
+use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
 use pi_arr::RawIter;
 use pi_null::Null;
 use pi_phf_map::PhfMap;
-use pi_share::{Share, ShareBool};
+use pi_share::{Share, ShareU8};
 use smallvec::SmallVec;
 
 use crate::record::{RecordIndex, ComponentRecord};
@@ -46,7 +47,7 @@ pub struct Archetype {
     records: Vec<ComponentRecord>,      // 每组件对应记录的列表
     removes: AppendVec<ArchetypeKey>,      // 整理前被移除的实例
     index: WorldArchetypeIndex, // 在全局原型列表中的位置
-    pub(crate) ready: ShareBool,           // 是否已就绪，脏列表是否已经被全部的system添加好了
+    pub(crate) ready: ShareU8,           // 是否已就绪，脏列表是否已经被全部的system添加好了
 }
 
 impl Archetype {
@@ -97,8 +98,13 @@ impl Archetype {
             records,
             removes: AppendVec::default(),
             index: u32::null(),
-            ready: ShareBool::new(false),
+            ready: ShareU8::new(0),
         }
+    }
+    // 获得ready状态
+    #[inline(always)]
+    pub fn get_ready(&self) -> u8 {
+        self.ready.load(Ordering::Relaxed)
     }
     // 原型突变， 在该原型下添加一些组件，删除一些组件，得到新原型需要包含哪些组件，及移动的组件
     pub fn mutate(
@@ -163,19 +169,23 @@ impl Archetype {
     /// let ar = Archetype::new(vec);
     /// assert_eq!(ar.id(), 136982586060323025009695824984285423444);
     /// ```
+    #[inline(always)]
     pub fn get_id(&self) -> &u128 {
         &self.id
     }
+    #[inline(always)]
     pub fn get_index(&self) -> WorldArchetypeIndex {
         self.index
     }
+    #[inline(always)]
     pub(crate) fn set_index(&self, index: WorldArchetypeIndex) {
         unsafe { *(&self.index as *const WorldArchetypeIndex as *mut WorldArchetypeIndex) = index }
     }
-
+    #[inline(always)]
     pub fn get_type_infos(&self) -> &Vec<ComponentInfo> {
         &self.components
     }
+    #[inline(always)]
     pub fn get_type_info_index(&self, type_id: &TypeId) -> ComponentIndex {
         if let Some(t) = self.map.get(&type_id) {
             if t.is_null() {
@@ -188,7 +198,7 @@ impl Archetype {
         }
         u32::null()
     }
-
+    #[inline(always)]
     pub fn get_type_info(&self, type_id: &TypeId) -> Option<&ComponentInfo> {
         if let Some(t) = self.map.get(&type_id) {
             if t.is_null() {
@@ -201,30 +211,34 @@ impl Archetype {
         }
         None
     }
+    #[inline(always)]
     pub fn get_mem_offset_ti_index(&self, type_id: &TypeId) -> (MemOffset, ComponentIndex) {
         if let Some(t) = self.map.get(&type_id) {
             if t.is_null() {
-                return (u32::null(), u32::null());
+                return (u32::null(), 0);
             }
             let ti = unsafe { self.components.get_unchecked(*t as usize) };
             if &ti.type_id == type_id {
                 return (ti.mem_offset, *t);
             }
         }
-        (u32::null(), u32::null())
+        (u32::null(), 0)
     }
-
+    #[inline(always)]
     pub unsafe fn get_type_info_unchecked(&self, type_id: &TypeId) -> &ComponentInfo {
         self.components
             .get_unchecked(*self.map.get_unchecked(&type_id) as usize)
     }
+    #[inline(always)]
     pub(crate) fn get_records(&self) -> &Vec<ComponentRecord> {
         &self.records
     }
+    #[inline(always)]
     pub(crate) fn get_component_record(&self, index: ComponentIndex) -> &ComponentRecord {
         unsafe {self.records.get_unchecked(index as usize)}
     }
     /// Returns the number of elements in the archetype.
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.arr.len()
     }
@@ -233,6 +247,7 @@ impl Archetype {
     //     self.alloter.max()
     // }
     /// Returns if the archetype is empty.
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.arr.is_empty()
     }
@@ -255,7 +270,7 @@ impl Archetype {
     //     }
     //     false
     // }
-
+    #[inline(always)]
     pub fn alloc(&self) -> (ArchetypeKey, ArchetypeData) {
         self.arr.alloc()
     }
@@ -272,6 +287,7 @@ impl Archetype {
         }
         false
     }
+    #[inline(always)]
     pub(crate) fn iter(&self) -> RawIter {
         self.arr.iter()
     }
@@ -294,6 +310,7 @@ impl Archetype {
     // }
 
     /// Returns a mutable reference to the value corresponding to the key.
+    #[inline(always)]
     pub fn get(&self, k: ArchetypeKey) -> ArchetypeData {
         self.arr.get(k)
     }
@@ -378,6 +395,14 @@ impl Archetype {
             d(unsafe { ptr.add(t.mem_offset as usize) });
         }
     }
+    /// 整理方法
+    pub(crate) fn collect(&self, _world: &World) {
+        for r in self.records.iter() {
+            r.collect()
+        }
+        // todo!()
+    }
+
 }
 
 impl Debug for Archetype {

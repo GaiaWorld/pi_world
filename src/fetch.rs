@@ -41,8 +41,9 @@ pub trait FetchComponents {
     ///   in to this function.
     fn init_fetch<'w>(
         world: &'w World,
-        // state: &Self::State,
-        run: Tick,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+        tick: Tick,
     ) -> Self::Fetch<'w>;
 
 
@@ -61,8 +62,7 @@ pub trait FetchComponents {
     /// If `Self` implements [`ReadOnlyFetchComponents`], then this can safely be called multiple times.
     fn fetch<'w>(
         fetch: &mut Self::Fetch<'w>,
-        archetype: &'w Archetype,
-        state: &Self::State,
+        state: &'w Self::State,
         key: ArchetypeKey,
         ptr: ArchetypeData,
     ) -> Self::Item<'w>;
@@ -76,13 +76,12 @@ impl FetchComponents for Entity {
     fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
     }
 
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, _state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {}
 
     #[inline(always)]
     fn fetch<'w>(
         _fetch: &mut Self::Fetch<'w>,
-        _archetype: &'w Archetype,
-        _state: &Self::State,
+        _state: &'w Self::State,
         _key: ArchetypeKey,
         ptr: ArchetypeData,
     ) -> Self::Item<'w> {
@@ -106,13 +105,12 @@ impl<T: 'static> FetchComponents for &T {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, _state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {}
 
     #[inline(always)]
     fn fetch<'w>(
         _fetch: &mut Self::Fetch<'w>,
-        _archetype: &'w Archetype,
-        state: &Self::State,
+        state: &'w Self::State,
         _key: ArchetypeKey,
         ptr: ArchetypeData,
     ) -> Self::Item<'w> {
@@ -121,7 +119,7 @@ impl<T: 'static> FetchComponents for &T {
 }
 
 impl<T: 'static> FetchComponents for &mut T {
-    type Fetch<'w> = ();
+    type Fetch<'w> = Option<&'w ComponentRecord>;
     type Item<'w> = Mut<'w, T>;
     type State = (MemOffset, ComponentIndex);
 
@@ -136,20 +134,22 @@ impl<T: 'static> FetchComponents for &mut T {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {
+        let r = archetype.get_component_record(state.1);
+        if r.changeds.len() > 0 { Some(r) } else {None}
+    }
 
     #[inline(always)]
     fn fetch<'w>(
-        _fetch: &mut Self::Fetch<'w>,
-        archetype: &'w Archetype,
-        state: &Self::State,
+        fetch: &mut Self::Fetch<'w>,
+        state: &'w Self::State,
         key: ArchetypeKey,
         mut ptr: ArchetypeData,
     ) -> Self::Item<'w> {
         Mut {
             value: ptr.get_mut::<T>(state.0),
             key,
-            record: archetype.get_component_record(state.1),
+            record: *fetch,
         }
     }
 }
@@ -167,13 +167,12 @@ impl<T: 'static> FetchComponents for Option<&T> {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype,  _state: &'w Self::State,_tick: Tick) -> Self::Fetch<'w> {}
 
     #[inline(always)]
     fn fetch<'w>(
         _fetch: &mut Self::Fetch<'w>,
-        _archetype: &'w Archetype,
-        state: &Self::State,
+        state: &'w Self::State,
         _key: ArchetypeKey,
         ptr: ArchetypeData,
     ) -> Self::Item<'w> {
@@ -185,7 +184,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
 }
 
 impl<T: 'static> FetchComponents for Option<&mut T> {
-    type Fetch<'w> = ();
+    type Fetch<'w> = Option<&'w ComponentRecord>;
     type Item<'w> = Option<Mut<'w, T>>;
     type State = (MemOffset, ComponentIndex);
 
@@ -197,13 +196,15 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {
+        let r = archetype.get_component_record(state.1);
+        if r.changeds.len() > 0 { Some(r) } else {None}
+    }
 
     #[inline(always)]
     fn fetch<'w>(
-        _fetch: &mut Self::Fetch<'w>,
-        archetype: &'w Archetype,
-        state: &Self::State,
+        fetch: &mut Self::Fetch<'w>,
+        state: &'w Self::State,
         key: ArchetypeKey,
         mut ptr: ArchetypeData,
     ) -> Self::Item<'w> {
@@ -213,7 +214,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         Some(Mut {
             value: ptr.get_mut::<T>(state.0),
             key,
-            record: archetype.get_component_record(state.1),
+            record: *fetch,
         })
     }
 }
@@ -229,13 +230,12 @@ impl<T: 'static> FetchComponents for Has<T> {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {}
+    fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, _state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {}
 
     #[inline(always)]
     fn fetch<'w>(
         _fetch: &mut Self::Fetch<'w>,
-        _archetype: &'w Archetype,
-        state: &Self::State,
+        state: &'w Self::State,
         _key: ArchetypeKey,
         mut _ptr: ArchetypeData,
     ) -> Self::Item<'w> {
@@ -249,19 +249,23 @@ impl<T: 'static> FetchComponents for Has<T> {
 pub struct Mut<'a, T: ?Sized> {
     pub(crate) value: &'a mut T,
     pub(crate) key: ArchetypeKey,
-    pub(crate) record: &'a ComponentRecord,
+    pub(crate) record: Option<&'a ComponentRecord>,
 }
 impl<'a, T: ?Sized> Deref for Mut<'a, T> {
     type Target = T;
-
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.value
     }
 }
 impl<'a, T: ?Sized> DerefMut for Mut<'a, T> {
-    #[inline]
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.record.changed(self.key);
+        if let Some(r) = self.record {
+            // println!("Mut {:?}", self.key);
+            self.key += 1;
+            // r.changed(self.key);
+        }
         self.value
     }
 }
@@ -291,24 +295,24 @@ macro_rules! impl_tuple_fetch {
                 )*)
             }
 
-            #[inline]
+            #[inline(always)]
             #[allow(clippy::unused_unit)]
-            fn init_fetch<'w>(_world: &'w World, _run: Tick) -> Self::Fetch<'w> {
-                ($($name::init_fetch(_world, _run),)*)
+            fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, _state: &'w Self::State, _tick: Tick) -> Self::Fetch<'w> {
+                let ($($state,)*) = _state;
+                ($($name::init_fetch(_world, _archetype, $state, _tick),)*)
             }
 
             #[inline(always)]
             #[allow(clippy::unused_unit)]
             fn fetch<'w>(
                 _fetch: &mut Self::Fetch<'w>,
-                _archetype: &'w Archetype,
-                _state: &Self::State,
+                _state: &'w Self::State,
                 _key: ArchetypeKey,
                 _ptr: ArchetypeData,
             ) -> Self::Item<'w> {
                 let ($($name,)*) = _fetch;
                 let ($($state,)*) = _state;
-                ($($name::fetch($name, _archetype, $state, _key, _ptr),)*)
+                ($($name::fetch($name, $state, _key, _ptr),)*)
             }
         }
 

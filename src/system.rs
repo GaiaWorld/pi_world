@@ -110,6 +110,8 @@ pub trait System: Send + Sync {
     fn name(&self) -> Cow<'static, str>;
     /// Returns the [`TypeId`] of the underlying system type.
     fn type_id(&self) -> TypeId;
+    /// Initialize the system.
+    fn initialize(&mut self, world: &World);
 
     /// Runs the system with the given input in the world. Unlike [`System::run`], this function
     /// can be called in parallel with other systems and may break Rust's aliasing rules
@@ -125,8 +127,6 @@ pub trait System: Send + Sync {
     ///   panics (or otherwise does not return for any reason), this method must not be called.
     fn run(&mut self, world: &World);
 
-    /// Initialize the system.
-    fn initialize(&mut self, world: &World);
 }
 /// A convenience type alias for a boxed [`System`] trait object.
 pub type BoxedSystem = Box<dyn System>;
