@@ -20,18 +20,15 @@
 use core::fmt::*;
 use core::result::Result;
 use std::any::{Any, TypeId};
-use std::mem::transmute;
-use std::ptr::null_mut;
 use std::sync::atomic::Ordering;
 
-use crate::archetype::{Archetype, ArchetypeKey, ComponentInfo, ShareArchetype};
+use crate::archetype::{Archetype, ComponentInfo, Row, ShareArchetype, WorldArchetypeIndex};
 use crate::insert::*;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::query::QueryError;
-use crate::raw::*;
+use crate::safe_vec::SafeVec;
 use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
-use pi_append_vec::AppendVec;
 use pi_key_alloter::new_key_type;
 use pi_null::Null;
 use pi_share::{Share, ShareUsize};
@@ -53,9 +50,9 @@ pub struct ArchetypeOk<'a>(pub &'a ShareArchetype);
 #[derive(Debug)]
 pub struct World {
     pub(crate) single_map: DashMap<TypeId, Box<dyn Any>>,
-    pub(crate) entitys: SlotMap<Entity, EntityValue>,
+    pub(crate) entitys: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
-    pub(crate) archetype_arr: AppendVec<Option<ShareArchetype>>,
+    pub(crate) archetype_arr: SafeVec<ShareArchetype>,
     pub(crate) empty_archetype: ShareArchetype,
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
@@ -71,7 +68,7 @@ impl World {
             single_map: DashMap::default(),
             entitys: SlotMap::default(),
             archetype_map: DashMap::new(),
-            archetype_arr: AppendVec::default(),
+            archetype_arr: SafeVec::default(),
             empty_archetype: 
                 ShareArchetype::new(Archetype::new(vec![])),
             listener_mgr,
@@ -88,8 +85,7 @@ impl World {
     }
     /// 创建一个插入器
     pub fn make_insert_state<I: InsertComponents>(&self) -> (ShareArchetype, I::State) {
-        let ar = self.find_archtype(I::components());
-        self.archtype_ok(&ar);
+        let (_, ar) = self.find_archtype(I::components());
         let s = I::init_state(self, &ar);
         (ar, s)
     }
@@ -97,19 +93,19 @@ impl World {
         &self.empty_archetype
     }
 
-    /// 获得指定实体的指定组件
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
-        let value = match self.entitys.get(e) {
+        let addr = match self.entitys.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = value.get_archetype();
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.ar_index()) };
         let tid = TypeId::of::<T>();
-        let mem_offset = ar.get_mem_offset_ti_index(&tid).0;
-        if mem_offset.is_null() {
-            return Err(QueryError::MissingComponent);
+        if let Some(c) = ar.get_column(&tid) {
+            Ok(c.get_mut(addr.row))
+        }else{
+            Err(QueryError::MissingComponent)
         }
-        Ok(unsafe { transmute(value.value().add(mem_offset as usize)) })
     }
 
     pub(crate) fn get_archetype(&self, id: u128) -> Option<Ref<u128, ShareArchetype>> {
@@ -117,7 +113,7 @@ impl World {
     }
 
     // 返回原型及是否新创建
-    pub(crate) fn find_archtype(&self, components: Vec<ComponentInfo>) -> ShareArchetype {
+    pub(crate) fn find_archtype(&self, components: Vec<ComponentInfo>) -> (WorldArchetypeIndex, ShareArchetype) {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let id = ComponentInfo::calc_id(&components);
         let (ar, b) = match self.archetype_map.entry(id) {
@@ -133,91 +129,72 @@ impl World {
             self.listener_mgr
                 .notify_event(self.archetype_init_key, ArchetypeInit(&ar));
             // 通知后，让原型就绪， 其他线程也就可以获得该原型
-            ar.ready.store(1, Ordering::Relaxed);
+            (self.archtype_ok(&ar), ar)
         } else {
             // 循环等待原型就绪
             loop {
-                if ar.ready.load(Ordering::Relaxed) > 0 {
-                    break;
+                let index = ar.index();
+                if index.is_null() {
+                    std::hint::spin_loop();
                 }
+                return (index, ar)
             }
         }
-        ar
     }
     // 先事件通知调度器，将原型放入数组，之后其他system可以看到该原型
-    pub(crate) fn archtype_ok(&self, ar: &ShareArchetype) {
-        match ar
-            .ready
-            .compare_exchange(1, 2, Ordering::Relaxed, Ordering::Relaxed)
-        {
-            Ok(_) => (),
-            Err(_) => return,
-        }
+    pub(crate) fn archtype_ok(&self, ar: &ShareArchetype) -> WorldArchetypeIndex {
         self.listener_mgr
             .notify_event(self.archetype_ok_key, ArchetypeOk(&ar));
-        let e = self.archetype_arr.insert_entry();
-        ar.set_index(e.index() as u32);
-        *e.value = Some(ar.clone());
+        let entry = self.archetype_arr.alloc_entry();
+        let index = entry.index() as u32;
+        ar.index.store(index, Ordering::Relaxed);
+        entry.insert(ar.clone());  // 确保其他线程一定可以看见
+        index
     }
     /// 插入一个新的Entity
     pub(crate) fn insert(
         &self,
-        a: &Archetype,
-        key: ArchetypeKey,
-        data: ArchetypeData,
-        tick: Tick,
+        a: WorldArchetypeIndex,
+        row: Row,
     ) -> Entity {
-        data.set_tick(tick);
-        let e = self.entitys.insert(EntityValue::new(a, key, data));
-        *data.entity() = e;
-        e
+        self.entitys.insert(EntityAddr::new(a, row))
     }
     /// 替换Entity的原型及数据
     pub(crate) fn replace(
         &self,
         e: Entity,
-        a: &Archetype,
-        key: ArchetypeKey,
-        data: ArchetypeData,
-        tick: Tick,
+        a: WorldArchetypeIndex,
+        row: Row,
     ) {
-        *data.entity() = e;
-        data.set_tick(tick);
-        let value = unsafe { self.entitys.load_unchecked(e) };
-        *value = EntityValue::new(a, key, data);
+        let addr = unsafe { self.entitys.load_unchecked(e) };
+        addr.ar_index = a;
+        addr.row = row;
     }
     /// 整理方法
     pub fn collect(&self) {
         for ar in self.archetype_arr.iter() {
-            ar.as_ref().unwrap().collect(self);
+            ar.as_ref().collect(self);
         }
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct EntityValue(
-    pub(crate) *mut Archetype,
-    pub(crate) ArchetypeKey,
-    pub(crate) ArchetypeData,
-);
-unsafe impl Sync for EntityValue {}
-unsafe impl Send for EntityValue {}
-impl EntityValue {
-    pub fn new(a: &Archetype, key: ArchetypeKey, data: ArchetypeData) -> Self {
-        EntityValue(unsafe { transmute(a) }, key, data)
-    }
-    pub fn get_archetype(&self) -> &Archetype {
-        unsafe { &*self.0 }
-    }
-    pub fn key(&self) -> ArchetypeKey {
-        self.1
-    }
-    pub fn value(&self) -> ArchetypeData {
-        self.2
-    }
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct EntityAddr {
+    pub(crate) ar_index: WorldArchetypeIndex,
+    pub(crate) row: Row,
 }
-impl Default for EntityValue {
-    fn default() -> Self {
-        Self(null_mut(), ArchetypeKey::default(), null_mut())
+unsafe impl Sync for EntityAddr {}
+unsafe impl Send for EntityAddr {}
+
+impl EntityAddr {
+    #[inline(always)]
+    pub fn new(ar_index: WorldArchetypeIndex, row: Row) -> Self {
+        EntityAddr{ar_index, row}
     }
+    #[inline(always)]
+    pub fn ar_index(&self) -> usize {
+        self.ar_index as usize
+    }
+
 }
+

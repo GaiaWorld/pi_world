@@ -3,19 +3,18 @@ use core::result::Result;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::mem::{transmute, ManuallyDrop};
-use std::ops::DerefMut;
+use std::mem::ManuallyDrop;
+use std::sync::atomic::Ordering;
 
 use crate::archetype::*;
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::listener::Listener;
-use crate::raw::{ArchetypeData, ArchetypePtr};
 use crate::record::RecordIndex;
 use crate::system::{ReadWrite, SystemMeta};
 use crate::system_parms::SystemParam;
 use crate::world::*;
-use pi_arr::{Iter, RawIter};
+use pi_arr::Iter;
 use pi_null::*;
 use pi_share::Share;
 use smallvec::SmallVec;
@@ -25,6 +24,7 @@ pub enum QueryError {
     MissingReadAccess,
     MissingWriteAccess,
     MissingComponent,
+    NoMatchEntity,
     NoSuchEntity,
     NoSuchArchetype,
 }
@@ -51,19 +51,19 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     pub fn tick(&self) -> Tick {
         self.tick
     }
-    #[inline]
-    pub fn entity_tick(&self, e: Entity) -> Tick {
-        QueryState::<Q, F>::entity_tick(self.world, e)
-    }
+    // #[inline]
+    // pub fn entity_tick(&self, e: Entity) -> Tick {
+    //     QueryState::<Q, F>::entity_tick(self.world, e)
+    // }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.state.is_empty()
     }
-    #[inline]
-    pub fn delete(&mut self, e: Entity) -> Result<bool, QueryError> {
-        self.state.delete(self.world, e)
-    }
+    // #[inline]
+    // pub fn delete(&mut self, e: Entity) -> Result<bool, QueryError> {
+    //     self.state.delete(self.world, e)
+    // }
     #[inline]
     pub fn iter(&'world self) -> QueryIter<'world, Q, F> {
         self.state.iter(self.world, self.tick)
@@ -93,7 +93,7 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync + 'static> 
                 PhantomData::<F>,
             );
             for r in world.archetype_arr.iter() {
-                notify.listen(ArchetypeInit(r.as_ref().unwrap()))
+                notify.listen(ArchetypeInit(r))
             }
             // 监听原型创建， 添加record
             world.listener_mgr.register_event(Share::new(notify));
@@ -161,8 +161,8 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     archetype_len: usize, // 记录的最新的原型，如果world上有更新的，则检查是否和自己相关
     map: HashMap<WorldArchetypeIndex, usize>, // 记录world上的原型索引对于本地的原型索引
     last: (WorldArchetypeIndex, usize), // todo!() 改到Query上来支持并发
-    removes: Vec<(u32, ArchetypeKey)>, // 本次删除的本地原型位置及条目 // todo!() 改成AppendVec来支持并发 // 或者单加一个Delete来删除entity
-    // key_check: HashSet<ArchetypeKey>, // todo!() 改到Iter上来支持并发
+    removes: Vec<(u32, Row)>, // 本次删除的本地原型位置及条目 // todo!() 改成AppendVec来支持并发 // 或者单加一个Delete来删除entity
+    // key_check: HashSet<ArchetypeKey>, // todo!() 改到Iter上来支持并发，或用ParQuery来进行并行
     empty: Q::State,
     _k: PhantomData<F>,
 }
@@ -189,7 +189,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         // 检查新增的原型
         for i in self.archetype_len..len {
-            let ar = world.archetype_arr[i].as_ref().unwrap();
+            let ar = unsafe { world.archetype_arr.get_unchecked(i) };
             self.add_archetype(world, ar, system_meta);
         }
         self.archetype_len = len;
@@ -207,7 +207,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let rw = &system_meta.get_rw(self.rw_index);
         let mut vec = SmallVec::new();
-        if rw.listeners.len() > 0 {
+        if F::LISTENER_COUNT > 0 {
             ar.find_records(TypeId::of::<Self>(), &rw.listeners, &mut vec);
             if vec.len() == 0 {
                 // 表示该原型没有监听的组件，本查询可以不关心该原型
@@ -224,30 +224,30 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         entity: Entity,
         tick: Tick,
     ) -> Result<Q::Item<'w>, QueryError> {
-        let (k, v) = Self::check(&mut self.last, &self.map, world, entity)?;
+        let addr = Self::check(&mut self.last, &self.map, world, entity)?;
         let ar = unsafe { &self.vec.get_unchecked(self.last.1).0 };
         let s = unsafe { self.state_vec.get_unchecked(self.last.1) };
         let mut fetch = Q::init_fetch(world, ar, s, tick);
-        Ok(Q::fetch(&mut fetch, s, k, v))
+        Ok(Q::fetch(&mut fetch, s, addr.row, entity))
     }
-    #[inline]
-    pub fn entity_tick<'w>(world: &'w World, e: Entity) -> Tick {
-        match world.entitys.get(e) {
-            Some(v) => v.value().get_tick(),
-            None => Tick::null(),
-        }
-    }
-    /// 标记删除
-    pub fn delete<'w>(&mut self, world: &'w World, entity: Entity) -> Result<bool, QueryError> {
-        let (k, _) = Self::check(&mut self.last, &self.map, world, entity)?;
-        let ars = unsafe { self.vec.get_unchecked(self.last.1) };
-        if !ars.0.remove(k) {
-            return Ok(false);
-        }
-        world.entitys.remove(entity).unwrap();
-        self.removes.push((self.last.1 as u32, k));
-        Ok(true)
-    }
+    // #[inline]
+    // pub fn entity_tick<'w>(world: &'w World, e: Entity) -> Tick {
+    //     match world.entitys.get(e) {
+    //         Some(v) => v.value().get_tick(),
+    //         None => Tick::null(),
+    //     }
+    // }
+    /// 标记删除 todo 好像放到mutate更合适
+    // pub fn delete<'w>(&mut self, world: &'w World, entity: Entity) -> Result<bool, QueryError> {
+    //     let k = Self::check(&mut self.last, &self.map, world, entity)?;
+    //     let ars = unsafe { self.vec.get_unchecked(self.last.1) };
+    //     if !ars.0.remove(k) {
+    //         return Ok(false);
+    //     }
+    //     world.entitys.remove(entity).unwrap();
+    //     self.removes.push((self.last.1 as u32, k));
+    //     Ok(true)
+    // }
     #[inline]
     pub fn is_empty(&self) -> bool {
         if self.vec.is_empty() {
@@ -267,49 +267,48 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn iter<'w>(&'w self, world: &'w World, tick: Tick) -> QueryIter<'w, Q, F> {
         QueryIter::new(world, self, tick)
     }
-    pub fn check<'w>(
+    fn check<'w>(
         last: &mut (WorldArchetypeIndex, usize),
         map: &HashMap<WorldArchetypeIndex, usize>,
         world: &'w World,
         entity: Entity,
-    ) -> Result<(ArchetypeKey, ArchetypeData), QueryError> {
-        let value = match world.entitys.get(entity) {
-            Some(v) => v,
+    ) -> Result<EntityAddr, QueryError> {
+        let addr = match world.entitys.get(entity) {
+            Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let archetype_index = value.get_archetype().get_index();
-        if last.0 != archetype_index {
-            last.1 = match map.get(&archetype_index) {
+        if last.0 != addr.ar_index {
+            last.1 = match map.get(&addr.ar_index) {
                 Some(v) => *v,
                 None => return Err(QueryError::NoSuchArchetype),
             };
         }
-        Ok((value.key(), value.value()))
+        Ok(addr)
     }
     #[inline(always)]
     fn clear(
         vec: &Vec<(ShareArchetype, SmallVec<[RecordIndex; 1]>)>,
-        removes: &mut Vec<(u32, ArchetypeKey)>,
+        removes: &mut Vec<(u32, Row)>,
     ) {
         if removes.len() == 0 {
             return;
         }
         // 处理标记移除的条目
-        while let Some((ar_index, key)) = removes.pop() {
-            vec[ar_index as usize].0.drop_key(key);
-        }
+        // while let Some((ar_index, key)) = removes.pop() {
+        //     vec[ar_index as usize].0.drop_key(key);
+        // } todo()
     }
 }
 
 /// 不同情况下的迭代器
 union It<'w> {
     // 没有监听变化，迭代该原型下所有的entity
-    normal: ManuallyDrop<RawIter<'w>>,
+    normal: Row,
     // 监听单个组件变化，只需对该组件的记录进行迭代
-    record: ManuallyDrop<Iter<'w, ArchetypeKey>>,
+    record: ManuallyDrop<Iter<'w, Row>>,
     // 监听多个组件变化，可能entity相同，需要进行去重
     records: ManuallyDrop<(
-        Iter<'w, ArchetypeKey>,
+        Iter<'w, Row>,
         &'w SmallVec<[RecordIndex; 1]>,
         usize,
     )>,
@@ -345,7 +344,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 ar_state: &state.empty,
                 fetch: Q::init_fetch(world, world.empty_archetype(), &state.empty, tick),
                 it: It {
-                    normal: ManuallyDrop::new(RawIter::empty()),
+                    normal: 0,
                 },
             };
         }
@@ -357,7 +356,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 该查询没有监听组件变化
             // 倒序迭代所记录的原型
             It {
-                normal: ManuallyDrop::new(ar.iter()),
+                normal: ar.table.len(),
             }
         } else if F::LISTENER_COUNT == 1 {
             // 该查询没有只有1个组件变化监听器
@@ -365,20 +364,23 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 只有一个监听
             let d_index = unsafe { *d.get_unchecked(0) };
             It {
-                record: ManuallyDrop::new(d_index.get_iter(ar.get_records())),
+                normal: ar.table.len(),
+//                record: ManuallyDrop::new(d_index.get_iter(ar.get_records())),
             }
         } else {
             let d_index = unsafe { *d.get_unchecked(0) };
             // 只有一个监听
             if ar_index == 0 && d.len() == 1 {
                 It {
-                    record: ManuallyDrop::new(d_index.get_iter(ar.get_records())),
+                    normal: ar.table.len(),
+//                    record: ManuallyDrop::new(d_index.get_iter(ar.get_records())),
                 }
             } else {
                 // 该查询有多个组件变化监听器
                 // 倒序迭代所记录的原型
                 It {
-                    records: ManuallyDrop::new((d_index.get_iter(ar.get_records()), d, 1)),
+                    normal: ar.table.len(),
+//                    records: ManuallyDrop::new((d_index.get_iter(ar.get_records()), d, 1)),
                 }
             }
         };
@@ -397,115 +399,114 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     #[inline(always)]
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            let it = unsafe { self.it.normal.deref_mut() };
-            match it.next() {
-                Some(r) => {
-                    let data: ArchetypeData = unsafe { transmute(r) };
-                    let t = data.get_tick();
+            unsafe {
+                if self.it.normal > 0 {
+                    self.it.normal -= 1;
+                    let e = unsafe { self.ar.table.get(self.it.normal) };
                     // 要求条目不为空，同时不是本system修改的
-                    if t < self.tick {
-                        let item = Q::fetch(&mut self.fetch, self.ar_state, it.index() - 1, data);
+                    if !e.is_null() {
+                        let item = Q::fetch(&mut self.fetch, self.ar_state, self.it.normal, e);
                         return Some(item);
                     }
+                }else{
+                // 当前的原型已经迭代完毕
+                if self.ar_index == 0 {
+                    // 所有原型都迭代过了
+                    return None;
                 }
-                None => {
-                    // 当前的原型已经迭代完毕
-                    if self.ar_index == 0 {
-                        // 所有原型都迭代过了
-                        return None;
-                    }
-                    // 下一个原型
-                    self.ar_index -= 1;
-                    self.ar = unsafe { &self.state.vec.get_unchecked(self.ar_index).0 };
-                    self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
-                    self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
-                    self.it.normal = ManuallyDrop::new(self.ar.iter());
-                }
+                // 下一个原型
+                self.ar_index -= 1;
+                self.ar = unsafe { &self.state.vec.get_unchecked(self.ar_index).0 };
+                self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
+                self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
+                self.it.normal = self.ar.table.len();
             }
         }
-    }
-    fn iter_record(&mut self) -> Option<Q::Item<'w>> {
-        loop {
-            let it = unsafe { self.it.record.deref_mut() };
-            match it.next() {
-                Some(k) => {
-                    let data: ArchetypeData = self.ar.get(*k);
-                    if data.is_null() {
-                        continue;
-                    }
-                    let t = data.get_tick();
-                    // 要求条目不为空，同时不是本system修改的
-                    if t < self.tick {
-                        let item = Q::fetch(&mut self.fetch, self.ar_state, it.index() - 1, data);
-                        return Some(item);
-                    }
-                }
-                None => {
-                    // 当前的原型已经迭代完毕
-                    if self.ar_index == 0 {
-                        // 所有原型都迭代过了
-                        return None;
-                    }
-                    // 下一个原型
-                    self.ar_index -= 1;
-                    let (ar, d) = unsafe { self.state.vec.get_unchecked(self.ar_index) };
-                    self.ar = ar;
-                    self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
-                    self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
-                    // 只监听一个组件的记录
-                    let d_index = unsafe { d.get_unchecked(0) };
-                    self.it.record = ManuallyDrop::new(d_index.get_iter(ar.get_records()));
-                }
-            }
         }
     }
+    // fn iter_record(&mut self) -> Option<Q::Item<'w>> {
+    //     loop {
+    //         let it = unsafe { self.it.record.deref_mut() };
+    //         match it.next() {
+    //             Some(k) => {
+    //                 let data: ArchetypeData = self.ar.get(*k);
+    //                 if data.is_null() {
+    //                     continue;
+    //                 }
+    //                 let t = data.get_tick();
+    //                 // 要求条目不为空，同时不是本system修改的
+    //                 if t < self.tick {
+    //                     let item = Q::fetch(&mut self.fetch, self.ar_state, it.index() as u32 - 1, data);
+    //                     return Some(item);
+    //                 }
+    //             }
+    //             None => {
+    //                 // 当前的原型已经迭代完毕
+    //                 if self.ar_index == 0 {
+    //                     // 所有原型都迭代过了
+    //                     return None;
+    //                 }
+    //                 // 下一个原型
+    //                 self.ar_index -= 1;
+    //                 let (ar, d) = unsafe { self.state.vec.get_unchecked(self.ar_index) };
+    //                 self.ar = ar;
+    //                 self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
+    //                 self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
+    //                 // 只监听一个组件的记录
+    //                 let d_index = unsafe { d.get_unchecked(0) };
+    //                 self.it.record = ManuallyDrop::new(d_index.get_iter(ar.get_records()));
+    //             }
+    //         }
+    //     }
+    // }
 
-    fn iter_records(&mut self) -> Option<Q::Item<'w>> {
-        loop {
-            let it = unsafe { self.it.records.deref_mut() };
-            match it.0.next() {
-                Some(k) => {
-                    let data: ArchetypeData = self.ar.get(*k);
-                    if data.is_null() {
-                        continue;
-                    }
-                    let t = data.get_tick();
-                    // 如果条目为空，或者是本system修改的
-                    if t >= self.tick {
-                        continue;
-                    }
-                    // let entity = *data.entity();
-                    // 要判断重复，需要加Set，性能不好，所以不判断是否和前面的entity重复
-                    let item = Q::fetch(&mut self.fetch, self.ar_state, it.0.index() - 1, data);
-                    return Some(item);
-                }
-                None => {
-                    // 检查当前原型的下一个被记录组件
-                    if it.1.len() >= it.2 {
-                        let d_index = unsafe { *it.1.get_unchecked(it.2) };
-                        let iter: Iter<'_, usize> = d_index.get_iter(self.ar.get_records());
-                        self.it.records = ManuallyDrop::new((iter, it.1, it.2 + 1));
-                        continue;
-                    }
-                    // 当前的原型已经迭代完毕
-                    if self.ar_index == 0 {
-                        // 所有原型都迭代过了
-                        return None;
-                    }
-                    // 下一个原型
-                    self.ar_index -= 1;
-                    let (ar, d) = unsafe { self.state.vec.get_unchecked(self.ar_index) };
-                    self.ar = ar;
-                    self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
-                    self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
-                    // 监听第一个被记录组件
-                    let d_index = unsafe { *d.get_unchecked(0) };
-                    let iter = d_index.get_iter(ar.get_records());
-                    self.it.records = ManuallyDrop::new((iter, d, 1));
-                }
-            }
-        }
-    }
+    // fn iter_records(&mut self) -> Option<Q::Item<'w>> {
+    //     loop {
+    //         let it = unsafe { self.it.records.deref_mut() };
+    //         match it.0.next() {
+    //             Some(k) => {
+    //                 let data: ArchetypeData = self.ar.get(*k);
+    //                 if data.is_null() {
+    //                     continue;
+    //                 }
+    //                 let t = data.get_tick();
+    //                 // 如果条目为空，或者是本system修改的
+    //                 if t >= self.tick {
+    //                     continue;
+    //                 }
+    //                 // let entity = *data.entity();
+    //                 // 要判断重复，需要加Set，性能不好，所以不判断是否和前面的entity重复
+    //                 let item = Q::fetch(&mut self.fetch, self.ar_state, it.0.index() as u32 - 1, data);
+    //                 return Some(item);
+    //             }
+    //             None => {
+    //                 // 检查当前原型的下一个被记录组件
+    //                 if it.1.len() >= it.2 {
+    //                     let d_index = unsafe { *it.1.get_unchecked(it.2) };
+    //                     let iter: Iter<'_, u32> = d_index.get_iter(self.ar.get_records());
+    //                     self.it.records = ManuallyDrop::new((iter, it.1, it.2 + 1));
+    //                     continue;
+    //                 }
+    //                 // 当前的原型已经迭代完毕
+    //                 if self.ar_index == 0 {
+    //                     // 所有原型都迭代过了
+    //                     return None;
+    //                 }
+    //                 // 下一个原型
+    //                 self.ar_index -= 1;
+    //                 let (ar, d) = unsafe { self.state.vec.get_unchecked(self.ar_index) };
+    //                 self.ar = ar;
+    //                 self.ar_state = unsafe { self.state.state_vec.get_unchecked(self.ar_index) };
+    //                 self.fetch = Q::init_fetch(self.world, self.ar, self.ar_state, self.tick);
+    //                 // 监听第一个被记录组件
+    //                 let d_index = unsafe { *d.get_unchecked(0) };
+    //                 let iter = d_index.get_iter(ar.get_records());
+    //                 self.it.records = ManuallyDrop::new((iter, d, 1));
+    //             }
+    //         }
+    //     }
+    // }
+
 }
 
 impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, F> {
@@ -515,9 +516,11 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, 
         if F::LISTENER_COUNT == 0 {
             self.iter_normal()
         } else if F::LISTENER_COUNT == 1 {
-            self.iter_record()
+            self.iter_normal()
+//            self.iter_record()
         } else {
-            self.iter_records()
+            self.iter_normal()
+//            self.iter_records()
         }
     }
 }

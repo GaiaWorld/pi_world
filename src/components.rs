@@ -1,12 +1,11 @@
 
 use core::fmt::*;
-use std::{mem::{size_of, transmute, ManuallyDrop, MaybeUninit}, sync::atomic::Ordering, ptr};
+use std::{mem::{size_of, transmute, ManuallyDrop, MaybeUninit, replace}, sync::atomic::Ordering, ptr, marker::PhantomData};
 
-use pi_arr::{RawArr, RawIter};
 use pi_null::Null;
 use pi_share::ShareUsize;
 
-use crate::{world::*, archetype::MemOffset};
+use crate::{world::*, archetype::{MemOffset, Row}};
 
 pub type ArchetypeData = *mut u8;
 
@@ -29,7 +28,7 @@ impl ArchetypePtr for *mut u8 {
         if t.load(Ordering::Relaxed).is_null() {
             return false
         }
-        t.store(usize::null(), Ordering::Release);
+        t.store(usize::null(), Ordering::Relaxed);
         true
     }
     #[inline(always)]
@@ -102,53 +101,59 @@ impl ArchetypePtr for *mut u8 {
 // }
 
 #[derive(Default)]
-pub struct RawVec {
-    arr: RawArr,
-    len: ShareUsize,
-    components_size: usize, // 每个条目的内存大小
+pub struct ComponentsVec {
+    vec: Vec<u8>,
+    components_size: u32, // 每个条目的内存大小
 }
 
-impl RawVec {
+impl ComponentsVec {
     #[inline(always)]
-    pub fn new(components_size: usize) -> Self {
+    pub fn new(components_size: u32) -> Self {
         Self {
-            arr: RawArr::default(),
-            len: ShareUsize::new(0),
+            vec: Default::default(),
             components_size: components_size,
         }
     }
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len.load(Ordering::Relaxed) == 0
+        self.vec.is_empty()
     }
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.len.load(Ordering::Relaxed)
+        self.vec.len()
     }
     #[inline(always)]
-    pub fn get(&self, index: usize) -> ArchetypeData {
-        let len = self.len.load(Ordering::Relaxed);
-        if index >= len {
-            return ptr::null_mut();
-        }
-        self.arr
-            .get(index, self.components_size)
+    pub fn get(&self, index: Row) -> ArchetypeData {
+        self.vec
+            .get(index as usize * self.components_size as usize)
             .map_or(ptr::null_mut(), |r| unsafe {transmute(r) })
     }
     #[inline(always)]
-    pub unsafe fn get_unchecked(&self, index: usize) -> ArchetypeData {
-        self.arr.get_unchecked(index, self.components_size)
+    pub unsafe fn get_unchecked(&self, index: Row) -> ArchetypeData {
+        transmute(self.vec.get_unchecked(index as usize * self.components_size as usize))
     }
     #[inline(always)]
-    pub fn alloc(&self) -> (usize, ArchetypeData) {
-        let len = self.len.fetch_add(1, Ordering::AcqRel);
+    pub fn alloc(&self) -> (Row, ArchetypeData) {
+        let len = self.len();
         unsafe {
-            (len, self.arr.load_alloc(len, initialize, self.components_size))
+            let vec: &mut Vec<u8> = transmute(&self.vec as *const Vec<u8>);
+            vec.reserve(self.components_size as usize);
+            vec.set_len(len + self.components_size as usize);
+            (len as u32 /self.components_size, transmute(self.vec.get_unchecked(len)))
         }
     }
     #[inline(always)]
-    pub fn iter(&self) -> RawIter {
-        self.arr.slice(0..self.len(), self.components_size)
+    pub fn iter(&self) -> ComponentsIter {
+        let vec: &mut Vec<u8> = unsafe { transmute(&self.vec as *const Vec<u8>) };
+        ComponentsIter {
+            arr: vec.as_mut(),
+            components_size: self.components_size as usize,
+            index: 0,
+            len: self.vec.len() / self.components_size as usize,
+            offset: 0,
+            // ptr: unsafe { transmute(self.vec.get_unchecked(0)) },
+            _k: PhantomData,
+        }
     }
     // pub fn remove(&mut self, index: usize) -> Option<(usize, ArchetypeData)> {
     //     let len = self.len.load(Ordering::Relaxed);
@@ -171,12 +176,69 @@ impl RawVec {
     // }
 }
 
-impl Debug for RawVec {
+impl Debug for ComponentsVec {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("RawVec")
-            .field("len", &self.len())
+        f.debug_struct("ComponentsVec")
+            .field("len", &self.vec.len())
             .field("components_size", &self.components_size)
             .finish()
+    }
+}
+
+pub struct ComponentsIter<'a> {
+    arr: &'a mut [u8], // u8数组
+    components_size: usize, // 每个条目的内存大小
+    index: usize,
+    len: usize,
+    offset: usize,
+    // ptr: *mut u8,
+    _k: PhantomData<fn(a: &'a u8)>,
+}
+impl<'a> ComponentsIter<'a> {
+    #[inline(always)]
+    pub fn empty() -> Self {
+        ComponentsIter {
+            arr: [].as_mut(),
+            components_size: 0,
+            index: 0,
+            len: 0,
+            offset: 0,
+            // ptr: ptr::null_mut(),
+            _k: PhantomData,
+        }
+    }
+    #[inline(always)]
+    pub fn components_size(&self) -> usize {
+        self.components_size
+    }
+    #[inline(always)]
+    pub fn index(&self) -> usize {
+        self.index
+    }
+    // #[inline(always)]
+    // pub(crate) fn step(&mut self) -> &'a mut u8 {
+    //     unsafe {
+    //         let ptr = self.ptr.add(self.components_size);
+    //         transmute(replace(&mut self.ptr, ptr))
+    //     }
+    // }
+}
+impl<'a> Iterator for ComponentsIter<'a> {
+    type Item = &'a mut u8;
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.len {
+            self.index += 1;
+            let p = unsafe { self.arr.get_unchecked_mut(self.offset) };
+            self.offset += self.components_size;
+            return Some(unsafe { transmute(p) });
+        }
+        None
+    }
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.len.saturating_sub(self.index);
+        return (n, Some(n));
     }
 }
 

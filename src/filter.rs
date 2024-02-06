@@ -6,7 +6,6 @@
 //! Query<(&T, IsChanged<C8>), (Without<C1>,With<C2>,With<C3>,Or<(With<C4>, With<C5>)>, Changed<C6>, Added<C7>)>
 //!
 
-use pi_null::Null;
 use pi_proc_macros::all_tuples;
 use std::any::TypeId;
 use std::marker::PhantomData;
@@ -36,10 +35,7 @@ impl<T: 'static> FilterComponents for Without<T> {
         rw.withouts.insert(TypeId::of::<T>());
     }
     fn archetype_filter(archetype: &Archetype) -> bool {
-        !archetype
-            .get_mem_offset_ti_index(&TypeId::of::<T>())
-            .0
-            .is_null()
+        archetype.get_column(&TypeId::of::<T>()).is_some()
     }
 }
 
@@ -52,10 +48,7 @@ impl<T: 'static> FilterArchetype for With<T> {
 impl<T: 'static> FilterComponents for With<T> {
     const LISTENER_COUNT: usize = 0;
     fn archetype_filter(archetype: &Archetype) -> bool {
-        archetype
-            .get_mem_offset_ti_index(&TypeId::of::<T>())
-            .0
-            .is_null()
+        archetype.get_column(&TypeId::of::<T>()).is_none()
     }
 }
 

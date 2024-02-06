@@ -44,11 +44,13 @@ pub fn print_changed_entities(
     //q2: Query<(Entity, Option<&mut Age2>)>,
     // q3: Query<(Entity, &mut Age3)>,
 ) {
+    println!("print_changed_entities 1");
+
     // let q = q0.iter();
     // let s = q.size_hint();
     for (_, mut age0, mut age1, age2, age3, age4, age5, age6, age7, age8) in q0.iter() {
-        let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
-        // age0.0 +=1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+        // let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
+        age0.0 +=1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         // age1.0 +=1+age5.0[0];
     }
     // let q = q0.iter();
@@ -65,6 +67,7 @@ pub fn print_changed_entities(
     // for (_, mut age) in q3.iter() {
     //     age.0 +=1;
     // }
+    println!("print_changed_entities over");
 }
 pub fn mutate1(
     mut i0: Mutate<(Age3,), (Age4,)>,
@@ -118,7 +121,6 @@ mod test_mod {
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
         app.register(s);
         app.run();
-        println!("app.run, 1");
         assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 0);
         // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 1);
         // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 2);
@@ -176,11 +178,14 @@ mod test_mod {
     fn bench_test(b: &mut Bencher) {
         let mut app = App::new();
         let world = app.get_world();
+        println!("bench_test insert");
         let state = world.make_insert_state::<(Age0,Age1,Age2,Age3,Age4,Age5,Age6,Age7,Age8,Age9,Age10,Age11,Age12,Age13,Age14)>();
         let i = Insert::<'_, (Age0,Age1,Age2,Age3,Age4,Age5,Age6,Age7,Age8,Age9,Age10,Age11,Age12,Age13,Age14,)>::new(world, &state, world.increment_change_tick());
+        println!("bench_test insert");
         for _ in 0..90 {
             i.insert((Age0(0),Age1(0),Age2(0),Age3(0),Age4(0),Age5([0;16]),Age6(0),Age7(0),Age8(0),Age9(0),Age10(0),Age11(0),Age12(0),Age13(0),Age14(0)));
         }
+        println!("bench_test insert ok");
         for _ in 0..500 {
             let s = Box::new(IntoSystem::into_system(print_changed_entities));
             app.register(s);
@@ -278,7 +283,7 @@ mod test_bevy {
     fn bench_bevy(b: &mut Bencher) {
         // Create a new empty World to hold our Entities, Components and Resources
         let mut world = World::new();
-        for _ in 0..90 {
+        for _ in 0..900 {
             world.spawn((Age0(0),Age1(0),Age2(0),Age3(0),Age4(0),Age5([0;16]),Age6(0),Age7(0),Age8(0),Age9(0),Age10(0),Age11(0),Age12(0),Age13(0),Age14(0)));
         }
         // Add the counter resource to remember how many entities where spawned
@@ -287,7 +292,7 @@ mod test_bevy {
         // Create a new Schedule, which stores systems and controls their relative ordering
         let mut schedule = Schedule::default();
         for _ in 0..500 {
-            schedule.add_systems((print_changed_entities));
+            schedule.add_systems(print_changed_entities);
         }
         // Add systems to the Schedule to execute our app logic
         // We can label our systems to force a specific run-order between some of them

@@ -1,55 +1,52 @@
 use std::any::TypeId;
 use std::marker::PhantomData;
+use std::mem::transmute;
+use std::sync::atomic::Ordering;
 
 use pi_proc_macros::all_tuples;
+use pi_share::fence;
 
 use crate::archetype::*;
-use crate::raw::{ArchetypeData, ArchetypePtr};
-use crate::record::ComponentRecord;
+use crate::column::Column;
 use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
 use crate::world::*;
 
 pub struct Insert<'world, I: InsertComponents> {
     world: &'world World,
-    state: &'world (ShareArchetype, I::State),
-    tick: Tick,
-    _k: PhantomData<I>,
+    state: &'world (WorldArchetypeIndex, ShareArchetype, I::State),
 }
 
 impl<'world, I: InsertComponents> Insert<'world, I> {
     pub fn new(
         world: &'world World,
-        state: &'world (ShareArchetype, I::State),
+        state: &'world (WorldArchetypeIndex, ShareArchetype, I::State),
         tick: Tick,
     ) -> Self {
         Insert {
             world,
             state,
-            tick,
-            _k: PhantomData,
         }
     }
     pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
-        let (key, mut data) = self.state.0.alloc();
-        I::insert(&self.state.1, components, &mut data);
-        let e = self.world.insert(&self.state.0, key, data, self.tick);
-        I::set_record(&self.state.1, key, self.state.0.get_records());
+        let mut row = self.state.1.table.alloc();
+        I::insert(&self.state.2, components, row);
+        let e = self.world.insert(self.state.0, row);
+        self.state.1.table.set(row, e);
         e
     }
 }
 
 impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
-    type State = (ShareArchetype, I::State);
+    type State = (WorldArchetypeIndex, ShareArchetype, I::State);
     type Item<'w> = Insert<'w, I>;
 
     fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        let ar = world.find_archtype(I::components());
-        world.archtype_ok(&ar);
+        let (ar_index, ar) = world.find_archtype(I::components());
         let s = I::init_state(world, &ar);
         system_meta.write_archetype_map.insert(*ar.get_id());
-        (ar, s)
+        (ar_index, ar, s)
     }
 
     #[inline]
@@ -61,15 +58,18 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     ) -> Self::Item<'world> {
         Insert::new(world, state, change_tick)
     }
+    #[inline]
+    fn after(
+        state: &mut Self::State,
+        _system_meta: &mut SystemMeta,
+        _world: &World,
+        _change_tick: Tick,
+    ) {
+        fence(Ordering::Release)
+    }
+
 }
 
-#[inline(always)]
-fn record(key: ArchetypeKey, records: &Vec<ComponentRecord>, index: ComponentIndex) {
-    let records = unsafe { records.get_unchecked(index as usize) };
-    if records.addeds.len() > 0 {
-        records.added(key);
-    }
-}
 pub trait InsertComponents {
 
     type Item;
@@ -80,16 +80,26 @@ pub trait InsertComponents {
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
 
-    fn insert(state: &Self::State, components: Self::Item, data: &mut ArchetypeData);
-    fn set_record(state: &Self::State, key: ArchetypeKey, records: &Vec<ComponentRecord>);
+    fn insert(state: &Self::State, components: Self::Item, row: Row);
 }
 
-pub struct TState<T: 'static>(pub MemOffset, pub ComponentIndex, PhantomData<T>);
+pub struct TState<T: 'static>(pub *const Column, PhantomData<T>);
 unsafe impl<T> Sync for TState<T> {}
 unsafe impl<T> Send for TState<T> {}
 impl<T: 'static> TState<T> {
-    pub fn new((offset, index): (MemOffset, ComponentIndex)) -> Self {
-        TState(offset, index, PhantomData)
+    #[inline(always)]
+    pub fn new(c:  &Column) -> Self {
+        TState(unsafe {
+         transmute(c)   
+        }, PhantomData)
+    }
+    #[inline(always)]
+    pub fn write(&self, row: Row, val: T) {
+        let c: &mut Column = unsafe {
+         transmute(self.0)   
+        };
+        c.write(row, val);
+        c.record(row);
     }
 }
 
@@ -105,28 +115,19 @@ macro_rules! impl_tuple_insert {
                 vec![$(ComponentInfo::of::<$name>(),)*]
             }
             fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-                ($(TState::new(archetype.get_mem_offset_ti_index(&TypeId::of::<$name>())),)*)
+                ($(TState::new(archetype.get_column(&TypeId::of::<$name>()).unwrap()),)*)
             }
 
             fn insert(
                 _state: &Self::State,
                 _components: Self::Item,
-                _data: &mut ArchetypeData,
+                _row: Row,
             ) {
                 let ($($name,)*) = _components;
                 let ($($state,)*) = _state;
                 $(
-                    {let r = _data.init_component::<$name>($state.0);
-                    r.write($name);}
+                    {$state.write(_row, $name)}
                 )*
-            }
-            fn set_record(
-                _state: &Self::State,
-                _key: ArchetypeKey,
-                _records: &Vec<ComponentRecord>,
-            ){
-                let ($($state,)*) = _state;
-                $(record(_key, _records, $state.1);)*
             }
         }
     };

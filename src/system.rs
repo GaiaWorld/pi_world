@@ -1,6 +1,5 @@
 use std::{any::TypeId, borrow::Cow, collections::HashSet};
 
-use pi_null::Null;
 use smallvec::SmallVec;
 
 use crate::{archetype::Archetype, world::World};
@@ -87,7 +86,7 @@ impl SystemMeta {
         let rw = &self.vec[rw_index];
         for id in rw.writes.iter() {
             // Option<&mut C>，如果原型上没有该组件，则不会写
-            if !ar.get_mem_offset_ti_index(id).0.is_null() {
+            if ar.get_column(id).is_some() {
                 self.write_archetype_map.insert(*ar.get_id());
                 return;
             }
