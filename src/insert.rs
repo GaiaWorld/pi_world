@@ -1,10 +1,8 @@
 use std::any::TypeId;
 use std::marker::PhantomData;
 use std::mem::transmute;
-use std::sync::atomic::Ordering;
 
 use pi_proc_macros::all_tuples;
-use pi_share::fence;
 
 use crate::archetype::*;
 use crate::column::Column;
@@ -12,16 +10,37 @@ use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
 use crate::world::*;
 
+// 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
+pub struct Inserter<'world, I: InsertComponents> {
+    world: &'world World,
+    state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+}
+
+impl<'world, I: InsertComponents> Inserter<'world, I> {
+    pub fn new(
+        world: &'world World,
+        state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+    ) -> Self {
+        Self {
+            world,
+            state,
+        }
+    }
+    pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
+        Insert::<I>::new(self.world, &self.state).insert(components)
+    }
+}
+
+
 pub struct Insert<'world, I: InsertComponents> {
     world: &'world World,
-    state: &'world (WorldArchetypeIndex, ShareArchetype, I::State),
+    state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
 }
 
 impl<'world, I: InsertComponents> Insert<'world, I> {
     pub fn new(
         world: &'world World,
-        state: &'world (WorldArchetypeIndex, ShareArchetype, I::State),
-        tick: Tick,
+        state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
     ) -> Self {
         Insert {
             world,
@@ -29,7 +48,7 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
         }
     }
     pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
-        let mut row = self.state.1.table.alloc();
+        let row = self.state.1.table.alloc();
         I::insert(&self.state.2, components, row);
         let e = self.world.insert(self.state.0, row);
         self.state.1.table.set(row, e);
@@ -38,15 +57,23 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
 }
 
 impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
-    type State = (WorldArchetypeIndex, ShareArchetype, I::State);
+    type State = (ArchetypeWorldIndex, ShareArchetype, I::State);
     type Item<'w> = Insert<'w, I>;
 
-    fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+    fn init_state(world: &World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        let (ar_index, ar) = world.find_archtype(I::components());
+        let components = I::components();
+        let id = ComponentInfo::calc_id(&components);
+        let (ar_index, ar) = world.find_archtype(id, I::components());
         let s = I::init_state(world, &ar);
-        system_meta.write_archetype_map.insert(*ar.get_id());
         (ar_index, ar, s)
+    }
+    fn depend(_world: &World, _system_meta: &SystemMeta, _state: &Self::State, archetype: &Archetype, depend: &mut ArchetypeDependResult) {
+        let components = I::components();
+        let id = ComponentInfo::calc_id(&components);
+        if &id == archetype.id() {
+            depend.merge(ArchetypeDepend::Flag(Flags::WRITE));
+        }
     }
 
     #[inline]
@@ -54,18 +81,9 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
         state: &'world mut Self::State,
         _system_meta: &'world SystemMeta,
         world: &'world World,
-        change_tick: Tick,
-    ) -> Self::Item<'world> {
-        Insert::new(world, state, change_tick)
-    }
-    #[inline]
-    fn after(
-        state: &mut Self::State,
-        _system_meta: &mut SystemMeta,
-        _world: &World,
         _change_tick: Tick,
-    ) {
-        fence(Ordering::Release)
+    ) -> Self::Item<'world> {
+        Insert::new(world, state)
     }
 
 }
@@ -99,7 +117,7 @@ impl<T: 'static> TState<T> {
          transmute(self.0)   
         };
         c.write(row, val);
-        c.record(row);
+        c.added.record(row);
     }
 }
 
@@ -114,8 +132,8 @@ macro_rules! impl_tuple_insert {
             fn components() -> Vec<ComponentInfo> {
                 vec![$(ComponentInfo::of::<$name>(),)*]
             }
-            fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-                ($(TState::new(archetype.get_column(&TypeId::of::<$name>()).unwrap()),)*)
+            fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
+                ($(TState::new(_archetype.get_column(&TypeId::of::<$name>()).unwrap()),)*)
             }
 
             fn insert(
@@ -132,4 +150,4 @@ macro_rules! impl_tuple_insert {
         }
     };
 }
-all_tuples!(impl_tuple_insert, 1, 20, F, S);
+all_tuples!(impl_tuple_insert, 0, 16, F, S);

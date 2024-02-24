@@ -1,8 +1,7 @@
 /// 系统参数的定义
 ///
 use crate::{
-    system::SystemMeta,
-    world::{Tick, World},
+    archetype::{Archetype, ArchetypeDependResult}, system::SystemMeta, world::{Tick, World}
 };
 
 use pi_proc_macros::all_tuples;
@@ -52,6 +51,10 @@ pub trait SystemParam: Sized {
     /// Registers any [`World`] access used by this [`SystemParam`]
     /// and creates a new instance of this param's [`State`](Self::State).
     fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
+
+    #[inline]
+    #[allow(unused_variables)]
+    fn depend(world: &World, system_meta: &SystemMeta, state: &Self::State, archetype: &Archetype, result: &mut ArchetypeDependResult){}
 
     /// Applies any deferred mutations stored in this [`SystemParam`]'s state.
     /// This is used to apply [`Commands`] during [`apply_deferred`](crate::prelude::apply_deferred).
@@ -106,6 +109,12 @@ macro_rules! impl_system_param_tuple {
             fn init_state(_world: &World, _system_meta: &mut SystemMeta) -> Self::State {
                 (($($param::init_state(_world, _system_meta),)*))
             }
+            #[inline]
+            fn depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
+                let ($($param,)*) = state;
+                $($param::depend(_world, _system_meta, $param, _archetype, _result);)*
+            }
+
 
             #[inline]
             fn before(($($param,)*): &mut Self::State, _system_meta: &mut SystemMeta, _world: &World, _change_tick: Tick) {

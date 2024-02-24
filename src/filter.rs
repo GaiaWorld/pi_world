@@ -7,12 +7,12 @@
 //!
 
 use pi_proc_macros::all_tuples;
+use smallvec::SmallVec;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
 use crate::archetype::Archetype;
-use crate::system::ReadWrite;
-use crate::world::*;
+use crate::world::World;
 
 pub trait FilterArchetype {
     fn filter_archetype(_archetype: &Archetype) -> bool {
@@ -21,8 +21,8 @@ pub trait FilterArchetype {
 }
 pub trait FilterComponents {
     const LISTENER_COUNT: usize;
-    /// initializes ReadWrite for this [`FilterComponents`] type.
-    fn init_read_write(_world: &World, _rw: &mut ReadWrite) {}
+    /// initializes listener for this [`FilterComponents`] type
+    fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {}
     fn archetype_filter(_archetype: &Archetype) -> bool {
         false
     }
@@ -31,9 +31,7 @@ pub trait FilterComponents {
 pub struct Without<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Without<T> {
     const LISTENER_COUNT: usize = 0;
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.withouts.insert(TypeId::of::<T>());
-    }
+
     fn archetype_filter(archetype: &Archetype) -> bool {
         archetype.get_column(&TypeId::of::<T>()).is_some()
     }
@@ -55,16 +53,16 @@ impl<T: 'static> FilterComponents for With<T> {
 pub struct Added<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Added<T> {
     const LISTENER_COUNT: usize = 1;
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.listeners.push((TypeId::of::<T>(), false));
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
+        listeners.push((TypeId::of::<T>(), false));
     }
 }
 
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.listeners.push((TypeId::of::<T>(), true));
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
+        listeners.push((TypeId::of::<T>(), true));
     }
 }
 
@@ -75,8 +73,8 @@ macro_rules! impl_tuple_filter {
         // SAFETY: defers to soundness `$name: FilterComponents` impl
         impl<$($name: FilterComponents),*> FilterComponents for ($($name,)*) {
             const LISTENER_COUNT: usize = $($name::LISTENER_COUNT + )* 0;
-            fn init_read_write(_world: &World, _rw: &mut ReadWrite) {
-                ($($name::init_read_write(_world, _rw),)*);
+            fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
+                ($($name::init_listeners(_world, _listeners),)*);
             }
             fn archetype_filter(_archetype: &Archetype) -> bool {
                 $(

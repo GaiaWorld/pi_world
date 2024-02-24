@@ -1,5 +1,5 @@
 use core::fmt::*;
-use std::mem::{take, MaybeUninit};
+use std::mem::{take, transmute, MaybeUninit};
 use std::ops::{Index, IndexMut};
 use std::sync::atomic::Ordering;
 
@@ -71,7 +71,12 @@ impl<T> SafeVec<T> {
         SafeVecIter(self.vec.slice(0..self.len()))
     }
     #[inline(always)]
-    pub unsafe fn clear(&mut self) {
+    pub fn collect(&mut self) {
+        self.vec.collect(1);
+    }
+
+    #[inline(always)]
+    pub fn clear(&mut self) {
         let len = take(self.len.get_mut());
         if len == 0 {
             return;
@@ -104,10 +109,10 @@ impl<T> Default for SafeVec<T> {
 
 pub struct SafeVecIter<'a, T>(Iter<'a, MaybeUninit<T>>);
 impl<'a, T> Iterator for SafeVecIter<'a, T> {
-    type Item = &'a T;
+    type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|r| unsafe { &*r.as_ptr() })
+        self.0.next().map(|r| unsafe { transmute(r.as_ptr()) })
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()

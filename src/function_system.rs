@@ -1,15 +1,14 @@
+use core::sync::atomic::Ordering;
 use std::{any::TypeId, borrow::Cow};
 
-/// App包含一个world，和执行器
-///
 use crate::{
-    system::{IntoSystem, System, SystemMeta},
+    archetype::{Archetype, ArchetypeDependResult},
+    system::{IntoSystem, System, SystemMeta, SystemStatus},
     system_parms::SystemParam,
     world::*,
 };
 
 use pi_proc_macros::all_tuples;
-
 
 /// Shorthand way of accessing the associated type [`SystemParam::Item`] for a given [`SystemParam`].
 pub type SystemParamItem<'w, P> = <P as SystemParam>::Item<'w>;
@@ -61,8 +60,8 @@ where
     F: SystemParamFunction<Marker>,
 {
     #[inline]
-    fn name(&self) -> Cow<'static, str> {
-        self.system_meta.name.clone()
+    fn name(&self) -> &Cow<'static, str> {
+        &self.system_meta.name
     }
 
     #[inline]
@@ -70,29 +69,48 @@ where
         TypeId::of::<F>()
     }
     #[inline]
+    fn initialize(&mut self, world: &World) {
+        if self.get_status() != SystemStatus::Init {
+            panic!("Double Initialization Not Allowed")
+        }
+        self.param_state = Some(F::Param::init_state(world, &mut self.system_meta));
+        self.set_status(SystemStatus::Over)
+    }
+    /// get the system status.
+    fn get_status(&self) -> SystemStatus {
+        self.system_meta.get_status()
+    }
+    /// set the system status.
+    fn set_status(&self, status: SystemStatus) {
+        self.system_meta.set_status(status, Ordering::Relaxed);
+    }
+
+    /// system depend the archetype.
+    fn depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        F::Param::depend(
+            world,
+            &self.system_meta,
+            self.param_state.as_ref().unwrap(),
+            archetype,
+            result,
+        )
+    }
+
+    #[inline]
     fn run(&mut self, world: &World) {
         let change_tick = world.increment_change_tick();
         let param_state = self.param_state.as_mut().unwrap();
         F::Param::before(param_state, &mut self.system_meta, world, change_tick);
-
+        self.system_meta
+            .set_status(SystemStatus::Running, Ordering::Relaxed);
         // SAFETY:
-        // - The caller has invoked `update_archetype_component_access`, which will panic
-        //   if the world does not match.
         // - All world accesses used by `F::Param` have been registered, so the caller
         //   will ensure that there are no data access conflicts.
-        let params = F::Param::get_param(
-            param_state,
-            &mut self.system_meta,
-            world,
-            change_tick,
-        );
+        let params = F::Param::get_param(param_state, &mut self.system_meta, world, change_tick);
         self.func.run(params);
         F::Param::after(param_state, &mut self.system_meta, world, change_tick);
-    }
-
-    #[inline]
-    fn initialize(&mut self, world: &World) {
-        self.param_state = Some(F::Param::init_state(world, &mut self.system_meta));
+        self.system_meta
+            .set_status(SystemStatus::Over, Ordering::Release);
     }
 }
 

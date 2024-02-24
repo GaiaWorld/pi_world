@@ -38,7 +38,7 @@ impl ListenerMgr {
         match entry {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
-                let list = ListenerList::new();
+                let list: ListenerList<L, E> = ListenerList::new();
                 let ptr = Box::<ListenerList<L, E>>::into_raw(Box::new(list)) as *const ();
                 let llk = ListenerListKey(self.listener_list.insert(ptr));
                 e.insert(llk);
@@ -140,6 +140,10 @@ impl ListenerMgr {
     pub fn notify_event_by_type<E: 'static>(&self, event: &E) {
         let k = self.get_event_list_key::<E>();
         self.notify_event(k, event);
+    }
+    pub fn collect(&mut self) {
+        self.listener_list.collect();
+        self.event_list.collect();
     }
 }
 
