@@ -49,8 +49,8 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
     }
     pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
         let row = self.state.1.table.alloc();
-        I::insert(&self.state.2, components, row);
         let e = self.world.insert(self.state.0, row);
+        I::insert(&self.state.2, components, e, row);
         self.state.1.table.set(row, e);
         e
     }
@@ -78,10 +78,9 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
 
     #[inline]
     fn get_param<'world>(
-        state: &'world mut Self::State,
-        _system_meta: &'world SystemMeta,
         world: &'world World,
-        _change_tick: Tick,
+        _system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         Insert::new(world, state)
     }
@@ -98,7 +97,7 @@ pub trait InsertComponents {
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
 
-    fn insert(state: &Self::State, components: Self::Item, row: Row);
+    fn insert(state: &Self::State, components: Self::Item, e: Entity, row: Row);
 }
 
 pub struct TState<T: 'static>(pub *const Column, PhantomData<T>);
@@ -112,12 +111,12 @@ impl<T: 'static> TState<T> {
         }, PhantomData)
     }
     #[inline(always)]
-    pub fn write(&self, row: Row, val: T) {
+    pub fn write(&self, e: Entity, row: Row, val: T) {
         let c: &mut Column = unsafe {
          transmute(self.0)   
         };
         c.write(row, val);
-        c.added.record(row);
+        c.added.record(e, row);
     }
 }
 
@@ -139,12 +138,13 @@ macro_rules! impl_tuple_insert {
             fn insert(
                 _state: &Self::State,
                 _components: Self::Item,
+                _e: Entity,
                 _row: Row,
             ) {
                 let ($($name,)*) = _components;
                 let ($($state,)*) = _state;
                 $(
-                    {$state.write(_row, $name)}
+                    {$state.write(_e, _row, $name)}
                 )*
             }
         }

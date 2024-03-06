@@ -4,12 +4,12 @@
 /// 在读写依赖分析后，没有原型变动时，一个原型同时只会被一个system 修改 标记删除 Insert添加。
 /// 但由于存在动态增删组件，并且组件的组合数量爆炸问题，导致会出现没有提前计算依赖关系的原型，会因为动态增删组件而被操作。虽然这种操作只会是Alter添加。
 /// Alter总是采用分配新条目的方式，用Cow方式保证老数据的引用安全。
-/// 可能在执行图的某个特定时刻，多个system对新原型有插入的需求，这个时候Alter利用每条目上的tick的原子保护来保证安全。
+/// 可能在执行图的某个特定时刻，多个system对新原型有插入的需求，这个时候Alter利用AppendVec的原子保护来保证插入安全。
 /// Alter在本地没有找到原型时，有2种情况，一种是找到已存在的原型，一种是没有原型要新创建原型。
-/// 新创建原型，通过ready来保护，通知所有system添加脏列表，这样新增的条目，都会被记录脏。
+/// 新创建原型，通过index来保护，通知所有system添加脏列表，这样新增的条目，都会被记录脏。
 /// 已存在的原型，是有可能正在被其他System读写和监听Change和Add的。为了杜绝这种情况，要求在对应原型创建时，ArchetypeDepend计算依赖时，将返回Alter后的原型idArchetypeDepend::Alter(u128)，执行图会查找或新建alter原型id的图节点，并保证一定会在图依赖上有安全的读写。
 /// system监听Change和Add组件，是通过在原型上添加自己关心组件的脏列表来监听。
-/// 有外部调度的安全的读写（写串行，读并行，先写后读），所以Change一定在单个system内操作的。 但考虑以后单system也可能开多future并行修改，而Archetype作为基础结构已经内置了ComponentRecord，所以ComponentRecord的vec还是用线程安全的AppendVec。
+/// 有外部调度的安全的读写（写串行，读并行，先写后读），所以Change一定在单个system内操作的。 但考虑以后单system也可能开多future并行修改，而Archetype作为基础结构已经内置了ComponentDirty，所以ComponentDirty的vec还是用线程安全的AppendVec。
 /// Add由于有可能被其他system的Alter添加，所以脏的add_len来保证没有监听到的Add下次会监听。
 ///
 /// 只有主调度完毕后，所有的脏都被处理和清理后，才进行整理，只有整理才会调整Row。在整理前，Row都是递增的。
@@ -28,7 +28,7 @@ use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
 use crate::column::Column;
-use crate::dirty::{ComponentDirty, DirtyIndex};
+use crate::dirty::DirtyIndex;
 use crate::table::Table;
 use crate::world::World;
 
@@ -41,10 +41,10 @@ pub type ColumnIndex = u32;
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Flags: u32 {
-        const WITHOUT = 0b0001;
-        const READ = 0b0010;
-        const WRITE = 0b0100;
-        const DELETE = 0b1000;
+        const WITHOUT =     0b0001;
+        const READ =        0b0010;
+        const WRITE =       0b0100;
+        const DELETE =      0b1000;
     }
 }
 
@@ -68,7 +68,7 @@ impl ArchetypeDependResult {
     pub fn merge(&mut self, depend: ArchetypeDepend) {
         match depend {
             ArchetypeDepend::Flag(f) => self.flag |= f,
-            ArchetypeDepend::Alter(t) if (self.flag & Flags::WITHOUT).bits() == 0 => {
+            ArchetypeDepend::Alter(t) if !self.flag.contains(Flags::WITHOUT) => {
                 self.alters.push(t)
             }
             _ => (),
@@ -169,18 +169,21 @@ impl Archetype {
         owner: TypeId,
         listeners: &SmallVec<[(TypeId, bool); 1]>,
     ) {
+        //println!("add_dirty_listeners");
         for (tid, changed) in listeners.iter() {
             let index = self.get_column_index(tid);
             if index.is_null() {
                 continue;
             }
+            println!(
+                "add_dirty_listeners, tid:{:?}, changed:{} index:{}",
+                tid, changed, index
+            );
             let c = self.table.get_column_unchecked(index);
-            let ptr: *mut ComponentDirty = transmute(&c);
-            let r: &mut Column = transmute(ptr);
             if *changed {
-                r.changed.insert_listener(owner);
+                c.changed.insert_listener(owner);
             } else {
-                r.added.insert_listener(owner);
+                c.added.insert_listener(owner);
             }
         }
     }
@@ -276,7 +279,8 @@ impl Archetype {
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) {
-        self.table.collect(world, action, set)
+        let r = self.table.collect(world, action, set);
+        println!("{:?} collect {}", self.name, r);
     }
 }
 

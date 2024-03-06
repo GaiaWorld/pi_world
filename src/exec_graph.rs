@@ -6,25 +6,36 @@
 //! 可线程安全的放入新节点和边，并线程安全的连接from和to的边
 //! 如果有A对X写和Y读，则创建Y-->A和A-->X的边
 //! 如果有A和B都会对X写，写不能并行，而A在B前面先写，则创建A-->B的边， 这样B就会等待A执行后再执行
-
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
-use pi_append_vec::AppendVec;
-use pi_arr::Iter;
-// use pi_async_rt::prelude::AsyncRuntime;
-use pi_null::Null;
-use pi_share::{fence, Share, ShareU32, ShareU64};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hint::spin_loop;
 use std::marker::PhantomData;
 use std::mem::transmute;
 use std::sync::atomic::Ordering;
 
+use async_channel::{bounded, Receiver, RecvError, Sender};
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
+
+use pi_append_vec::AppendVec;
+use pi_arr::Iter;
+use pi_async_rt::prelude::AsyncRuntime;
+use pi_null::Null;
+use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
+
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 use crate::dot::{Config, Dot};
 use crate::listener::Listener;
-use crate::system::{BoxedSystem, SystemStatus};
+use crate::safe_vec::SafeVec;
+use crate::system::BoxedSystem;
 use crate::world::{ArchetypeInit, World};
+
+const NODE_STATUS_STEP: u32 = 0x1000_0000;
+const NODE_STATUS_WAIT: u32 = 0;
+const NODE_STATUS_RUN_START: u32 = NODE_STATUS_STEP; // 节点执行前（包括原型节点）前，状态被设为RUN_START
+const NODE_STATUS_RUNNING: u32 = NODE_STATUS_RUN_START + NODE_STATUS_STEP; // system系统如果通过长度检查新原型后，状态被设为Running
+const NODE_STATUS_RUN_END: u32 = NODE_STATUS_RUNNING + NODE_STATUS_STEP; // 节点执行后（包括原型节点）前，状态被设为RUN_END
+const NODE_STATUS_OVER: u32 = NODE_STATUS_RUN_END + NODE_STATUS_STEP; // 节点的所有to邻居都被调用后，状态才为Over
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct NodeIndex(u32);
@@ -97,12 +108,10 @@ impl Direction {
 pub struct ExecGraph(Share<GraphInner>);
 
 impl ExecGraph {
-    pub fn new() -> Self {
-        Self(Share::new(GraphInner::new()))
-    }
-    pub fn add_system(&self, system: BoxedSystem) {
+
+    pub fn add_system(&self, system: (usize, Cow<'static, str>)) -> usize {
         let inner = self.0.as_ref();
-        inner.nodes.insert(Node::new_system(system));
+        inner.nodes.insert(Node::new_system(system))
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -123,68 +132,72 @@ impl ExecGraph {
         inner.to_len.load(Ordering::Relaxed)
     }
     /// 初始化方法，只能被执行一次， 执行前必须将system添加完毕
-    pub fn initialize(&mut self, world: &mut World) {
+    pub fn initialize(&mut self, world: &mut World, systems: Share<SafeVec<BoxedSystem>>) {
         let inner = self.0.as_ref();
-        // 首先初始化所有的system，有Insert的会产生对应的原型
-        for node in inner.nodes.iter() {
-            match &mut node.label {
-                NodeType::System(system) => {
-                    system.initialize(world);
-                }
-                _ => break,
-            }
-        }
-        println!("system initialized");
+        inner
+            .to_len
+            .store(inner.nodes.len() as u32, Ordering::Relaxed);
         // todo 遍历world上的单例，测试和system的读写关系
         // 遍历已有的原型，添加原型节点，添加原型和system的依赖关系产生的边
         for r in world.archetype_arr.iter() {
-            self.add_archetype_node(r, world);
+            self.add_archetype_node(r, world, &systems);
         }
-        println!("single_archtypes initialized: {}", Dot::with_config(&self, Config::empty()));
+        println!(
+            "single_archtypes initialized: {}",
+            Dot::with_config(&self, Config::empty())
+        );
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
         inner.nodes.collect(1);
         inner.edges.collect(1);
-        inner.to_len.store(0, Ordering::Relaxed);
+        let mut to_len = 0;
         // 计算froms节点和to_len
         for (index, node) in inner.nodes.iter().enumerate() {
             if node.edge(Direction::From).0 == 0 {
                 inner.froms.push(NodeIndex::new(index));
             }
             if node.edge(Direction::To).0 == 0 {
-                inner.to_len.fetch_add(1, Ordering::Relaxed);
+                to_len += 1;
             }
         }
+        assert_eq!(to_len, self.to_len());
+        println!(
+            "graph initialized, system_len:{}, ",systems.len());
         // 监听原型创建， 添加原型节点和边
-        let notify = Notify(self.clone(), true, PhantomData);
+        let notify = Notify(self.clone(), systems, true, PhantomData);
         world.listener_mgr.register_event(Share::new(notify));
         // 整理world的监听器，合并内存
         world.listener_mgr.collect();
-        println!("graph initialized, froms: {:?},  to_len:{}", self.froms(), self.to_len());
+        println!(
+            "graph initialized, froms: {:?},  to_len:{}",
+            self.froms(),
+            self.to_len()
+        );
     }
-    // 添加原型节点，添加原型和system的依赖关系产生的边。 被前面的调用方锁保护，同一时间只会有一个线程调用该方法
-    fn add_archetype_node(&self, archetype: &Archetype, world: &World) {
+    // 添加原型节点，添加原型和system的依赖关系产生的边。
+    // 内部加锁操作，一次只能添加1个原型。
+    // world的find_archetype保证了不会重复加相同的原型。
+    fn add_archetype_node(
+        &self,
+        archetype: &Archetype,
+        world: &World,
+        systems: &Share<SafeVec<BoxedSystem>>,
+    ) {
         let inner = self.0.as_ref();
+        let _unused = inner.lock.lock();
         let id_name = (*archetype.id(), archetype.name().clone());
         println!("add_archetype_node, id_name: {:?}", &id_name);
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
         let node_index = inner.find_node(id_name);
-        // 将from_count加1，这样动态添加时，不会被执行
-        unsafe {
-            inner
-                .nodes
-                .load_unchecked(node_index.index())
-                .from_count
-                .fetch_add(1, Ordering::Relaxed)
-        };
         let mut depend = ArchetypeDependResult::new();
         // 检查每个system和该原型的依赖关系，建立图连接
         for (system_index, node) in inner.nodes.iter().enumerate() {
             let system_index = NodeIndex::new(system_index);
-            match &mut node.label {
-                NodeType::System(system) => {
-                    system.depend(world, archetype, &mut depend);
-                    if (depend.flag & Flags::WITHOUT).bits() > 0 {
+            match &node.label {
+                NodeType::System((sys_index, _)) => {
+                    let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                    sys.depend(world, archetype, &mut depend);
+                    if depend.flag.contains(Flags::WITHOUT) {
                         // 如果被排除，则跳过
                         continue;
                     }
@@ -215,76 +228,90 @@ impl ExecGraph {
             }
             depend.clear();
         }
-        // 将原型节点的from_count -= 1
-        let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-        let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
-        // 因为创建该原型的Alter的系统还未执行完，并且该原型一定被该系统写依赖，r一定大于1
-        if r == 1 {
-            panic!("invalid state")
-        }
     }
 
-    // pub async fn run<A: AsyncRuntime>(&self, rt: &A, world: &'static World) {
-    pub fn run(&mut self, world: &mut World) {
-        if self.0.as_ref().froms.is_empty() {
-            self.initialize(world);
-        }
+    pub async fn run<A: AsyncRuntime>(
+        &self,
+        rt: &A,
+        world: &'static World,
+        systems: &'static Share<SafeVec<BoxedSystem>>,
+    ) -> std::result::Result<(), RecvError> {
         let inner = self.0.as_ref();
+        assert!(inner.to_len.load(Ordering::Relaxed) > 0);
         let to_len = inner.to_len.load(Ordering::Relaxed);
         inner.to_count.store(to_len, Ordering::Relaxed);
-        println!("graph run:---------------, to_len:{}", to_len);
+        println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
 
         // 确保看见每节点上的from_len, from_len被某个system的Alter设置时，system结束时也会调用fence(Ordering::Release)
         fence(Ordering::Acquire);
-        // 将system的状态设置为Wait
-        // 将graph.nodes的count设置为from_len
+        // 将所有节点的状态设置为Wait
+        // 将graph.nodes的from_count设置为from_len
         for node in inner.nodes.iter() {
-            match &node.label {
-                NodeType::System(system) => {
-                    system.set_status(SystemStatus::Wait);
-                }
-                _ => (),
-            }
+            node.status.store(NODE_STATUS_WAIT, Ordering::Relaxed);
             node.from_count
                 .store(node.edge(Direction::From).0, Ordering::Relaxed);
         }
-        // todo 构建一个AsyncValue
         // 从graph的froms开始执行
         for i in inner.froms.iter() {
-            // rt.spawn(async move {
-            self.exec(world, *i); //.await;
-                                  //});
+            let rt1 = rt.clone();
+            let index = *i;
+            let g = self.clone();
+            let _ = rt.spawn(async move {
+                let rt2 = rt1;
+                g.exec(&rt2, world, systems, index);
+            });
         }
-        // todo wait在AsyncValue上
+        inner.receiver.recv().await
     }
-    // async fn exec<A: AsyncRuntime>(&self, rt: &A, world: &'static World, node_index: u32) {
-    fn exec(&self, world: &World, node_index: NodeIndex) {
+    fn exec<A: AsyncRuntime>(
+        &self,
+        rt: &A,
+        world: &'static World,
+        systems: &'static SafeVec<BoxedSystem>,
+        node_index: NodeIndex,
+    ) {
         println!("exec, node_index: {:?}", node_index);
         let inner = self.0.as_ref();
         let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-        // 如果node为要执行的system，则执行
+        // RUN_START
+        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
         match &mut node.label {
-            NodeType::System(sys) => {
+            NodeType::System((sys_index, _)) => {
+                println!("exec, sys_index: {:?}", sys_index);
+                let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                // 如果node为要执行的system，则执行对齐原型
+                sys.align(world);
+                node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                 sys.run(world);
             }
-            _ => (),
+            _ => {
+                // RUNNING
+                node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+            }
+        }
+        // RUN_END
+        let mut status =
+            node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed) + NODE_STATUS_STEP;
+        // 添加to邻居时，会锁定状态。如果被锁定，则等待锁定结束才去获取邻居
+        // 如果全局同时有2个原型被添加，NODE_STATUS_RUN_END之后status又被加1，则会陷入死循环
+        while status != NODE_STATUS_RUN_END {
+            spin_loop();
+            status = node.status.load(Ordering::Relaxed);
         }
         // 执行后，检查to边的数量
         // 创建to邻居节点的迭代器
         let it = NeighborIter::new(inner, Direction::To, node.edge(Direction::To));
-        let mut it1 = it.clone();
-        print!("exec next, node_index: {:?}, edge: {:?}, [", node_index, it1.edge);
-        while let Some( n ) = it1.next() {
-            print!("n:{:?}, d:{:?}, ", n, &it1.edge.1);
-        }
-        println!("]");
+        // let mut it1 = it.clone();
+        // print!("exec next, node_index: {:?}, [", node_index);
+        // while let Some(n) = it1.next() {
+        //     print!("n:{:?}, ", n);
+        // }
+        // println!("]");
         if it.edge.0 == 0 {
+            // 设置成结束状态
+            node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
             //  to边的数量为0，表示为结束节点，减少to_count
-            let r = inner.to_count.fetch_sub(1, Ordering::Relaxed);
-            if r == 1 {
-                // todo 减少到0，则设置AsyncValue的值
-            }
-            return;
+            return inner.run_over(rt);
         }
         // 迭代to的邻居节点，减节点的from_count，如果减到0，则递归执行
         for n in it {
@@ -295,15 +322,20 @@ impl ExecGraph {
                 if !node.is_system() {
                     // 如果不是系统节点，则递归执行
                     // todo self.exec(rt, world, n).await;
-                    self.exec(world, n);
+                    self.exec(rt, world, systems, n);
                 } else {
                     // 派发执行系统节点
-                    // rt.spawn(async move {
-                    self.exec(world, n); //.await;
-                                         //});
+                    let rt1 = rt.clone();
+                    let g = self.clone();
+                    let _ = rt.spawn(async move {
+                        let rt2 = rt1;
+                        g.exec(&rt2, world, systems, n); //.await;
+                    });
                 }
             }
         }
+        // 设置成结束状态
+        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
     }
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn collect(&mut self) {
@@ -313,28 +345,20 @@ impl ExecGraph {
     }
 }
 
-#[derive(Default)]
 pub struct GraphInner {
     nodes: AppendVec<Node>,
     edges: AppendVec<Edge>,
     map: DashMap<u128, NodeIndex>,
-    froms: Vec<NodeIndex>,
     to_len: ShareU32,
+    froms: Vec<NodeIndex>,
+    lock: ShareMutex<()>,
     to_count: ShareU32,
+    sender: Sender<()>,
+    receiver: Receiver<()>,
 }
 
 impl GraphInner {
-    pub fn new() -> Self {
-        Self {
-            nodes: Default::default(),
-            edges: Default::default(),
-            map: Default::default(),
-            froms: Default::default(),
-            to_len: ShareU32::new(0),
-            to_count: ShareU32::new(0),
-        }
-    }
-    // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
+    // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系， 图的to_len也加1
     fn find_node(&self, id_name: (u128, Cow<'static, str>)) -> NodeIndex {
         match self.map.entry(id_name.0) {
             Entry::Occupied(entry) => entry.get().clone(),
@@ -388,27 +412,36 @@ impl GraphInner {
         }
         false
     }
-    // 添加边
+    /// 添加边，3种情况， from为sys+to为ar， from为ar+to为sys， from为sys+to为sys
+    /// from节点在被link时， 有可能正在执行，如果先执行后链接，则from_count不应该被加1。 如果先链接后执行，则from_count应该被加1。但代码上没有很好的方法区分两者。
+    /// 因此，采用锁阻塞的方法，先将from节点的status锁加上，然后判断status为Wait，则可以from_len加1并链接，如果status为Over则不加from_len并链接。如果为Running，则等待status为Over后再进行链接。
+    /// 因为采用status加1来锁定， 所以全局只能同时有1个原型被添加。
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
-        // println!("add_edge, from:{:?}, to:{:?}", from, to);
+        // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
-        // 这一步，如果该system还未执行，则不会执行， 因为要等待from_count为0
-        let r = to_node.from_count.fetch_add(1, Ordering::Relaxed);
-        let system_r = if r == 0 {
-            // 如果from_count已经为0，表示正在执行或已经执行，则等待该system执行
-            match &to_node.label {
-                NodeType::System(system) => Some(system),
-                _ => None,
-            }
+        // 获得from节点
+        let from_node = unsafe { self.nodes.load_unchecked(from.index()) };
+        // 锁定status, exec时，就会等待解锁后，才访问to边
+        let status = from_node.status.fetch_add(1, Ordering::Relaxed);
+        // println!("add_edge, from:{:?}, to:{:?}, from_status:{:?}", from, to, status);
+        let r = if status < NODE_STATUS_RUN_END {
+            // 这一步，如果该to节点还未执行，则不会执行， 因为要等待from_count为0
+            to_node.from_count.fetch_add(1, Ordering::Relaxed)
+        } else if status >= NODE_STATUS_OVER {
+            1
         } else {
-            None
+            // 等待status为Over
+            while from_node.status.load(Ordering::Relaxed) < NODE_STATUS_OVER {
+                spin_loop();
+            }
+            1
         };
+
         // 获得to节点的from边数据
         let (from_edge_len, from_next_edge) = to_node.edge(Direction::From);
         let from_cur = encode(from_edge_len, from_next_edge.0);
 
         // 获得from节点的to边数据
-        let from_node = unsafe { self.nodes.load_unchecked(from.index()) };
         let (to_edge_len, to_next_edge) = from_node.edge(Direction::To);
         let to_cur = encode(to_edge_len, to_next_edge.0);
 
@@ -439,15 +472,18 @@ impl GraphInner {
             &e,
             Direction::To,
         );
+        // status解锁
+        from_node.status.fetch_sub(1, Ordering::Relaxed);
 
-        // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1
+        // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1, to_count也减1
         if old_to_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
+            self.to_count.fetch_sub(1, Ordering::Relaxed);
         }
-        // 该system的from_count已经为0，表示正在执行或已经执行，则等待该system执行
-        if let Some(system) = system_r {
-            while system.get_status() == SystemStatus::Wait {
-                std::hint::spin_loop();
+        // 该to节点的from_count已经为0，表示正在执行或已经执行，则等待该to节点执行到RUNNING，这样返回后，确保该to节点为system，则不会看到该原型
+        if r == 0 {
+            while to_node.status.load(Ordering::Relaxed) < NODE_STATUS_RUNNING {
+                spin_loop();
             }
         }
     }
@@ -474,7 +510,7 @@ impl GraphInner {
             Err(old) => old,
         };
         let next_edge = loop {
-            std::hint::spin_loop();
+            spin_loop();
             // 更新next_edge
             let r = decode(cur);
             edge_len = r.0;
@@ -503,8 +539,36 @@ impl GraphInner {
         };
         NeighborIter::new(self, d, edge)
     }
+
+    // 尝试run是否over
+    fn run_over<A: AsyncRuntime>(&self, rt: &A) {
+        let r = self.to_count.fetch_sub(1, Ordering::Relaxed);
+        // println!("run_over, {}", r);
+        if r == 1 {
+            let s = self.sender.clone();
+            let _ = rt.spawn(async move {
+                s.send(()).await.unwrap();
+            });
+        }
+    }
 }
 
+impl Default for GraphInner {
+    fn default() -> Self {
+        let (sender, receiver) = bounded(1);
+        Self {
+            nodes: Default::default(),
+            edges: Default::default(),
+            map: Default::default(),
+            to_len: ShareU32::new(0),
+            froms: Default::default(),
+            lock: ShareMutex::new(()),
+            to_count: ShareU32::new(0),
+            sender,
+            receiver,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct NeighborIter<'a> {
     inner: &'a GraphInner,
@@ -536,7 +600,7 @@ impl<'a> Iterator for NeighborIter<'a> {
 
 pub enum NodeType {
     None,
-    System(BoxedSystem),
+    System((usize, Cow<'static, str>)),
     Archetype((u128, Cow<'static, str>)),
     Single(Cow<'static, str>),
 }
@@ -545,7 +609,7 @@ impl NodeType {
     pub fn type_name(&self) -> &Cow<'static, str> {
         match &self {
             NodeType::None => &Cow::Borrowed("None"),
-            NodeType::System(s) => s.name(),
+            NodeType::System(s) => &s.1,
             NodeType::Archetype(s) => &s.1,
             NodeType::Single(s) => &s,
         }
@@ -555,7 +619,7 @@ impl Debug for NodeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match &self {
             NodeType::None => write!(f, "None"),
-            NodeType::System(s) => write!(f, "System({:?})", s.name()),
+            NodeType::System(s) => write!(f, "Archetype({:?})", s),
             NodeType::Archetype(s) => write!(f, "Archetype({:?})", s),
             NodeType::Single(s) => write!(f, "Single({:?})", s),
         }
@@ -572,15 +636,17 @@ const NULL_EDGE: u64 = encode(0, u32::MAX);
 pub struct Node {
     // edges的索引，from在0位， to在1位。ShareU64里，低32位是edge总数量。高32位是第一个edge的索引。
     edges: [ShareU64; 2],
+    status: ShareU32,
     label: NodeType,
     // from edge的计数，每from执行一次，会减一
     from_count: ShareU32,
 }
 impl Node {
     #[inline(always)]
-    fn new_system(system: BoxedSystem) -> Self {
+    fn new_system(system: (usize, Cow<'static, str>)) -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
+            status: ShareU32::new(NODE_STATUS_OVER),
             label: NodeType::System(system),
             from_count: ShareU32::new(0),
         }
@@ -589,6 +655,7 @@ impl Node {
     fn new_archetype(id_name: (u128, Cow<'static, str>)) -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
+            status: ShareU32::new(NODE_STATUS_OVER),
             label: NodeType::Archetype(id_name),
             from_count: ShareU32::new(0),
         }
@@ -617,6 +684,7 @@ impl Null for Node {
     fn null() -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
+            status: ShareU32::new(NODE_STATUS_OVER),
             label: NodeType::None,
             from_count: ShareU32::new(0),
         }
@@ -710,19 +778,20 @@ pub(crate) const fn decode(value: u64) -> (u32, u32) {
     (low as u32, high as u32)
 }
 
-struct Notify<'a>(ExecGraph, bool, PhantomData<&'a ()>);
+struct Notify<'a>(
+    ExecGraph,
+    Share<SafeVec<BoxedSystem>>,
+    bool,
+    PhantomData<&'a ()>,
+);
 impl<'a> Listener for Notify<'a> {
     type Event = ArchetypeInit<'a>;
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&ar.0, &ar.1);
-        if self.1 {
+        self.0.add_archetype_node(&ar.0, &ar.1, &self.1);
+        if self.2 {
             println!("{}", Dot::with_config(&self.0, Config::empty()));
         }
     }
-}
-
-pub trait AsyncRuntime: Clone {
-    fn spawn<F>(&self, _future: F) {}
 }

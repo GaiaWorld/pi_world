@@ -1,9 +1,8 @@
-use core::sync::atomic::Ordering;
 use std::{any::TypeId, borrow::Cow};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult},
-    system::{IntoSystem, System, SystemMeta, SystemStatus},
+    system::{IntoSystem, System, SystemMeta},
     system_parms::SystemParam,
     world::*,
 };
@@ -70,21 +69,8 @@ where
     }
     #[inline]
     fn initialize(&mut self, world: &World) {
-        if self.get_status() != SystemStatus::Init {
-            panic!("Double Initialization Not Allowed")
-        }
         self.param_state = Some(F::Param::init_state(world, &mut self.system_meta));
-        self.set_status(SystemStatus::Over)
     }
-    /// get the system status.
-    fn get_status(&self) -> SystemStatus {
-        self.system_meta.get_status()
-    }
-    /// set the system status.
-    fn set_status(&self, status: SystemStatus) {
-        self.system_meta.set_status(status, Ordering::Relaxed);
-    }
-
     /// system depend the archetype.
     fn depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
         F::Param::depend(
@@ -95,22 +81,17 @@ where
             result,
         )
     }
+    #[inline]
+    fn align(&mut self, world: &World) {
+        let param_state = self.param_state.as_mut().unwrap();
+        F::Param::align(world, &mut self.system_meta, param_state);
+    }
 
     #[inline]
     fn run(&mut self, world: &World) {
-        let change_tick = world.increment_change_tick();
         let param_state = self.param_state.as_mut().unwrap();
-        F::Param::before(param_state, &mut self.system_meta, world, change_tick);
-        self.system_meta
-            .set_status(SystemStatus::Running, Ordering::Relaxed);
-        // SAFETY:
-        // - All world accesses used by `F::Param` have been registered, so the caller
-        //   will ensure that there are no data access conflicts.
-        let params = F::Param::get_param(param_state, &mut self.system_meta, world, change_tick);
+        let params = F::Param::get_param(world, &mut self.system_meta, param_state);
         self.func.run(params);
-        F::Param::after(param_state, &mut self.system_meta, world, change_tick);
-        self.system_meta
-            .set_status(SystemStatus::Over, Ordering::Release);
     }
 }
 

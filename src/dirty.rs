@@ -4,19 +4,20 @@
 //! AddedIndex和ChangedIndex仅记录本system query读取到的最后位置
 //! 每Column用AppendVec脏所有Added和Changed的Row，也不做去重
 //! 查询时，每Query::Filter内维护自己的fixedbitset，用来做去重（可去重多次修改相同组件和或修改相同组件）
-//! 查询时，如果读到某个Row的Entity为0，表示有正在写的脏，则中断本次查询并脏到AddedIndex和ChangedIndex上
 //! 整理时，如果该Column所关联的所有AddedIndex都和该AppendVec的长度一样，则所有AddedIndex和AppendVec就可以清空，否则继续保留，等下一帧再检查是否清空。 因为必须保证Row不被错误重用，只有清空的情况下，才可以做原型的Removed整理。
 //!
 use core::fmt::*;
-use std::any::TypeId;
+use std::{any::TypeId, cell::UnsafeCell};
 use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
+use pi_null::Null;
 use pi_share::ShareUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetype, ColumnIndex, Row};
+use crate::world::Entity;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DirtyIndex {
@@ -37,7 +38,7 @@ impl DirtyIndex {
         }
     }
     #[inline]
-    pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, Row> {
+    pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, EntityDirty> {
         let r = if self.column_index >= 0 {
             &archetype
                 .table
@@ -51,21 +52,45 @@ impl DirtyIndex {
         };
         let end = r.vec.len();
         // 从上次读取到的位置开始读取
-        let len = unsafe { &r.listeners.get_unchecked(self.vec_index as usize).1 };
+        let len = unsafe { &r.listener_list().get_unchecked(self.vec_index as usize).1 };
         let start = len.load(Ordering::Relaxed);
         len.store(end, Ordering::Relaxed);
         r.vec.slice(start..end)
     }
 }
 #[derive(Debug, Default)]
-pub struct ComponentDirty {
-    vec: AppendVec<Row>,                  // 记录的脏Row，可以重复
-    listeners: Vec<(TypeId, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
+pub(crate) struct EntityDirty{
+    pub(crate) e:Entity,
+    pub(crate) row: Row,
 }
+impl Null for EntityDirty {
+    fn is_null(&self) -> bool {
+        self.e.is_null()
+    }
+
+    fn null() -> Self {
+        EntityDirty{
+            e:Entity::null(),
+            row:Row::null(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ComponentDirty {
+    listeners: UnsafeCell<Vec<(TypeId, ShareUsize)>>, // 每个监听器的TypeId和当前读取的长度
+    vec: AppendVec<EntityDirty>,                  // 记录的脏Row，可以重复
+}
+unsafe impl Sync for ComponentDirty {}
+unsafe impl Send for ComponentDirty {}
 impl ComponentDirty {
     /// 插入一个监听者的类型id
-    pub(crate) fn insert_listener(&mut self, owner: TypeId) {
-        self.listeners.push((owner, ShareUsize::new(0)));
+    pub(crate) fn insert_listener(&self, owner: TypeId) {
+        unsafe { &mut *self.listeners.get()}.push((owner, ShareUsize::new(0)));
+    }
+    /// 插入一个监听者的类型id
+    pub(crate) fn listener_list(&self) -> &Vec<(TypeId, ShareUsize)>{
+        unsafe { &*self.listeners.get() }
     }
     pub fn find(
         &self,
@@ -74,7 +99,7 @@ impl ComponentDirty {
         changed: bool,
         result: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
-        for (j, d) in self.listeners.iter().enumerate() {
+        for (j, d) in self.listener_list().iter().enumerate() {
             if d.0 == owner {
                 result.push(DirtyIndex::new(changed, index, j))
             }
@@ -82,28 +107,29 @@ impl ComponentDirty {
     }
     #[inline(always)]
     pub(crate) fn listener_len(&self) -> usize {
-        self.listeners.len()
+        self.listener_list().len()
     }
     #[inline(always)]
-    pub(crate) fn record_unchecked(&self, row: Row) {
-        self.vec.insert(row);
+    pub(crate) fn record_unchecked(&self, e: Entity, row: Row) {
+        self.vec.insert(EntityDirty{e, row});
     }
     #[inline(always)]
-    pub(crate) fn record(&self, row: Row) {
-        if !self.listeners.is_empty() {
-            self.vec.insert(row);
+    pub(crate) fn record(&self, e: Entity, row: Row) {
+        if !self.listener_list().is_empty() {
+            self.vec.insert(EntityDirty{e, row});
         }
     }
     // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
     pub(crate) fn collect(&mut self) -> bool {
-        if self.listeners.is_empty() {
+        let listeners = self.listeners.get_mut();
+        if listeners.is_empty() {
             return true
         }
         let len = self.vec.len();
         if len == 0 {
             return true
         }
-        for (_, read_len) in self.listeners.iter_mut() {
+        for (_, read_len) in listeners.iter_mut() {
             if *read_len.get_mut() < len {
                 return false;
             }
@@ -113,7 +139,7 @@ impl ComponentDirty {
         if self.vec.vec_capacity() < len {
             unsafe { self.vec.vec_reserve(len - self.vec.vec_capacity()) };
         }
-        for (_, read_len) in self.listeners.iter_mut() {
+        for (_, read_len) in listeners.iter_mut() {
             *read_len.get_mut() = 0;
         }
         true

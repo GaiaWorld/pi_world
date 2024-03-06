@@ -18,32 +18,31 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::sync::atomic::Ordering;
 
-use crate::archetype::{Archetype, ComponentInfo, Row, ShareArchetype, ArchetypeWorldIndex};
+use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype};
 use crate::insert::*;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::query::QueryError;
-use crate::safe_vec::SafeVec;
-use dashmap::iter::Iter;
+use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
 use pi_null::Null;
-use pi_share::{Share, ShareUsize};
-use pi_slot::SlotMap;
+use pi_share::Share;
+use pi_slot::{Iter, SlotMap};
 
 new_key_type! {
     pub struct Entity;
 }
 
-/// A value that tracks when a system ran relative to other systems.
-/// This is used to power change detection.
-pub type Tick = usize;
-
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
 #[derive(Clone, Debug)]
-pub struct ArchetypeOk<'a>(pub &'a ShareArchetype, pub ArchetypeWorldIndex, pub &'a World);
+pub struct ArchetypeOk<'a>(
+    pub &'a ShareArchetype,
+    pub ArchetypeWorldIndex,
+    pub &'a World,
+);
 
 #[derive(Debug)]
 pub struct World {
@@ -55,7 +54,6 @@ pub struct World {
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
-    change_tick: ShareUsize,
 }
 impl World {
     pub fn new() -> Self {
@@ -71,14 +69,7 @@ impl World {
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
-            change_tick: ShareUsize::new(1),
         }
-    }
-    pub fn change_tick(&self) -> Tick {
-        self.change_tick.load(Ordering::Relaxed)
-    }
-    pub fn increment_change_tick(&self) -> Tick {
-        self.change_tick.fetch_add(1, Ordering::Relaxed)
     }
     /// 创建一个插入器
     pub fn make_inserter<I: InsertComponents>(&self) -> Inserter<I> {
@@ -91,6 +82,9 @@ impl World {
     pub fn empty_archetype(&self) -> &ShareArchetype {
         &self.empty_archetype
     }
+    pub fn entity_list<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
+        self.entitys.iter()
+    }
 
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
@@ -98,7 +92,7 @@ impl World {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.ar_index()) };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
         let tid = TypeId::of::<T>();
         if let Some(c) = ar.get_column(&tid) {
             Ok(c.get_mut(addr.row))
@@ -110,8 +104,11 @@ impl World {
     pub fn get_archetype(&self, id: u128) -> Option<Ref<u128, ShareArchetype>> {
         self.archetype_map.get(&id)
     }
-    pub fn archetype_list<'a>(&'a self) -> Iter<'a, u128, ShareArchetype> {
-        self.archetype_map.iter()
+    pub fn index_archetype(&self, index: ArchetypeWorldIndex) -> Option<&ShareArchetype> {
+        self.archetype_arr.get(index as usize)
+    }
+    pub fn archetype_list<'a>(&'a self) -> SafeVecIter<'a, ShareArchetype> {
+        self.archetype_arr.iter()
     }
 
     // 返回原型及是否新创建
@@ -130,13 +127,13 @@ impl World {
             }
         };
         if b {
-            // 通知原型创建，让各查询过滤模块初始化原型的记录列表
+            // 通知原型创建，让各查询过滤模块初始化原型的记录列表，通知执行图更新
             self.listener_mgr
                 .notify_event(self.archetype_init_key, ArchetypeInit(&ar, &self));
             // 通知后，让原型就绪， 其他线程也就可以获得该原型
             let ar_index = self.archtype_ok(&ar);
             self.listener_mgr
-            .notify_event(self.archetype_ok_key, ArchetypeOk(&ar, ar_index, &self));
+                .notify_event(self.archetype_ok_key, ArchetypeOk(&ar, ar_index, &self));
             (ar_index, ar)
         } else {
             // 循环等待原型就绪
@@ -166,7 +163,7 @@ impl World {
     #[inline(always)]
     pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeWorldIndex, row: Row) {
         let addr = unsafe { self.entitys.load_unchecked(e) };
-        addr.ar_index = ar_index;
+        addr.index = ar_index;
         addr.row = row;
     }
     /// 替换Entity的原型及行
@@ -177,23 +174,23 @@ impl World {
     }
 
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
-    pub unsafe fn collect(&self, action: &mut Vec<(Row, Row)>,
-    set: &mut FixedBitSet) {
+    pub unsafe fn collect(&self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
             archetype.collect(self, action, set)
         }
     }
 }
-
+unsafe impl Send for World {}
+unsafe impl Sync for World {}
 impl Default for World {
     fn default() -> Self {
         Self::new()
     }
 }
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct EntityAddr {
-    pub(crate) ar_index: ArchetypeWorldIndex,
+pub struct EntityAddr {
+    pub(crate) index: ArchetypeWorldIndex,
     pub(crate) row: Row,
 }
 unsafe impl Sync for EntityAddr {}
@@ -202,10 +199,10 @@ unsafe impl Send for EntityAddr {}
 impl EntityAddr {
     #[inline(always)]
     pub fn new(ar_index: ArchetypeWorldIndex, row: Row) -> Self {
-        EntityAddr { ar_index, row }
+        EntityAddr { index: ar_index, row }
     }
     #[inline(always)]
-    pub fn ar_index(&self) -> usize {
-        self.ar_index as usize
+    pub fn archetype_index(&self) -> usize {
+        self.index as usize
     }
 }

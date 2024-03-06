@@ -63,24 +63,40 @@ impl<
         }
     }
     #[inline]
+    pub fn contains(&self, entity: Entity) -> bool {
+        self.query.contains(entity)
+    }
+    #[inline]
     pub fn get(
-        &'world mut self,
+        &'world self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
+    {
         self.query.get(e)
     }
     #[inline]
-    pub fn tick(&self) -> Tick {
-        self.query.tick
+    pub fn get_mut(
+        &'world mut self,
+        e: Entity,
+    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+        self.query.get_mut(e)
     }
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.query.is_empty()
     }
     #[inline]
-    pub fn iter(&'world mut self) -> AlterIter<'world, Q, F, A> {
+    pub fn len(&self) -> usize {
+        self.query.len()
+    }
+    #[inline]
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, ()> {
+        self.query.iter()
+    }
+    #[inline]
+    pub fn iter_mut(&mut self) -> AlterIter<'_, Q, F, A> {
         AlterIter {
-            it: self.query.iter(),
+            it: self.query.iter_mut(),
             state: &mut self.state,
         }
     }
@@ -90,7 +106,7 @@ impl<
             &self.query.world,
             e,
             &self.state.vec,
-            &mut self.query.state.last,
+            self.query.cache_mapping.get_mut(),
             &self.query.state.map,
             &mut self.state.deletes,
         )
@@ -104,12 +120,13 @@ impl<
         let addr = check(
             &self.query.world,
             e,
-            &mut self.query.state.last,
+            self.query.cache_mapping.get_mut(),
             &self.query.state.map,
         )?;
         self.state.alter(
             &self.query.world,
-            self.query.state.last.1,
+            self.query.state.cache_mapping.1,
+            e,
             addr.row,
             components,
         )
@@ -123,7 +140,7 @@ impl<
         D: DelComponents + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
-    type State = (QueryState<Q, F>, AlterState<A>);
+    type State = (QueryState<Q, F, ()>, AlterState<A>);
     type Item<'w> = Alter<'w, Q, F, A, D>;
 
     fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
@@ -143,7 +160,7 @@ impl<
     ) {
         Query::depend(world, system_meta, &state.0, archetype, result);
         // 如果相关， 则添加删除类型，并返回Alter后的原型id
-        if result.flag.bits() > 0 && (result.flag & Flags::WITHOUT).bits() == 0 {
+        if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
             result.merge(ArchetypeDepend::Flag(Flags::DELETE));
             let (components, _) = archetype.alter(&state.1.sort_add, &state.1.sort_del);
             let id_name = ComponentInfo::calc_id_name(&components);
@@ -151,54 +168,48 @@ impl<
         }
     }
     #[inline]
-    fn before(
-        state: &mut Self::State,
-        _system_meta: &mut SystemMeta,
+    fn align(
         world: &World,
-        _change_tick: Tick,
+        _system_meta: &SystemMeta,
+        state: &mut Self::State,
     ) {
         state.0.align(world);
-        // 将多出来的原型，创建原型空映射
-        for i in state.1.vec.len()..state.0.vec.len() {
-            let ar = unsafe { state.0.vec.get_unchecked(i).0.clone() };
-            state
-                .1
-                .vec
-                .push(ArchetypeMapping::new(ar, world.empty_archetype().clone()));
-            state.1.state_vec.push(MaybeUninit::uninit());
-        }
     }
 
     #[inline]
     fn get_param<'world>(
-        state: &'world mut Self::State,
-        _system_meta: &'world SystemMeta,
         world: &'world World,
-        change_tick: Tick,
+        _system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        // SAFETY: We have registered all of the Insert's world accesses,
-        // so the caller ensures that `world` has permission to access any
-        // world data that the Insert needs.
-        Alter::new(Query::new(world, &mut state.0, change_tick), &mut state.1)
+        // 将新多出来的原型，创建原型空映射
+        for i in state.1.vec.len()..state.0.vec.len() {
+            let ar = unsafe { state.0.vec.get_unchecked(i).0.clone() };
+            state.1.push_archetype(ar, world);
+        }
+        Alter::new(Query::new(world, &mut state.0), &mut state.1)
     }
-    fn after(
-        state: &mut Self::State,
-        _system_meta: &mut SystemMeta,
-        world: &World,
-        _change_tick: Tick,
-    ) {
+}
+impl<
+        'world,
+        Q: FetchComponents + 'static,
+        F: FilterComponents + 'static,
+        A: InsertComponents + 'static,
+        D: DelComponents + 'static,
+    > Drop for Alter<'world, Q, F, A, D>
+{
+    fn drop(&mut self) {
         clear(
-            world,
-            &mut state.1.vec,
-            &mut state.1.mapping_dirtys,
-            &mut state.1.deletes,
-            &state.1.moved_cloumns,
-            &state.1.added_cloumns,
-            &state.1.del_cloumns,
+            self.query.world,
+            &mut self.state.vec,
+            &mut self.state.mapping_dirtys,
+            &mut self.state.deletes,
+            &self.state.moved_cloumns,
+            &self.state.added_cloumns,
+            &self.state.del_cloumns,
         );
     }
 }
-
 #[derive(Debug)]
 pub(crate) struct ArchetypeMapping {
     src: ShareArchetype,            // 源原型
@@ -207,7 +218,7 @@ pub(crate) struct ArchetypeMapping {
     move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
     add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
     del_indexs: Range<usize>,       // 源原型上被删除的组件的起始和结束位置
-    moves: Vec<(Row, Row, Entity)>,         // 本次标记移动的条目
+    moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
 }
 
 impl ArchetypeMapping {
@@ -230,7 +241,7 @@ pub struct AlterState<A: InsertComponents> {
     state_vec: Vec<MaybeUninit<A::State>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     moved_cloumns: Vec<(ColumnIndex, ColumnIndex)>, // 源目标原型的组件列位置映射列表
     added_cloumns: Vec<ColumnIndex>, // 目标原型的新增加的组件位置列表，主要是给InsertComponents用的
-    del_cloumns: Vec<ColumnIndex>, // 源原型的被删除的组件列位置列表
+    del_cloumns: Vec<ColumnIndex>,   // 源原型的被删除的组件列位置列表
     mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
     deletes: Vec<(ArchetypeLocalIndex, Row)>, // 本次删除的本地原型位置及条目
 }
@@ -248,10 +259,18 @@ impl<A: InsertComponents> AlterState<A> {
             deletes: Vec::new(),
         }
     }
+    #[inline]
+    fn push_archetype(&mut self, ar: ShareArchetype, world: &World) {
+        self.vec
+            .push(ArchetypeMapping::new(ar, world.empty_archetype().clone()));
+        self.state_vec.push(MaybeUninit::uninit());
+    }
+
     pub(crate) fn alter<'w>(
         &mut self,
         world: &'w World,
         ar_index: ArchetypeLocalIndex,
+        e: Entity,
         row: Row,
         components: A::Item,
     ) -> Result<bool, QueryError> {
@@ -276,6 +295,7 @@ impl<A: InsertComponents> AlterState<A> {
         A::insert(
             unsafe { &self.state_vec.get_unchecked(ar_index).assume_init_ref() },
             components,
+            e,
             dst_row,
         );
         Ok(true)
@@ -288,13 +308,11 @@ pub struct AlterIter<
     F: FilterComponents + 'static,
     A: InsertComponents,
 > {
-    it: QueryIter<'w, Q, F>,
+    it: QueryIter<'w, Q, F, ()>,
     state: &'w mut AlterState<A>,
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter<'w, Q, F, A> {
-    /// # Safety
-    /// - `world` must have permission to access any of the components registered in `query_state`.
-    /// - `world` must be the same one used to initialize `query_state`.
+
     #[inline(always)]
     pub fn delete(&mut self) -> Result<bool, QueryError> {
         delete_row(
@@ -307,7 +325,13 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter
     }
     #[inline(always)]
     pub fn alter(&mut self, components: <A as InsertComponents>::Item) -> Result<bool, QueryError> {
-        self.state.alter(&self.it.world, self.it.ar_index, self.it.row, components)
+        self.state.alter(
+            &self.it.world,
+            self.it.ar_index,
+            self.it.e,
+            self.it.row,
+            components,
+        )
     }
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> Iterator
@@ -326,13 +350,13 @@ fn delete<'w>(
     world: &'w World,
     entity: Entity,
     vec: &Vec<ArchetypeMapping>,
-    last: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+    cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
     deletes: &mut Vec<(ArchetypeLocalIndex, Row)>,
 ) -> Result<bool, QueryError> {
-    let addr = check(world, entity, last, map)?;
-    let ar = unsafe { &vec.get_unchecked(last.1).src };
-    delete_row(world, ar, last.1, addr.row, deletes)
+    let addr = check(world, entity, cache_mapping, map)?;
+    let ar = unsafe { &vec.get_unchecked(cache_mapping.1).src };
+    delete_row(world, ar, cache_mapping.1, addr.row, deletes)
 }
 /// 标记删除
 #[inline(always)]
@@ -512,8 +536,8 @@ fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>) {
         if column.added.listener_len() == 0 {
             continue;
         }
-        for (_, dst_row, _) in am.moves.iter() {
-            column.added.record_unchecked(*dst_row);
+        for (_, dst_row, e) in am.moves.iter() {
+            column.added.record_unchecked(*e, *dst_row);
         }
     }
 }

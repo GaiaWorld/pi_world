@@ -45,6 +45,11 @@ impl<T> SafeVec<T> {
         &mut *self.vec.get_unchecked_mut(index).as_mut_ptr()
     }
     #[inline(always)]
+    pub unsafe fn load_unchecked_mut(&self, index: usize) -> &mut T {
+        &mut *self.vec.load_unchecked(index).as_mut_ptr()
+    }
+
+    #[inline(always)]
     pub fn insert(&self, value: T) -> usize {
         let index = self.vec.alloc_index(1);
         *self.vec.load_alloc(index, 1) = MaybeUninit::new(value);

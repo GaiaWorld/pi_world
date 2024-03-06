@@ -9,12 +9,14 @@ use crate::archetype::{Archetype, ArchetypeDepend, ArchetypeDependResult, Column
 use crate::column::Column;
 use crate::dirty::ComponentDirty;
 use crate::table::Table;
+use crate::system::ReadWrite;
 use crate::world::{Entity, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
     type Item<'a>;
-
+    /// ReadOnly
+    type ReadOnly: FetchComponents;
     /// Per archetype/table state used by this [`FetchComponents`] to fetch [`Self::Item`](crate::query::FetchComponents::Item)
     type Fetch<'a>: Clone;
 
@@ -23,6 +25,8 @@ pub trait FetchComponents {
     /// constructing [`Self::Fetch`](crate::query::FetchComponents::Fetch).
     type State: Send + Sync + Sized;
 
+    /// initializes ReadWrite for this [`FetchComponents`] type.
+    fn init_read_write(_world: &World, _rw: &mut ReadWrite) {}
     fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
     }
 
@@ -66,6 +70,7 @@ pub trait FetchComponents {
 impl FetchComponents for Entity {
     type Fetch<'w> = &'w Table;
     type Item<'w> = Entity;
+    type ReadOnly = Entity;
     type State = ();
 
     fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
@@ -88,8 +93,12 @@ impl FetchComponents for Entity {
 impl<T: 'static> FetchComponents for &T {
     type Fetch<'w> = &'w Column;
     type Item<'w> = &'w T;
+    type ReadOnly = &'static T;
     type State = ColumnIndex;
 
+    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
+        rw.reads.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
     fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
         result.merge(ArchetypeDepend::Flag(if archetype.get_column(&TypeId::of::<T>()).is_none() {
             Flags::WITHOUT
@@ -119,8 +128,12 @@ impl<T: 'static> FetchComponents for &T {
 impl<T: 'static> FetchComponents for &mut T {
     type Fetch<'w> = &'w Column;
     type Item<'w> = Mut<'w, T>;
+    type ReadOnly = &'static T;
     type State = ColumnIndex;
 
+    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
+        rw.writes.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
     fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
         result.merge(ArchetypeDepend::Flag(if archetype.get_column(&TypeId::of::<T>()).is_none() {
             Flags::WITHOUT
@@ -141,12 +154,13 @@ impl<T: 'static> FetchComponents for &mut T {
     fn fetch<'w>(
         fetch: &mut Self::Fetch<'w>,
         row: Row,
-        _e: Entity,
+        e: Entity,
     ) -> Self::Item<'w> {
         Mut {
             value: fetch.get_mut(row),
-            row,
             dirty: &fetch.changed,
+            e,
+            row,
         }
     }
 }
@@ -154,8 +168,12 @@ impl<T: 'static> FetchComponents for &mut T {
 impl<T: 'static> FetchComponents for Option<&T> {
     type Fetch<'w> = Option<&'w Column>;
     type Item<'w> = Option<&'w T>;
+    type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
 
+    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
+        rw.reads.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
@@ -178,8 +196,12 @@ impl<T: 'static> FetchComponents for Option<&T> {
 impl<T: 'static> FetchComponents for Option<&mut T> {
     type Fetch<'w> = Option<&'w Column>;
     type Item<'w> = Option<Mut<'w, T>>;
+    type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
 
+    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
+        rw.writes.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
@@ -193,12 +215,13 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     fn fetch<'w>(
         fetch: &mut Self::Fetch<'w>,
         row: Row,
-        _e: Entity,
+        e: Entity,
     ) -> Self::Item<'w> {
         fetch.and_then(|c| Some(Mut {
             value: c.get_mut(row),
-            row,
             dirty: &c.changed,
+            e,
+            row,
         }))
     }
 }
@@ -207,6 +230,7 @@ pub struct Has<T: 'static> (PhantomData<T>);
 impl<T: 'static> FetchComponents for Has<T> {
     type Fetch<'w> = bool;
     type Item<'w> = bool;
+    type ReadOnly = Has<T>;
     type State = bool;
 
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
@@ -233,8 +257,14 @@ impl<T: 'static> FetchComponents for Has<T> {
 #[derive(Debug)]
 pub struct Mut<'a, T: ?Sized> {
     pub(crate) value: &'a mut T,
-    pub(crate) row: Row,
     pub(crate) dirty: &'a ComponentDirty,
+    pub(crate) e: Entity,
+    pub(crate) row: Row,
+}
+impl<'a, T: ?Sized> Mut<'a, T> {
+    pub fn entity(&self) -> Entity {
+        self.e
+    }
 }
 impl<'a, T: ?Sized> Deref for Mut<'a, T> {
     type Target = T;
@@ -246,7 +276,7 @@ impl<'a, T: ?Sized> Deref for Mut<'a, T> {
 impl<'a, T: ?Sized> DerefMut for Mut<'a, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.dirty.record(self.row);
+        self.dirty.record(self.e, self.row);
         self.value
     }
 }
@@ -255,12 +285,16 @@ macro_rules! impl_tuple_fetch {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
-        // SAFETY: defers to soundness `$name: FetchComponents` impl
+
         impl<$($name: FetchComponents),*> FetchComponents for ($($name,)*) {
             type Fetch<'w> = ($($name::Fetch<'w>,)*);
             type Item<'w> = ($($name::Item<'w>,)*);
+            type ReadOnly = ($($name::ReadOnly,)*);
             type State = ($($name::State,)*);
 
+            fn init_read_write(_world: &World, _rw: &mut ReadWrite) {
+                ($($name::init_read_write(_world, _rw),)*);
+            }
             fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
                 ($($name::archetype_depend(_archetype, _result),)*);
             }

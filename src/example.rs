@@ -1,4 +1,4 @@
-use crate::{query::Query, world::Entity, insert::Insert, alter::Alter, filter::{Added, Changed}};
+use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -47,12 +47,12 @@ pub fn print_changed_entities(
     // q3: Query<(Entity, &mut Age3)>,
 ) {
     println!("print_changed_entities {:?}", q0.iter().size_hint());
-
     // let q = q0.iter();
     // let s = q.size_hint();
-    for (_, mut age0, mut age1,
+    let q = q0.iter_mut();
+    for (e, mut age0, age1,
         // age2, age3, age4, age5, age6, age7, age8
-        ) in q0.iter() {
+        ) in q {
         // let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         age0.0 +=1+age1.0;
         //+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
@@ -75,7 +75,7 @@ pub fn print_changed_entities(
     println!("print_changed_entities over");
 }
 pub fn alter1(
-    mut i0: Alter<(&Age1), (), (Age3,), (Age4,)>,
+    mut i0: Alter<&Age2, (), (Age3,), (Age4,)>,
     q0: Query<(Entity, &mut Age0, &mut Age1)>,
 ) {
     println!("alter1");
@@ -92,15 +92,14 @@ pub fn added_l(
     for (e, age1, _) in q0.iter() {
         println!("e {:?}, age1: {:?}", e, age1);
     }
- 
     println!("add_l: end");
 }
 pub fn changed_l(
-    q0: Query<(Entity, &mut Age1, &mut Age0), (Changed<Age1>, Changed<Age2>)>,
+    q0: Query<(Entity, &mut Age0, &mut Age1), (Changed<Age0>, Changed<Age2>)>,
 ) {
     println!("changed_l");
-    for (e, age1, _) in q0.iter() {
-        println!("e {:?}, age1: {:?}", e, age1);
+    for (e, age0, _) in q0.iter() {
+        println!("e {:?}, age0: {:?}", e, age0);
     }
  
     println!("changed_l: end");
@@ -129,30 +128,45 @@ mod test_mod {
     use pi_append_vec::AppendVec;
     use test::Bencher;
     use super::*;
+    use pi_async_rt::prelude::{SingleTaskPool, SingleTaskRunner};
+    
 
-    #[test]
+    #[test] 
     fn test_removes() {
         let mut action = Default::default();
         let mut set = Default::default();
-        let removes: AppendVec<Row> = Default::default();
+        let mut removes: AppendVec<Row> = Default::default();
         removes.insert(1);
         removes.insert(2);
         //removes.insert(0);
         let len = Table::removes_action(&removes, removes.len(), 7, &mut action, &mut set);
         assert_eq!(len, 5);
-        assert_eq!(action[0].1, 6);
+        assert_eq!(action.len(), 2);
+        assert_eq!(action[0], (6, 1));
+        assert_eq!(action[1], (5, 2));
+        removes.clear(1);
+        removes.insert(1);
+        removes.insert(6);
+        //removes.insert(0);
+        let len = Table::removes_action(&removes, removes.len(), 7, &mut action, &mut set);
+        assert_eq!(len, 5);
+        assert_eq!(action.len(), 1);
+        assert_eq!(action[0], (5, 1));
     }
     #[test]
     fn test() {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let world = app.get_world();
         let i = world.make_inserter::<(Age1,Age0,)>();
         let e1 = i.insert((Age1(1),Age0(0),));
         let e2 = i.insert((Age1(1),Age0(0),));
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s);
-        app.run();
-        app.run();
+        app.register(s, &[]);
+        app.initialize();
+        app.run(&rt);
+        app.run(&rt);
         assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 4);
         // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 1);
         // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 2);
@@ -165,63 +179,74 @@ mod test_mod {
     }
     #[test]
     fn test_insert() {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s);
-
-        app.run();
-        app.run();
+        app.register(s, &[]);
+        app.initialize();
+        app.run(&rt);
+        app.run(&rt);
         // assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 0);
     }
     #[test]
     fn test_alter() {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_e));
-        app.register(s);
-
-        app.run();
-        app.run();
+        app.register(s, &[]);
+        app.initialize();
+        app.run(&rt);
+        app.run(&rt);
+        app.run(&rt);
     }
-    #[test]
+    #[test] 
     fn test_added() {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s);
-        let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(added_l));
-        app.register(s);
-
-        app.run();
-        app.run();
+        app.register(s, &[]);
+        let s = Box::new(IntoSystem::into_system(alter1));
+        app.register(s, &["add"]);
+        app.initialize();
+        app.run_stage("add", &rt);
+        app.run_stage("add", &rt);
     }
     #[test]
     fn test_changed() {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s);
+        app.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(changed_l));
-        app.register(s);
-
-        app.run();
-        app.run();
+        app.register(s, &[]);
+        app.initialize();
+        app.run(&rt);
+        app.run(&rt);
     }
     #[bench]
     fn bench_test(b: &mut Bencher) {
+        let pool = SingleTaskPool::default();
+        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         let mut app = App::new();
         let world = app.get_world();
         println!("bench_test insert");
@@ -233,10 +258,11 @@ mod test_mod {
         println!("bench_test insert ok");
         for _ in 0..500 {
             let s = Box::new(IntoSystem::into_system(print_changed_entities));
-            app.register(s);
+            app.register(s, &[]);
         }
         b.iter(move || {
-            app.run();
+            let rt1 = rt.clone();
+            app.run(&rt1);
         });
     }
 

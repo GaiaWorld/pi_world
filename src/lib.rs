@@ -24,3 +24,22 @@ pub mod dot;
 
 pub mod example;
 // pub mod bench1;
+
+/// Most commonly used re-exported types.
+pub mod prelude {
+    #[doc(hidden)]
+    pub use crate::{
+        query::{Query, QueryError},
+        insert::Insert,
+        alter::Alter,
+        filter::{Added, Changed, With, Without, Or},
+        fetch::{Has, Mut},
+        system::BoxedSystem,
+        world::{Entity, World},
+        listener::Listener,
+        app::App,
+        exec_graph::ExecGraph,
+        dot::{Dot, Config},
+        safe_vec::SafeVec
+    };
+}

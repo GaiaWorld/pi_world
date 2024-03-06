@@ -155,7 +155,7 @@ impl Table {
         world: &World,
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
-    ) {
+    ) -> bool {
         let mut r = true;
         // 先整理每个列，如果所有列的脏列表成功清空
         for c in self.columns.iter_mut() {
@@ -163,11 +163,11 @@ impl Table {
         }
         if !r {
             // 有失败的脏，不调整row，返回
-            return;
+            return false;
         }
         let remove_len = self.removes.len();
         if remove_len == 0 {
-            return;
+            return true;
         }
         let new_entity_len =
             Self::removes_action(&self.removes, remove_len, self.entitys.len(), action, set);
@@ -186,7 +186,7 @@ impl Table {
             c.collect(new_entity_len, &action);
         }
         // 再移动entitys的空位
-        for (src, dst ) in action.iter() {
+        for (src, dst) in action.iter() {
             let e = unsafe {
                 replace(
                     self.entitys.get_unchecked_mut(*src as usize),
@@ -203,6 +203,7 @@ impl Table {
         };
         // 整理合并内存
         self.entitys.collect(1);
+        true
     }
 }
 impl Drop for Table {
