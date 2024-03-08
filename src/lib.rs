@@ -34,7 +34,7 @@ pub mod prelude {
         alter::Alter,
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},
-        system::BoxedSystem,
+        system::{BoxedSystem, IntoSystem},
         system_parms::SystemParam,
         world::{Entity, World},
         listener::Listener,

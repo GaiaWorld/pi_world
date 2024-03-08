@@ -147,10 +147,10 @@ impl ExecGraph {
         for r in world.archetype_arr.iter() {
             self.add_archetype_node(&systems, r, world);
         }
-        println!(
-            "single & archtypes initialized: {}",
-            Dot::with_config(&self, Config::empty())
-        );
+        // println!(
+        //     "single & archtypes initialized: {}",
+        //     Dot::with_config(&self, Config::empty())
+        // );
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
         inner.nodes.collect(1);
@@ -171,11 +171,11 @@ impl ExecGraph {
         world.listener_mgr.register_event(Share::new(notify));
         // 整理world的监听器，合并内存
         world.listener_mgr.collect();
-        println!(
-            "graph initialized, froms: {:?},  to_len:{}",
-            self.froms(),
-            self.to_len()
-        );
+        // println!(
+        //     "graph initialized, froms: {:?},  to_len:{}",
+        //     self.froms(),
+        //     self.to_len()
+        // );
     }
     // 添加原型节点，添加原型和system的依赖关系产生的边。
     // 内部加锁操作，一次只能添加1个原型。
@@ -189,7 +189,7 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
         let id_name = (*archetype.id(), archetype.name().clone());
-        println!("add_archetype_node, id_name: {:?}", &id_name);
+        // println!("add_archetype_node, id_name: {:?}", &id_name);
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
         let node_index = inner.find_node(id_name);
         let mut depend = ArchetypeDependResult::new();
@@ -243,7 +243,7 @@ impl ExecGraph {
         assert!(inner.to_len.load(Ordering::Relaxed) > 0);
         let to_len = inner.to_len.load(Ordering::Relaxed);
         inner.to_count.store(to_len, Ordering::Relaxed);
-        println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
+        // println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
 
         // 确保看见每节点上的from_len, from_len被某个system的Alter设置时，system结束时也会调用fence(Ordering::Release)
         fence(Ordering::Acquire);
@@ -273,15 +273,15 @@ impl ExecGraph {
         world: &'static World,
         node_index: NodeIndex,
     ) {
-        println!("exec, node_index: {:?}", node_index);
+        // println!("exec, node_index: {:?}", node_index);
         let inner = self.0.as_ref();
         let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
         // RUN_START
         node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
         match &mut node.label {
             NodeType::System((sys_index, _)) => {
-                println!("exec, sys_index: {:?}", sys_index);
                 let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
                 // 如果node为要执行的system，则执行对齐原型
                 sys.align(world);
                 node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);

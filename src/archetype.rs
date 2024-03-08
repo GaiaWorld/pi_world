@@ -175,10 +175,6 @@ impl Archetype {
             if index.is_null() {
                 continue;
             }
-            println!(
-                "add_dirty_listeners, tid:{:?}, changed:{} index:{}",
-                tid, changed, index
-            );
             let c = self.table.get_column_unchecked(index);
             if *changed {
                 c.changed.insert_listener(owner);

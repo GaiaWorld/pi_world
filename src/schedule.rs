@@ -41,13 +41,7 @@ impl Schedule {
     pub fn register(&mut self, system: BoxedSystem, stages: &[&'static str]) -> usize {
         let name = system.name().clone();
         let index = self.systems.insert(system);
-        println!("register, sys_index: {:?}", index);
         let sys = unsafe { self.systems.load_unchecked_mut(index) };
-        println!(
-            "register, sys: {:?}, len:{}",
-            sys.name(),
-            self.systems.len()
-        );
         self.graph.add_system((index, name.clone()));
         for stage in stages {
             let e = self.stage_graph.entry(*stage);
@@ -60,16 +54,12 @@ impl Schedule {
         Share::get_mut(&mut self.systems).unwrap().collect();
         // 首先初始化所有的system，有Insert的会产生对应的原型
         for sys in self.systems.iter() {
-            println!("system initialize, {:?}", &sys.name());
             sys.initialize(world);
         }
-        println!("system initialized, len:{}", self.systems.len());
         // todo 遍历world上的单例，测试和system的读写关系
-
-        println!("graph initialize");
         self.graph.initialize(self.systems.clone(), world);
         for (name, stage) in self.stage_graph.iter_mut() {
-            println!("stage:{:?} initialize", name);
+            // println!("stage:{:?} initialize", name);
             stage.initialize(self.systems.clone(), world);
         }
     }
@@ -83,7 +73,7 @@ impl Schedule {
         rt: &A,
         stage: &str,
     ) {
-        println!("run_stage, stage:{:?}", stage);
+        // println!("run_stage, stage:{:?}", stage);
         let g = self.stage_graph.get(stage).unwrap().clone();
         self.run_graph(world, rt, g);
     }
@@ -116,7 +106,7 @@ impl Schedule {
         rt: &A,
         stage: &str,
     ) {
-        println!("async_run_stage, stage:{:?}", stage);
+        // println!("async_run_stage, stage:{:?}", stage);
         let g = self.stage_graph.get(stage).unwrap().clone();
         self.async_run_graph(world, rt, g).await;
     }
