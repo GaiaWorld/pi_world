@@ -124,11 +124,11 @@ pub fn print_e(
 
 #[cfg(test)]
 mod test_mod {
-    use crate::{app::*, archetype::Row, system::*, table::Table};
+    use crate::{app::*, archetype::Row, query::Queryer, system::*, table::Table};
     use pi_append_vec::AppendVec;
     use test::Bencher;
     use super::*;
-    use pi_async_rt::prelude::{SingleTaskPool, SingleTaskRunner};
+    use pi_async_rt::{prelude::{SingleTaskPool, SingleTaskRunner}, rt::single_thread::SingleTaskRuntime};
     
 
     #[test] 
@@ -155,115 +155,119 @@ mod test_mod {
     }
     #[test]
     fn test() {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
-        let world = app.get_world();
-        let i = world.make_inserter::<(Age1,Age0,)>();
+        let mut app = App::<SingleTaskRuntime>::new();
+        let i = app.world.make_inserter::<(Age1,Age0,)>();
         let e1 = i.insert((Age1(1),Age0(0),));
         let e2 = i.insert((Age1(1),Age0(0),));
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         app.initialize();
-        app.run(&rt);
-        app.run(&rt);
-        assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 4);
-        // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 1);
-        // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 2);
-        // assert_eq!(app.get_world().get_component::<Age1>(e2).unwrap().0, 2);
+        app.run();
+        app.run();
+        assert_eq!(app.world.get_component::<Age0>(e1).unwrap().0, 4);
+        // assert_eq!(app.world.get_component::<Age0>(e2).unwrap().0, 1);
+        // assert_eq!(app.world.get_component::<Age1>(e1).unwrap().0, 2);
+        // assert_eq!(app.world.get_component::<Age1>(e2).unwrap().0, 2);
         // app.run();
-        // assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 2);
-        // assert_eq!(app.get_world().get_component::<Age0>(e2).unwrap().0, 2);
-        // assert_eq!(app.get_world().get_component::<Age1>(e1).unwrap().0, 3);
-        // assert_eq!(app.get_world().get_component::<Age1>(e2).unwrap().0, 3);
+        // assert_eq!(app.world.get_component::<Age0>(e1).unwrap().0, 2);
+        // assert_eq!(app.world.get_component::<Age0>(e2).unwrap().0, 2);
+        // assert_eq!(app.world.get_component::<Age1>(e1).unwrap().0, 3);
+        // assert_eq!(app.world.get_component::<Age1>(e2).unwrap().0, 3);
     }
     #[test]
     fn test_insert() {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
+        let mut app = App::<SingleTaskRuntime>::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         app.initialize();
-        app.run(&rt);
-        app.run(&rt);
-        // assert_eq!(app.get_world().get_component::<Age0>(e1).unwrap().0, 0);
+        app.run();
+        app.run();
     }
     #[test]
+    fn test_query() {
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age1,Age0,)>();
+        let e1 = i.insert((Age1(1),Age0(0),));
+        let e2 = i.insert((Age1(1),Age0(0),));
+        world.collect();
+        let mut q = world.make_queryer::<(&Age1,&mut Age0), ()>();
+        for (a,mut b) in q.iter_mut() {
+            b.0 += a.0;
+        }
+        assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 1);
+        assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 1);
+    }
+
+    #[test]
     fn test_alter() {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
+        let mut app = App::<SingleTaskRuntime>::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_e));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         app.initialize();
-        app.run(&rt);
-        app.run(&rt);
-        app.run(&rt);
+        app.run();
+        app.run();
+        app.run();
+    }
+    #[test]
+    fn test_alter1() {
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age1,Age0,)>();
+        let e1 = i.insert((Age1(2),Age0(1),));
+        let e2 = i.insert((Age1(4),Age0(2),));
+        world.collect();
+        {let mut alter = world.make_alterer::<(&Age1,&mut Age0), (), (Age2,), ()>();
+        let mut it = alter.iter_mut();
+        while let Some((a,mut b)) = it.next() {
+            if a.0 == 2 {
+                b.0 += 1;
+            }else{
+                it.alter((Age2(a.0),)).unwrap();
+            }
+        }}
+        world.collect();
+        assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 2);
+        assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
+        assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 2);
+        assert_eq!(world.get_component::<Age1>(e2).unwrap().0, 4);
+        assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 4);
     }
     #[test] 
     fn test_added() {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
+        let mut app = App::<SingleTaskRuntime>::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(added_l));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s, &["add"]);
+        app.schedule.register(s, &["add"]);
         app.initialize();
-        app.run_stage("add", &rt);
-        app.run_stage("add", &rt);
+        app.run_stage("add");
+        app.run_stage("add");
     }
     #[test]
     fn test_changed() {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
+        let mut app = App::<SingleTaskRuntime>::new();
         let s = Box::new(IntoSystem::into_system(insert1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(changed_l));
-        app.register(s, &[]);
+        app.schedule.register(s, &[]);
         app.initialize();
-        app.run(&rt);
-        app.run(&rt);
-    }
-    #[bench]
-    fn bench_test(b: &mut Bencher) {
-        let pool = SingleTaskPool::default();
-        let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
-        let mut app = App::new();
-        let world = app.get_world();
-        println!("bench_test insert");
-        let i = world.make_inserter::<(Age0,Age1,Age2,Age3,Age4,Age5,Age6,Age7,Age8,Age9,Age10,Age11,Age12,Age13,Age14)>();
-        println!("bench_test insert");
-        for _ in 0..90 {
-            i.insert((Age0(0),Age1(0),Age2(0),Age3(0),Age4(0),Age5([0;16]),Age6(0),Age7(0),Age8(0),Age9(0),Age10(0),Age11(0),Age12(0),Age13(0),Age14(0)));
-        }
-        println!("bench_test insert ok");
-        for _ in 0..500 {
-            let s = Box::new(IntoSystem::into_system(print_changed_entities));
-            app.register(s, &[]);
-        }
-        b.iter(move || {
-            let rt1 = rt.clone();
-            app.run(&rt1);
-        });
+        app.run();
+        app.run();
     }
 
 }

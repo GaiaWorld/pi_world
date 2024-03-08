@@ -18,11 +18,15 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::sync::atomic::Ordering;
 
+use crate::alter::{AlterState, Alterer, DelComponents};
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype};
-use crate::insert::*;
+use crate::fetch::FetchComponents;
+use crate::filter::FilterComponents;
+use crate::insert::{InsertComponents, Inserter};
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::QueryError;
+use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
+use crate::system::SystemMeta;
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
@@ -79,7 +83,34 @@ impl World {
         let s = I::init_state(self, &ar);
         Inserter::new(self, (ar_index, ar, s))
     }
-    pub fn empty_archetype(&self) -> &ShareArchetype {
+    /// 创建一个查询器
+    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
+        &self,
+    ) -> Queryer<Q, F> {
+        let mut system_meta = SystemMeta::new::<Queryer<Q, F>>();
+        let mut state = QueryState::create(self, &mut system_meta);
+        state.align(self);
+        Queryer::new(self, state)
+    }
+    /// 创建一个改变器
+    pub fn make_alterer<
+        Q: FetchComponents + 'static,
+        F: FilterComponents + 'static,
+        A: InsertComponents + 'static,
+        D: DelComponents + 'static,
+    >(
+        &self,
+    ) -> Alterer<Q, F, A, D> {
+        let mut system_meta = SystemMeta::new::<Alterer<Q, F, A, D>>();
+        let mut query_state = QueryState::create(self, &mut system_meta);
+        let mut alter_state = AlterState::new(A::components(), D::components());
+        query_state.align(self);
+        // 将新多出来的原型，创建原型空映射
+        Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
+        Alterer::new(self, query_state, alter_state)
+    }
+
+    pub(crate) fn empty_archetype(&self) -> &ShareArchetype {
         &self.empty_archetype
     }
     pub fn entity_list<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
@@ -172,9 +203,13 @@ impl World {
         let addr = unsafe { self.entitys.load_unchecked(e) };
         addr.row = row;
     }
-
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
-    pub unsafe fn collect(&self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
+    pub fn collect(&mut self) {
+        self.collect_by(&mut Vec::new(), &mut FixedBitSet::new())
+    }
+    /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
+    pub fn collect_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
+        self.archetype_arr.collect();
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
             archetype.collect(self, action, set)
@@ -199,7 +234,10 @@ unsafe impl Send for EntityAddr {}
 impl EntityAddr {
     #[inline(always)]
     pub fn new(ar_index: ArchetypeWorldIndex, row: Row) -> Self {
-        EntityAddr { index: ar_index, row }
+        EntityAddr {
+            index: ar_index,
+            row,
+        }
     }
     #[inline(always)]
     pub fn archetype_index(&self) -> usize {

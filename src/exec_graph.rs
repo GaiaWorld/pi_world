@@ -6,6 +6,11 @@
 //! 可线程安全的放入新节点和边，并线程安全的连接from和to的边
 //! 如果有A对X写和Y读，则创建Y-->A和A-->X的边
 //! 如果有A和B都会对X写，写不能并行，而A在B前面先写，则创建A-->B的边， 这样B就会等待A执行后再执行
+//! 
+//! 在检查边和添加边是有时间间隔的，为了保证这个过程不会有改变，添加原型节点时需要锁住，保证不会同时添加2个原型节点。
+//! 图执行时，是无锁的。执行时要遍历to边，添加时要修改to边，同时为了保证from_count被正确减少，要求执行或添加必须串行，因此通过节点状态来互相等待。
+//! 图执行时，会根据节点状态等待添加节点完成，添加节点时也会根据节点状态等待节点执行完成，为了防止死锁，要求system.align方法必须不会调用添加原型节点，并尽快完成。
+
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hint::spin_loop;
@@ -132,7 +137,7 @@ impl ExecGraph {
         inner.to_len.load(Ordering::Relaxed)
     }
     /// 初始化方法，只能被执行一次， 执行前必须将system添加完毕
-    pub fn initialize(&mut self, world: &mut World, systems: Share<SafeVec<BoxedSystem>>) {
+    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World) {
         let inner = self.0.as_ref();
         inner
             .to_len
@@ -140,10 +145,10 @@ impl ExecGraph {
         // todo 遍历world上的单例，测试和system的读写关系
         // 遍历已有的原型，添加原型节点，添加原型和system的依赖关系产生的边
         for r in world.archetype_arr.iter() {
-            self.add_archetype_node(r, world, &systems);
+            self.add_archetype_node(&systems, r, world);
         }
         println!(
-            "single_archtypes initialized: {}",
+            "single & archtypes initialized: {}",
             Dot::with_config(&self, Config::empty())
         );
         // nodes和edges整理AppendVec
@@ -161,8 +166,6 @@ impl ExecGraph {
             }
         }
         assert_eq!(to_len, self.to_len());
-        println!(
-            "graph initialized, system_len:{}, ",systems.len());
         // 监听原型创建， 添加原型节点和边
         let notify = Notify(self.clone(), systems, true, PhantomData);
         world.listener_mgr.register_event(Share::new(notify));
@@ -179,9 +182,9 @@ impl ExecGraph {
     // world的find_archetype保证了不会重复加相同的原型。
     fn add_archetype_node(
         &self,
+        systems: &Share<SafeVec<BoxedSystem>>,
         archetype: &Archetype,
         world: &World,
-        systems: &Share<SafeVec<BoxedSystem>>,
     ) {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
@@ -232,9 +235,9 @@ impl ExecGraph {
 
     pub async fn run<A: AsyncRuntime>(
         &self,
+        systems: &'static Share<SafeVec<BoxedSystem>>,
         rt: &A,
         world: &'static World,
-        systems: &'static Share<SafeVec<BoxedSystem>>,
     ) -> std::result::Result<(), RecvError> {
         let inner = self.0.as_ref();
         assert!(inner.to_len.load(Ordering::Relaxed) > 0);
@@ -258,16 +261,16 @@ impl ExecGraph {
             let g = self.clone();
             let _ = rt.spawn(async move {
                 let rt2 = rt1;
-                g.exec(&rt2, world, systems, index);
+                g.exec(systems, &rt2, world,  index);
             });
         }
         inner.receiver.recv().await
     }
     fn exec<A: AsyncRuntime>(
         &self,
+        systems: &'static SafeVec<BoxedSystem>,
         rt: &A,
         world: &'static World,
-        systems: &'static SafeVec<BoxedSystem>,
         node_index: NodeIndex,
     ) {
         println!("exec, node_index: {:?}", node_index);
@@ -322,14 +325,14 @@ impl ExecGraph {
                 if !node.is_system() {
                     // 如果不是系统节点，则递归执行
                     // todo self.exec(rt, world, n).await;
-                    self.exec(rt, world, systems, n);
+                    self.exec(systems, rt, world, n);
                 } else {
                     // 派发执行系统节点
                     let rt1 = rt.clone();
                     let g = self.clone();
                     let _ = rt.spawn(async move {
                         let rt2 = rt1;
-                        g.exec(&rt2, world, systems, n); //.await;
+                        g.exec(systems, &rt2, world, n); //.await;
                     });
                 }
             }
@@ -425,12 +428,13 @@ impl GraphInner {
         let status = from_node.status.fetch_add(1, Ordering::Relaxed);
         // println!("add_edge, from:{:?}, to:{:?}, from_status:{:?}", from, to, status);
         let r = if status < NODE_STATUS_RUN_END {
+            // 节点还为执行到遍历to边，先把to_node.from_count加1
             // 这一步，如果该to节点还未执行，则不会执行， 因为要等待from_count为0
             to_node.from_count.fetch_add(1, Ordering::Relaxed)
         } else if status >= NODE_STATUS_OVER {
             1
         } else {
-            // 等待status为Over
+            // 等待status为Over，如果为Over，表示exec对to边已经遍历过，可以修改to边了
             while from_node.status.load(Ordering::Relaxed) < NODE_STATUS_OVER {
                 spin_loop();
             }
@@ -789,7 +793,7 @@ impl<'a> Listener for Notify<'a> {
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&ar.0, &ar.1, &self.1);
+        self.0.add_archetype_node(&self.1, &ar.0, &ar.1);
         if self.2 {
             println!("{}", Dot::with_config(&self.0, Config::empty()));
         }

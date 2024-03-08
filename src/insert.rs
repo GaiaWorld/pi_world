@@ -38,7 +38,7 @@ pub struct Insert<'world, I: InsertComponents> {
 }
 
 impl<'world, I: InsertComponents> Insert<'world, I> {
-    pub fn new(
+    fn new(
         world: &'world World,
         state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
     ) -> Self {
@@ -151,3 +151,23 @@ macro_rules! impl_tuple_insert {
     };
 }
 all_tuples!(impl_tuple_insert, 0, 16, F, S);
+
+// impl<T: 'static> InsertComponents for T {
+//     type Item = T;
+//     type State = TState<T>;
+//     fn components() -> Vec<ComponentInfo> {
+//         vec![(ComponentInfo::of::<T>())]
+//     }
+//     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+//         TState::new(archetype.get_column(&TypeId::of::<T>()).unwrap())
+//     }
+
+//     fn insert(
+//         state: &Self::State,
+//         components: Self::Item,
+//         e: Entity,
+//         row: Row,
+//     ) {
+//         state.write(e, row, components);
+//     }
+// }

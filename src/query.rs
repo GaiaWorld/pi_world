@@ -33,6 +33,65 @@ pub enum QueryError {
     NoSuchRow,
 }
 
+pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
+    pub(crate) world: &'world World,
+    pub(crate) state: QueryState<Q, F, ()>,
+    // 缓存上次的索引映射关系
+    pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
+}
+impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'world, Q, F> {
+    pub(crate) fn new(world: &'world World, state: QueryState<Q, F, ()>) -> Self {
+        let cache_mapping = UnsafeCell::new(state.cache_mapping);
+        Self {
+            world,
+            state,
+            cache_mapping,
+        }
+    }
+    #[inline]
+    pub fn contains(&self, entity: Entity) -> bool {
+        check(
+            self.world,
+            entity,
+            unsafe { &mut *self.cache_mapping.get() },
+            &self.state.map,
+        )
+        .is_ok()
+    }
+    #[inline]
+    pub fn get(
+        &'world self,
+        e: Entity,
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
+    {
+        self.state
+            .as_readonly()
+            .get(self.world, e, unsafe { &mut *self.cache_mapping.get() })
+    }
+    #[inline]
+    pub fn get_mut(
+        &'world mut self,
+        e: Entity,
+    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+        self.state.get(self.world, e, self.cache_mapping.get_mut())
+    }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.state.is_empty()
+    }
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.state.len()
+    }
+    #[inline]
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, ()> {
+        QueryIter::new(self.world, self.state.as_readonly())
+    }
+    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F, ()> {
+        QueryIter::new(self.world, &self.state)
+    }
+}
+
 pub struct Query<
     'world,
     Q: FetchComponents + 'static,
@@ -109,32 +168,7 @@ impl<
     type Item<'w> = Query<'w, Q, F, S>;
 
     fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
-        let mut rw = ReadWrite::default();
-        Q::init_read_write(world, &mut rw);
-        let mut sub_rw = ReadWrite::default();
-        S::init_read_write(world, &mut sub_rw);
-        // 主查询必须包含子查询
-        rw.contains(&sub_rw).unwrap();
-        F::init_read_write(world, &mut rw);
-        system_meta.add_rw(rw);
-        let mut listeners = Default::default();
-        F::init_listeners(world, &mut listeners);
-        if F::LISTENER_COUNT > 0 {
-            // 遍历已有的原型， 添加record
-            let notify = Notify(
-                listeners.clone(),
-                PhantomData,
-                PhantomData::<Q>,
-                PhantomData::<F>,
-                PhantomData::<S>,
-            );
-            for r in world.archetype_arr.iter() {
-                notify.listen(ArchetypeInit(r, world))
-            }
-            // 监听原型创建， 添加record
-            world.listener_mgr.register_event(Share::new(notify));
-        }
-        QueryState::new(listeners, Q::init_state(world, &world.empty_archetype))
+        Self::State::create(world, system_meta)
     }
     fn depend(
         _world: &World,
@@ -221,6 +255,34 @@ pub struct QueryState<
 impl<Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryState<Q, F, S> {
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F, S> {
         unsafe { &*(self as *const QueryState<Q, F, S> as *const QueryState<Q::ReadOnly, F, S>) }
+    }
+    pub fn create(world: &World, system_meta: &mut SystemMeta) -> Self {
+        let mut rw = ReadWrite::default();
+        Q::init_read_write(world, &mut rw);
+        let mut sub_rw = ReadWrite::default();
+        S::init_read_write(world, &mut sub_rw);
+        // 主查询必须包含子查询
+        rw.contains(&sub_rw).unwrap();
+        F::init_read_write(world, &mut rw);
+        system_meta.add_rw(rw);
+        let mut listeners = Default::default();
+        F::init_listeners(world, &mut listeners);
+        if F::LISTENER_COUNT > 0 {
+            // 遍历已有的原型， 添加record
+            let notify = Notify(
+                listeners.clone(),
+                PhantomData,
+                PhantomData::<Q>,
+                PhantomData::<F>,
+                PhantomData::<S>,
+            );
+            for r in world.archetype_arr.iter() {
+                notify.listen(ArchetypeInit(r, world))
+            }
+            // 监听原型创建， 添加record
+            world.listener_mgr.register_event(Share::new(notify));
+        }
+        QueryState::new(listeners, Q::init_state(world, &world.empty_archetype))
     }
     pub fn new(listeners: SmallVec<[(TypeId, bool); 1]>, empty: Q::State) -> Self {
         Self {

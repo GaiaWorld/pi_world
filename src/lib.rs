@@ -21,9 +21,9 @@ pub mod dirty;
 pub mod safe_vec;
 pub mod exec_graph;
 pub mod dot;
+pub mod schedule;
 
 pub mod example;
-// pub mod bench1;
 
 /// Most commonly used re-exported types.
 pub mod prelude {
@@ -38,6 +38,7 @@ pub mod prelude {
         world::{Entity, World},
         listener::Listener,
         app::App,
+        schedule::Schedule,
         exec_graph::ExecGraph,
         dot::{Dot, Config},
         safe_vec::SafeVec
