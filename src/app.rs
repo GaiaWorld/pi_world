@@ -9,6 +9,9 @@ use pi_async_rt::rt::{
 
 use crate::{schedule::Schedule, world::World};
 
+pub type SingleThreadApp = App<SingleTaskRuntime>;
+pub type MultiThreadApp = App<MultiTaskRuntime>;
+
 pub struct App<A: AsyncRuntime + AsyncRuntimeExt> {
     pub world: World,
     pub schedule: Schedule,

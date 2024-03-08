@@ -38,10 +38,10 @@ pub mod prelude {
         system_parms::SystemParam,
         world::{Entity, World},
         listener::Listener,
-        app::App,
+        app::{App, SingleThreadApp, MultiThreadApp},
         schedule::Schedule,
         exec_graph::ExecGraph,
         dot::{Dot, Config},
-        safe_vec::SafeVec
+        safe_vec::SafeVec,
     };
 }
