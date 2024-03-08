@@ -150,7 +150,7 @@ macro_rules! impl_tuple_insert {
         }
     };
 }
-all_tuples!(impl_tuple_insert, 0, 16, F, S);
+all_tuples!(impl_tuple_insert, 0, 32, F, S);
 
 // impl<T: 'static> InsertComponents for T {
 //     type Item = T;

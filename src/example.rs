@@ -239,6 +239,32 @@ mod test_mod {
         assert_eq!(world.get_component::<Age1>(e2).unwrap().0, 4);
         assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 4);
     }
+    #[test]
+    fn test_alter2() {
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age0,)>();
+        let _entities = (0..10_000).map(|_| {
+            i.insert((
+                Age0(0),
+            ))
+        }).collect::<Vec<_>>();
+        world.collect();
+        {
+            let mut alter = world.make_alterer::<(&Age0,), (), (Age1,), ()>();
+            let mut it = alter.iter_mut();
+            while let Some(_) = it.next() {
+                let _ = it.alter((Age1(0),));
+            }
+        }
+        {
+            let mut alter = world.make_alterer::<(), (With<Age0>, With<Age1>), (), (Age1,)>();
+            let mut it = alter.iter_mut();
+            while let Some(_) = it.next() {
+                let _ = it.alter(());
+            }
+        }
+    }
+
     #[test] 
     fn test_added() {
         let mut app = App::<SingleTaskRuntime>::new();
