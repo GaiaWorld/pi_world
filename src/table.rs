@@ -16,7 +16,7 @@ use crate::column::Column;
 use crate::world::{Entity, World};
 
 pub struct Table {
-    pub(crate) entitys: AppendVec<Entity>, // 记录entity
+    entitys: AppendVec<Entity>, // 记录entity
     pub(crate) columns: Vec<Column>,       // 每个组件
     removes: AppendVec<Row>,               // 整理前被移除的实例
 }

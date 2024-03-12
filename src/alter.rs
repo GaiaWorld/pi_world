@@ -436,6 +436,10 @@ pub struct AlterIter<
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter<'w, Q, F, A> {
     #[inline(always)]
+    pub fn entity(&self) -> Entity {
+        self.it.entity()
+    }
+    #[inline(always)]
     pub fn delete(&mut self) -> Result<bool, QueryError> {
         delete_row(
             &self.it.world,
@@ -463,6 +467,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> Iterator
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.it.next()
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.it.size_hint()
     }
 }
 

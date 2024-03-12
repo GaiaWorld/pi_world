@@ -121,11 +121,29 @@ pub fn print_e(
     println!("print_e: end");
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+
+struct A(u32);
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct B(u32);
+
+#[derive(Copy, Clone)]
+struct Transform([f32;16]);
+
+#[derive(Copy, Clone)]
+struct Position([f32;3]);
+
+#[derive(Copy, Clone)]
+struct Rotation([f32;3]);
+
+#[derive(Copy, Clone)]
+struct Velocity([f32;3]);
 
 #[cfg(test)]
 mod test_mod {
     use crate::{app::*, archetype::Row, query::Queryer, system::*, table::Table};
     use pi_append_vec::AppendVec;
+    use pi_null::Null;
     use test::Bencher;
     use super::*;
     use pi_async_rt::{prelude::{SingleTaskPool, SingleTaskRunner}, rt::single_thread::SingleTaskRuntime};
@@ -185,6 +203,57 @@ mod test_mod {
         app.run();
         app.run();
     }
+    #[test]
+    fn test_add_remove() {
+        let mut world = World::new();
+        let i = world.make_inserter::<(A,)>();
+        let entities = (0..10_000).map(|_| {
+            i.insert((
+                A(0),
+            ))
+        }).collect::<Vec<_>>();
+        world.collect();
+        {
+            let mut alter = world.make_alterer::<(), (With<A>,), (B,), ()>();
+            let mut it = alter.iter_mut();
+            while let Some(_) = it.next() {
+                let _ = it.alter((B(0),));
+            }
+        }
+        for e in &entities {
+            assert_eq!(world.get_component::<B>(*e).is_ok(), true)
+        }
+        {
+            let mut alter = world.make_alterer::<(), (With<A>, With<B>), (), (B,)>();
+            let mut it = alter.iter_mut();
+            while let Some(_) = it.next() {
+                let _ = it.alter(());
+            }
+        }
+        for e in entities {
+            assert_eq!(world.get_component::<B>(e).is_err(), true)
+        }
+    }
+    #[test]
+    pub fn simple_insert() {
+        for _ in 0..100 {
+            
+        
+        let world = World::new();
+        let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+        let mut e = Entity::null();
+        for a in 0..10_000 {
+            e = i.insert((
+                Transform([a as f32; 16]),
+                Position([a as f32; 3]),
+                Rotation([a as f32; 3]),
+                Velocity([a as f32; 3]),
+            ));
+        };
+        assert_eq!(world.get_component::<Transform>(e).unwrap().0[0], 9999f32);
+    }
+    }
+
     #[test]
     fn test_query() {
         let mut world = World::new();

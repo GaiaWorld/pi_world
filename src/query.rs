@@ -24,7 +24,7 @@ use pi_null::*;
 use pi_share::Share;
 use smallvec::SmallVec;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum QueryError {
     MissingComponent,
     NoSuchArchetype,
@@ -303,7 +303,7 @@ impl<Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryState<Q, 
         }
         let mut result = ArchetypeDependResult::new();
         Q::archetype_depend(archetype, &mut result);
-        result.flag.bits() != 0 && !result.flag.contains(Flags::WITHOUT)
+        !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
     #[inline]
@@ -473,6 +473,10 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
                 cache_mapping: state.cache_mapping,
             }
         }
+    }
+    #[inline(always)]
+    pub fn entity(&self) -> Entity {
+        self.e
     }
 
     #[inline(always)]

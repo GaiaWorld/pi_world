@@ -41,7 +41,6 @@ impl Schedule {
     pub fn register(&mut self, system: BoxedSystem, stages: &[&'static str]) -> usize {
         let name = system.name().clone();
         let index = self.systems.insert(system);
-        let sys = unsafe { self.systems.load_unchecked_mut(index) };
         self.graph.add_system((index, name.clone()));
         for stage in stages {
             let e = self.stage_graph.entry(*stage);
@@ -58,7 +57,7 @@ impl Schedule {
         }
         // todo 遍历world上的单例，测试和system的读写关系
         self.graph.initialize(self.systems.clone(), world);
-        for (name, stage) in self.stage_graph.iter_mut() {
+        for (_name, stage) in self.stage_graph.iter_mut() {
             // println!("stage:{:?} initialize", name);
             stage.initialize(self.systems.clone(), world);
         }

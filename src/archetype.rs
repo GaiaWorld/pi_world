@@ -261,7 +261,7 @@ impl Archetype {
     /// Returns the number of elements in the archetype.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.table.entitys.len()
+        self.table.len() as usize
     }
     /// Returns if the archetype is empty.
     #[inline(always)]

@@ -1,5 +1,5 @@
 use core::fmt::*;
-use std::mem::{take, transmute, MaybeUninit};
+use std::mem::{needs_drop, take, transmute, MaybeUninit};
 use std::ops::{Index, IndexMut};
 use std::sync::atomic::Ordering;
 
@@ -86,6 +86,11 @@ impl<T> SafeVec<T> {
         if len == 0 {
             return;
         }
+        if needs_drop::<T>() {
+            for i in self.vec.iter() {
+                unsafe { i.assume_init_drop() }
+            }
+        }
         self.vec.clear(1);
     }
 }
@@ -102,7 +107,15 @@ impl<T> IndexMut<usize> for SafeVec<T> {
             .expect("no element found at index_mut {index}")
     }
 }
-
+impl<T> Drop for SafeVec<T> {
+    fn drop(&mut self) {
+        if needs_drop::<T>() {
+            for i in self.vec.iter() {
+                unsafe { i.assume_init_drop() }
+            }
+        }
+    }
+}
 impl<T> Default for SafeVec<T> {
     fn default() -> Self {
         SafeVec {
