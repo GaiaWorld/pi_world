@@ -1,5 +1,6 @@
 #![feature(const_type_id)]
 #![feature(get_mut_unchecked)]
+#![allow(invalid_reference_casting)]
 #![feature(test)]
 extern crate test;
 
@@ -16,6 +17,7 @@ pub mod system;
 pub mod system_parms;
 pub mod function_system;
 pub mod insert;
+pub mod insert_batch;
 pub mod alter;
 pub mod dirty;
 pub mod safe_vec;
@@ -31,6 +33,7 @@ pub mod prelude {
     pub use crate::{
         query::{Query, QueryError},
         insert::Insert,
+        insert_batch::InsertBatchIter,
         alter::Alter,
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},

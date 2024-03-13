@@ -47,6 +47,13 @@ impl Table {
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
         unsafe { self.columns.get_unchecked(index as usize) }
     }
+    /// 扩容
+    pub fn reserve(&mut self, additional: usize) {
+        self.entitys.reserve(additional, 1);
+        for c in self.columns.iter_mut() {
+            c.reserve(additional);
+        }
+    }
     #[inline(always)]
     pub fn alloc(&self) -> Row {
         self.entitys.alloc_index(1) as Row

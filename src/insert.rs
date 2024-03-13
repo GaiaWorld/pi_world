@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::mem::transmute;
 
 use pi_proc_macros::all_tuples;
+use pi_slot::SlotMap;
 
 use crate::archetype::*;
 use crate::column::Column;
@@ -17,20 +18,33 @@ pub struct Inserter<'world, I: InsertComponents> {
 }
 
 impl<'world, I: InsertComponents> Inserter<'world, I> {
+    #[inline(always)]
     pub fn new(
         world: &'world World,
         state: (ArchetypeWorldIndex, ShareArchetype, I::State),
     ) -> Self {
-        Self {
-            world,
-            state,
-        }
+        Self { world, state }
     }
+    #[inline(always)]
     pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
         Insert::<I>::new(self.world, &self.state).insert(components)
     }
+    #[inline(always)]
+    pub fn batch(&self, iter: impl IntoIterator<Item = <I as InsertComponents>::Item>) {
+        let iter = iter.into_iter();
+        let (lower, upper) = iter.size_hint();
+        let length = upper.unwrap_or(lower);
+        let ptr: *mut SlotMap<Entity, EntityAddr> = unsafe { transmute(&self.world.entities) };
+        unsafe { &mut *ptr }.reserve(length);
+        // 强行将原型转为可写
+        let ptr = ShareArchetype::as_ptr(&self.state.1);
+        let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
+        ar_mut.table.reserve(length);
+        for item in iter {
+            self.insert(item);
+        }
+    }
 }
-
 
 pub struct Insert<'world, I: InsertComponents> {
     world: &'world World,
@@ -38,15 +52,14 @@ pub struct Insert<'world, I: InsertComponents> {
 }
 
 impl<'world, I: InsertComponents> Insert<'world, I> {
-    fn new(
+    #[inline(always)]
+    pub(crate) fn new(
         world: &'world World,
         state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
     ) -> Self {
-        Insert {
-            world,
-            state,
-        }
+        Insert { world, state }
     }
+    #[inline]
     pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
         let row = self.state.1.table.alloc();
         let e = self.world.insert(self.state.0, row);
@@ -68,7 +81,13 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
         let s = I::init_state(world, &ar);
         (ar_index, ar, s)
     }
-    fn depend(_world: &World, _system_meta: &SystemMeta, _state: &Self::State, archetype: &Archetype, depend: &mut ArchetypeDependResult) {
+    fn depend(
+        _world: &World,
+        _system_meta: &SystemMeta,
+        _state: &Self::State,
+        archetype: &Archetype,
+        depend: &mut ArchetypeDependResult,
+    ) {
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
         if &id == archetype.id() {
@@ -84,11 +103,9 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     ) -> Self::Item<'world> {
         Insert::new(world, state)
     }
-
 }
 
 pub trait InsertComponents {
-
     type Item;
 
     type State: Send + Sync + Sized;
@@ -105,16 +122,12 @@ unsafe impl<T> Sync for TState<T> {}
 unsafe impl<T> Send for TState<T> {}
 impl<T: 'static> TState<T> {
     #[inline(always)]
-    pub fn new(c:  &Column) -> Self {
-        TState(unsafe {
-         transmute(c)   
-        }, PhantomData)
+    pub fn new(c: &Column) -> Self {
+        TState(unsafe { transmute(c) }, PhantomData)
     }
     #[inline(always)]
     pub fn write(&self, e: Entity, row: Row, val: T) {
-        let c: &mut Column = unsafe {
-         transmute(self.0)   
-        };
+        let c: &mut Column = unsafe { transmute(self.0) };
         c.write(row, val);
         c.added.record(e, row);
     }

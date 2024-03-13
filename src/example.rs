@@ -234,9 +234,34 @@ mod test_mod {
             assert_eq!(world.get_component::<B>(e).is_err(), true)
         }
     }
+    #[bench]
+    fn bench_simple_insert(b: &mut Bencher) {
+        b.iter(move || {
+            let mut world = World::new();
+            let iter = (0..10_000).map(|a| {
+                (
+                    Transform([a as f32; 16]),
+                    Position([a as f32; 3]),
+                    Rotation([a as f32; 3]),
+                    Velocity([a as f32; 3]),
+                )
+            });
+            let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+            i.batch(iter);
+            // let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+            // for a in 0..9990 {
+            //     i.insert((
+            //         Transform([a as f32; 16]),
+            //         Position([a as f32; 3]),
+            //         Rotation([a as f32; 3]),
+            //         Velocity([a as f32; 3]),
+            //     ));
+            // };
+        });
+    }
     #[test]
     pub fn simple_insert() {
-        for _ in 0..100 {
+        for _ in 0..1 {
             
         
         let world = World::new();

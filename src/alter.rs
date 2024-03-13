@@ -500,7 +500,7 @@ fn delete_row<'w>(
     if e.is_null() {
         return Err(QueryError::NoSuchRow);
     }
-    world.entitys.remove(e).unwrap();
+    world.entities.remove(e).unwrap();
     deletes.push((ar_index, row));
     Ok(true)
 }

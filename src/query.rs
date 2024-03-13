@@ -382,7 +382,7 @@ pub(crate) fn check<'w>(
     cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
 ) -> Result<EntityAddr, QueryError> {
-    let addr = match world.entitys.get(entity) {
+    let addr = match world.entities.get(entity) {
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
     };

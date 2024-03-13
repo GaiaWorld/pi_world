@@ -86,6 +86,12 @@ impl Column {
     pub fn drop_row_unchecked(&self, row: Row) {
         self.info.drop_fn.unwrap()(unsafe { transmute(self.get_row(row)) })
     }
+    /// 扩容
+    pub fn reserve(&mut self, additional: usize) {
+        let multiple = self.info.mem_size as usize;
+        self.vec.reserve(additional * multiple, multiple);
+        self.added.reserve(additional);
+    }
     /// 整理合并空位
     pub(crate) fn collect(
         &mut self,

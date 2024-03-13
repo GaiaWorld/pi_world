@@ -23,6 +23,7 @@ use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, Share
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::{InsertComponents, Inserter};
+use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
@@ -51,7 +52,7 @@ pub struct ArchetypeOk<'a>(
 #[derive(Debug)]
 pub struct World {
     pub(crate) _single_map: DashMap<TypeId, Box<dyn Any>>,
-    pub(crate) entitys: SlotMap<Entity, EntityAddr>,
+    pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
     pub(crate) empty_archetype: ShareArchetype,
@@ -66,7 +67,7 @@ impl World {
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         Self {
             _single_map: DashMap::default(),
-            entitys: SlotMap::default(),
+            entities: SlotMap::default(),
             archetype_map: DashMap::new(),
             archetype_arr: SafeVec::default(),
             empty_archetype: ShareArchetype::new(Archetype::new(vec![])),
@@ -74,6 +75,14 @@ impl World {
             archetype_init_key,
             archetype_ok_key,
         }
+    }
+    /// 批量插入
+    pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
+    where
+        I: Iterator<Item = <Ins as InsertComponents>::Item>,
+        Ins: InsertComponents,
+    {
+        InsertBatchIter::new(self, iter.into_iter())
     }
     /// 创建一个插入器
     pub fn make_inserter<I: InsertComponents>(&self) -> Inserter<I> {
@@ -114,12 +123,12 @@ impl World {
         &self.empty_archetype
     }
     pub fn entity_list<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
-        self.entitys.iter()
+        self.entities.iter()
     }
 
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
-        let addr = match self.entitys.get(e) {
+        let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
@@ -188,19 +197,19 @@ impl World {
     /// 插入一个新的Entity
     #[inline(always)]
     pub(crate) fn insert(&self, ar_index: ArchetypeWorldIndex, row: Row) -> Entity {
-        self.entitys.insert(EntityAddr::new(ar_index, row))
+        self.entities.insert(EntityAddr::new(ar_index, row))
     }
     /// 替换Entity的原型及行
     #[inline(always)]
     pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeWorldIndex, row: Row) {
-        let addr = unsafe { self.entitys.load_unchecked(e) };
+        let addr = unsafe { self.entities.load_unchecked(e) };
         addr.index = ar_index;
         addr.row = row;
     }
     /// 替换Entity的原型及行
     #[inline(always)]
     pub(crate) fn replace_row(&self, e: Entity, row: Row) {
-        let addr = unsafe { self.entitys.load_unchecked(e) };
+        let addr = unsafe { self.entities.load_unchecked(e) };
         addr.row = row;
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
@@ -209,6 +218,7 @@ impl World {
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn collect_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
+        self.entities.collect();
         self.archetype_arr.collect();
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
