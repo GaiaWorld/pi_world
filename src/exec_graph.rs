@@ -199,6 +199,7 @@ impl ExecGraph {
             match &node.label {
                 NodeType::System((sys_index, _)) => {
                     let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                    depend.clear();
                     sys.depend(world, archetype, &mut depend);
                     if depend.flag.contains(Flags::WITHOUT) {
                         // 如果被排除，则跳过
@@ -229,7 +230,6 @@ impl ExecGraph {
                 }
                 _ => break,
             }
-            depend.clear();
         }
     }
 

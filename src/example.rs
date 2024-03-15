@@ -442,5 +442,88 @@ mod test_mod {
         app.run();
     }
 
+    #[test]
+    fn test_schedule() {
+
+        struct A(f32);
+        struct B(f32);
+        struct C(f32);
+        struct D(f32);
+        struct E(f32);
+        
+        fn ab(mut query: Query<(&mut A, &mut B)>) {
+            println!("ab: {}", query.iter().count());
+            for (mut a, mut b) in query.iter_mut() {
+                std::mem::swap(&mut a.0, &mut b.0);
+            }
+        }
+        
+        fn cd(mut query: Query<(&mut C, &mut D)>) {
+            println!("cd: {}", query.iter().count());
+            for (mut c, mut d) in query.iter_mut() {
+                std::mem::swap(&mut c.0, &mut d.0);
+            }
+        }
+        
+        fn ce(mut query: Query<(&mut C, &mut E)>) {
+            println!("ce: {}", query.iter().count());
+            for (mut c, mut e) in query.iter_mut() {
+                std::mem::swap(&mut c.0, &mut e.0);
+            }
+        }
+        let mut app = MultiThreadApp::new();
+        let i = app.world.make_inserter::<(A,B,)>();
+        let it = (0..1).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,)>();
+        let it = (0..1).map(|_| {
+            (
+                A(0.0), 
+                B(0.0),
+                C(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,D,)>();
+        let it = (0..1).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+                C(0.0),
+                D(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,E,)>();
+        let it = (0..1).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+                C(0.0),
+                E(0.0),
+            )
+        });
+        i.batch(it);
+
+        app.world.collect();
+        let s = Box::new(IntoSystem::into_system(ab));
+        app.schedule.register(s, &[]);
+        let s = Box::new(IntoSystem::into_system(cd));
+        app.schedule.register(s, &[]);
+        let s = Box::new(IntoSystem::into_system(ce));
+        app.schedule.register(s, &[]);
+        app.initialize();
+
+        app.run();     
+        app.run();     
+    }
 }
 
