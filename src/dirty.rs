@@ -7,8 +7,8 @@
 //! 整理时，如果该Column所关联的所有AddedIndex都和该AppendVec的长度一样，则所有AddedIndex和AppendVec就可以清空，否则继续保留，等下一帧再检查是否清空。 因为必须保证Row不被错误重用，只有清空的情况下，才可以做原型的Removed整理。
 //!
 use core::fmt::*;
-use std::{any::TypeId, cell::UnsafeCell};
 use std::sync::atomic::Ordering;
+use std::{any::TypeId, cell::UnsafeCell};
 
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
@@ -59,8 +59,8 @@ impl DirtyIndex {
     }
 }
 #[derive(Debug, Default)]
-pub(crate) struct EntityDirty{
-    pub(crate) e:Entity,
+pub(crate) struct EntityDirty {
+    pub(crate) e: Entity,
     pub(crate) row: Row,
 }
 impl Null for EntityDirty {
@@ -69,9 +69,9 @@ impl Null for EntityDirty {
     }
 
     fn null() -> Self {
-        EntityDirty{
-            e:Entity::null(),
-            row:Row::null(),
+        EntityDirty {
+            e: Entity::null(),
+            row: Row::null(),
         }
     }
 }
@@ -79,17 +79,17 @@ impl Null for EntityDirty {
 #[derive(Debug, Default)]
 pub struct ComponentDirty {
     listeners: UnsafeCell<Vec<(TypeId, ShareUsize)>>, // 每个监听器的TypeId和当前读取的长度
-    vec: AppendVec<EntityDirty>,                  // 记录的脏Row，可以重复
+    vec: AppendVec<EntityDirty>,                      // 记录的脏Row，可以重复
 }
 unsafe impl Sync for ComponentDirty {}
 unsafe impl Send for ComponentDirty {}
 impl ComponentDirty {
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&self, owner: TypeId) {
-        unsafe { &mut *self.listeners.get()}.push((owner, ShareUsize::new(0)));
+        unsafe { &mut *self.listeners.get() }.push((owner, ShareUsize::new(0)));
     }
     /// 插入一个监听者的类型id
-    pub(crate) fn listener_list(&self) -> &Vec<(TypeId, ShareUsize)>{
+    pub(crate) fn listener_list(&self) -> &Vec<(TypeId, ShareUsize)> {
         unsafe { &*self.listeners.get() }
     }
     pub fn find(
@@ -111,37 +111,37 @@ impl ComponentDirty {
     }
     #[inline(always)]
     pub(crate) fn record_unchecked(&self, e: Entity, row: Row) {
-        self.vec.insert(EntityDirty{e, row});
+        self.vec.insert(EntityDirty { e, row });
     }
     #[inline(always)]
     pub(crate) fn record(&self, e: Entity, row: Row) {
         if !self.listener_list().is_empty() {
-            self.vec.insert(EntityDirty{e, row});
+            self.vec.insert(EntityDirty { e, row });
         }
     }
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
         if self.listener_len() > 0 {
-            self.vec.reserve(additional, 1);
+            self.vec.reserve(additional);
         }
     }
-    
+
     // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
     pub(crate) fn collect(&mut self) -> bool {
         let listeners = self.listeners.get_mut();
         if listeners.is_empty() {
-            return true
+            return true;
         }
         let len = self.vec.len();
         if len == 0 {
-            return true
+            return true;
         }
         for (_, read_len) in listeners.iter_mut() {
             if *read_len.get_mut() < len {
                 return false;
             }
         }
-        self.vec.clear(1);
+        self.vec.clear();
         // 以前用到了arr，所以扩容
         if self.vec.vec_capacity() < len {
             unsafe { self.vec.vec_reserve(len - self.vec.vec_capacity()) };

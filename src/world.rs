@@ -122,7 +122,11 @@ impl World {
     pub(crate) fn empty_archetype(&self) -> &ShareArchetype {
         &self.empty_archetype
     }
-    pub fn entity_list<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
+    pub fn len<'a>(&'a self) -> usize {
+        self.entities.len()
+    }
+
+    pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
 

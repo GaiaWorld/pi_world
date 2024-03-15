@@ -262,6 +262,7 @@ pub struct Mut<'a, T: ?Sized> {
     pub(crate) row: Row,
 }
 impl<'a, T: ?Sized> Mut<'a, T> {
+    #[inline(always)]
     pub fn entity(&self) -> Entity {
         self.e
     }

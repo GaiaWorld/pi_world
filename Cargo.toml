@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.1.8"
+version = "0.1.9"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -21,8 +21,11 @@ pi_key_alloter = "0.4"
 pi_phf_map = "0.2"
 pi_slot = "0.1"
 pi_append_vec = "0.3"
-pi_arr = "0.17"
+pi_arr = "0.18"
 dashmap ="5.5"
 pi-async-rt = "0.2"
 async-channel = "2.2"
 pi_proc_macros = "0.1"
+
+[dev-dependencies]
+cgmath="0.18"

@@ -52,7 +52,7 @@ impl<T> SafeVec<T> {
     #[inline(always)]
     pub fn insert(&self, value: T) -> usize {
         let index = self.vec.alloc_index(1);
-        *self.vec.load_alloc(index, 1) = MaybeUninit::new(value);
+        *self.vec.load_alloc(index) = MaybeUninit::new(value);
         while self
             .len
             .compare_exchange(index, index + 1, Ordering::Release, Ordering::Relaxed)
@@ -68,7 +68,7 @@ impl<T> SafeVec<T> {
         Entry {
             index,
             len: &self.len,
-            value: self.vec.load_alloc(index, 1),
+            value: self.vec.load_alloc(index),
         }
     }
     #[inline(always)]
@@ -77,7 +77,7 @@ impl<T> SafeVec<T> {
     }
     #[inline(always)]
     pub fn collect(&mut self) {
-        self.vec.collect(1);
+        self.vec.collect();
     }
 
     #[inline(always)]
@@ -91,7 +91,7 @@ impl<T> SafeVec<T> {
                 unsafe { i.assume_init_drop() }
             }
         }
-        self.vec.clear(1);
+        self.vec.clear();
     }
 }
 impl<T> Index<usize> for SafeVec<T> {

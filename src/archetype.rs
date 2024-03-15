@@ -154,11 +154,11 @@ impl Archetype {
         let mut moving = Vec::new();
         for c in self.table.columns.iter() {
             // 如果组件是要删除或要添加的组件，则不添加，只有移动的才添加
-            if sort_del.binary_search(&c.info.type_id).is_err()
-                && sort_add.binary_search(&c.info).is_err()
+            if sort_del.binary_search(&c.info().type_id).is_err()
+                && sort_add.binary_search(&c.info()).is_err()
             {
-                add.push(c.info.clone());
-                moving.push(c.info.type_id);
+                add.push(c.info().clone());
+                moving.push(c.info().type_id);
             }
         }
         (add, moving)
@@ -233,7 +233,7 @@ impl Archetype {
                 return u32::null();
             }
             let ti = unsafe { self.table.columns.get_unchecked(*t as usize) };
-            if &ti.info.type_id == type_id {
+            if &ti.info().type_id == type_id {
                 return *t;
             }
         }
@@ -246,7 +246,7 @@ impl Archetype {
                 return None;
             }
             let t = unsafe { self.table.columns.get_unchecked(*t as usize) };
-            if &t.info.type_id == type_id {
+            if &t.info().type_id == type_id {
                 return Some(t);
             }
         }
@@ -296,7 +296,7 @@ pub struct ComponentInfo {
     pub type_id: TypeId,
     pub type_name: Cow<'static, str>,
     pub drop_fn: Option<fn(*mut u8)>,
-    pub mem_size: u32, // 内存大小
+    pub mem_size: usize, // 内存大小
 }
 impl ComponentInfo {
     pub fn of<T: 'static>() -> ComponentInfo {
@@ -317,7 +317,7 @@ impl ComponentInfo {
             type_id,
             type_name,
             drop_fn,
-            mem_size: mem_size as u32,
+            mem_size,
         }
     }
     pub fn id(&self) -> u128 {

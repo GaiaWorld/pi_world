@@ -127,7 +127,7 @@ struct A(u32);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct B(u32);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone,Debug)]
 struct Transform([f32;16]);
 
 #[derive(Copy, Clone)]
@@ -141,15 +141,27 @@ struct Velocity([f32;3]);
 
 #[cfg(test)]
 mod test_mod {
-    use crate::{app::*, archetype::Row, query::Queryer, system::*, table::Table};
+    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, query::Queryer, system::*, table::Table};
     use pi_append_vec::AppendVec;
     use pi_null::Null;
     use test::Bencher;
     use super::*;
     use pi_async_rt::{prelude::{SingleTaskPool, SingleTaskRunner}, rt::single_thread::SingleTaskRuntime};
     
+    #[test]
+    fn test_columns() {
+        let mut c = Column::new(ComponentInfo::of::<Transform>());
+        c.write(0, Transform([0.0;16]));
+        c.write(1, Transform([1.0;16]));
+        println!("{:?}", c.get::<Transform>(0));
+        println!("{:?}", c.get::<Transform>(1));
+        let mut action = Default::default();
+        c.collect(2, &mut action);
+        println!("{:?}", c.get::<Transform>(0));
+        println!("{:?}", c.get::<Transform>(1));
+    }
 
-    #[test] 
+    #[test]  
     fn test_removes() {
         let mut action = Default::default();
         let mut set = Default::default();
@@ -162,7 +174,7 @@ mod test_mod {
         assert_eq!(action.len(), 2);
         assert_eq!(action[0], (6, 1));
         assert_eq!(action[1], (5, 2));
-        removes.clear(1);
+        removes.clear(); 
         removes.insert(1);
         removes.insert(6);
         //removes.insert(0);
@@ -235,6 +247,46 @@ mod test_mod {
         }
     }
     #[bench]
+    fn bench_add_remove(b: &mut Bencher) {
+        use cgmath::*;
+
+        #[derive(Copy, Clone)]
+        struct Mat(Matrix4<f32>);
+
+        #[derive(Copy, Clone)]
+        struct Position(Vector3<f32>);
+
+        #[derive(Copy, Clone)]
+        struct Rotation(Vector3<f32>);
+
+        #[derive(Copy, Clone)]
+        struct Velocity(Vector3<f32>);
+        let mut world = World::new();
+        let i = world.make_inserter::<(Mat,Position,Rotation, Velocity)>();
+        i.batch((0..1000).map(|_| {(
+                Mat(Matrix4::from_scale(1.0)),
+                Position(Vector3::unit_x()),
+                Rotation(Vector3::unit_x()),
+                Velocity(Vector3::unit_x()),
+        )}));
+        world.collect();
+        let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
+        println!("world, {:?}", world.len());
+        println!("query, {:?}", query.iter().size_hint());
+        b.iter(move || {
+        let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
+
+        query.iter_mut().for_each(|(mut pos, mut mat)| {
+            //let mat = &mut *mat;
+            for _ in 0..100 {
+                *mat = Mat(mat.0.invert().unwrap());
+            }
+
+            pos.0 = mat.0.transform_vector(pos.0);
+        });
+    });
+    }
+    #[bench]
     fn bench_simple_insert(b: &mut Bencher) {
         b.iter(move || {
             let mut world = World::new();
@@ -285,7 +337,7 @@ mod test_mod {
         let i = world.make_inserter::<(Age1,Age0,)>();
         let e1 = i.insert((Age1(1),Age0(0),));
         let e2 = i.insert((Age1(1),Age0(0),));
-        world.collect();
+        //world.collect();
         let mut q = world.make_queryer::<(&Age1,&mut Age0), ()>();
         for (a,mut b) in q.iter_mut() {
             b.0 += a.0;
@@ -296,7 +348,7 @@ mod test_mod {
 
     #[test]
     fn test_alter() {
-        let mut app = App::<SingleTaskRuntime>::new();
+        let mut app = MultiThreadApp::new();
         let s = Box::new(IntoSystem::into_system(insert1));
         app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(print_changed_entities));

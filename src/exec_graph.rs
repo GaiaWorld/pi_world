@@ -153,8 +153,8 @@ impl ExecGraph {
         // );
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
-        inner.nodes.collect(1);
-        inner.edges.collect(1);
+        inner.nodes.collect();
+        inner.edges.collect();
         let mut to_len = 0;
         // 计算froms节点和to_len
         for (index, node) in inner.nodes.iter().enumerate() {
@@ -343,8 +343,8 @@ impl ExecGraph {
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn collect(&mut self) {
         let inner = unsafe { Share::get_mut_unchecked(&mut self.0) };
-        inner.nodes.collect(1);
-        inner.edges.collect(1);
+        inner.nodes.collect();
+        inner.edges.collect();
     }
 }
 

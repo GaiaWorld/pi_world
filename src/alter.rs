@@ -17,7 +17,7 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::mem::{transmute, MaybeUninit};
+use std::mem::MaybeUninit;
 use std::ops::Range;
 
 use pi_null::Null;
@@ -550,7 +550,7 @@ pub(crate) fn mapping_init<'a>(
     if add_len > 0 && !Share::ptr_eq(&mapping.src, &mapping.dst) {
         // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
         for (i, t) in mapping.dst.get_columns().iter().enumerate() {
-            let column = mapping.src.get_column_index(&t.info.type_id);
+            let column = mapping.src.get_column_index(&t.info().type_id);
             if column.is_null() {
                 add_cloumns.push(i as ColumnIndex);
             }
@@ -565,7 +565,7 @@ pub(crate) fn mapping_init<'a>(
     if del_len > 0 && !Share::ptr_eq(&mapping.src, &mapping.dst) {
         // 删除组件的位置，源组件存在，但目标原型上没有该组件
         for (i, t) in mapping.src.get_columns().iter().enumerate() {
-            let column = mapping.dst.get_column_index(&t.info.type_id);
+            let column = mapping.dst.get_column_index(&t.info().type_id);
             if column.is_null() {
                 del_cloumns.push(i as ColumnIndex);
             }
@@ -640,7 +640,7 @@ fn move_columns(am: &mut ArchetypeMapping, move_columns: &Vec<(ColumnIndex, Colu
 // 将源组件移动到新位置上
 fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(Row, Row, Entity)>) {
     for (src_row, dst_row, _) in moves.iter() {
-        let src_data: *mut u8 = unsafe { transmute(src_column.get_row(*src_row)) };
+        let src_data: *mut u8 = src_column.get_row(*src_row);
         dst_column.write_row(*dst_row, src_data);
     }
 }

@@ -16,14 +16,14 @@ use crate::column::Column;
 use crate::world::{Entity, World};
 
 pub struct Table {
-    entitys: AppendVec<Entity>, // 记录entity
+    entities: AppendVec<Entity>, // 记录entity
     pub(crate) columns: Vec<Column>,       // 每个组件
     removes: AppendVec<Row>,               // 整理前被移除的实例
 }
 impl Table {
     pub fn new(infos: Vec<ComponentInfo>) -> Self {
         Self {
-            entitys: AppendVec::default(),
+            entities: AppendVec::default(),
             columns: infos.into_iter().map(|info| Column::new(info)).collect(),
             removes: AppendVec::default(),
         }
@@ -31,15 +31,15 @@ impl Table {
     /// 长度
     #[inline(always)]
     pub fn len(&self) -> Row {
-        self.entitys.len() as Row
+        self.entities.len() as Row
     }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {
-        *self.entitys.load_alloc(row as usize, 1)
+        *self.entities.load_alloc(row as usize)
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
-        let a = self.entitys.load_alloc(row as usize, 1);
+        let a = self.entities.load_alloc(row as usize);
         *a = e;
     }
 
@@ -49,21 +49,22 @@ impl Table {
     }
     /// 扩容
     pub fn reserve(&mut self, additional: usize) {
-        self.entitys.reserve(additional, 1);
+        let len = self.entities.len();
+        self.entities.reserve(additional);
         for c in self.columns.iter_mut() {
-            c.reserve(additional);
+            c.reserve(len, additional);
         }
     }
     #[inline(always)]
     pub fn alloc(&self) -> Row {
-        self.entitys.alloc_index(1) as Row
+        self.entities.alloc_index(1) as Row
     }
     /// 标记移出，用于delete 和 alter
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     #[inline(always)]
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
-        let e = self.entitys.load_alloc(row as usize, 1);
+        let e = self.entities.load_alloc(row as usize);
         if e.is_null() {
             return *e;
         }
@@ -177,9 +178,9 @@ impl Table {
             return true;
         }
         let new_entity_len =
-            Self::removes_action(&self.removes, remove_len, self.entitys.len(), action, set);
+            Self::removes_action(&self.removes, remove_len, self.entities.len(), action, set);
         // 清理removes
-        self.removes.clear(1);
+        self.removes.clear();
         // 以前用到了arr，所以扩容
         if self.removes.vec_capacity() < remove_len {
             unsafe {
@@ -196,20 +197,20 @@ impl Table {
         for (src, dst) in action.iter() {
             let e = unsafe {
                 replace(
-                    self.entitys.get_unchecked_mut(*src as usize),
+                    self.entities.get_unchecked_mut(*src as usize),
                     Entity::null(),
                 )
             };
-            *unsafe { self.entitys.get_unchecked_mut(*dst as usize) } = e;
+            *unsafe { self.entities.get_unchecked_mut(*dst as usize) } = e;
             // 修改world上entity的地址
             world.replace_row(e, *dst);
         }
         // 设置成正确的长度
         unsafe {
-            self.entitys.set_len(new_entity_len);
+            self.entities.set_len(new_entity_len);
         };
         // 整理合并内存
-        self.entitys.collect(1);
+        self.entities.collect();
         true
     }
 }
@@ -224,7 +225,7 @@ impl Drop for Table {
                 continue;
             }
             // 释放每个列中还存在的row
-            for (row, e) in self.entitys.iter().enumerate() {
+            for (row, e) in self.entities.iter().enumerate() {
                 if !e.is_null() {
                     c.drop_row_unchecked(row as Row);
                 }
@@ -236,7 +237,7 @@ impl Drop for Table {
 impl Debug for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Table")
-            .field("entitys", &self.entitys)
+            .field("entitys", &self.entities)
             .field("columns", &self.columns)
             .field("removes", &self.removes)
             .finish()
