@@ -73,7 +73,7 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     type State = (ArchetypeWorldIndex, ShareArchetype, I::State);
     type Item<'w> = Insert<'w, I>;
 
-    fn init_state(world: &World, _system_meta: &mut SystemMeta) -> Self::State {
+    fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
@@ -81,7 +81,7 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
         let s = I::init_state(world, &ar);
         (ar_index, ar, s)
     }
-    fn depend(
+    fn archetype_depend(
         _world: &World,
         _system_meta: &SystemMeta,
         _state: &Self::State,

@@ -1,7 +1,7 @@
 use std::{any::TypeId, borrow::Cow};
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult},
+    archetype::{Archetype, ArchetypeDependResult, Flags},
     system::{IntoSystem, System, SystemMeta},
     system_parms::SystemParam,
     world::*,
@@ -68,16 +68,27 @@ where
         TypeId::of::<F>()
     }
     #[inline]
-    fn initialize(&mut self, world: &World) {
+    fn initialize(&mut self, world: &mut World) {
         self.param_state = Some(F::Param::init_state(world, &mut self.system_meta));
     }
     /// system depend the archetype.
-    fn depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        F::Param::depend(
+    fn archetype_depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        F::Param::archetype_depend(
             world,
             &self.system_meta,
             self.param_state.as_ref().unwrap(),
             archetype,
+            result,
+        )
+    }
+    /// system depend the res.
+    fn res_depend(&self, world: &World, res_tid: &TypeId, res_name: &Cow<'static, str>, result: &mut Flags) {
+        F::Param::res_depend(
+            world,
+            &self.system_meta,
+            self.param_state.as_ref().unwrap(),
+            res_tid,
+            res_name,
             result,
         )
     }

@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{param_set::ParamSet, prelude::*, res::Res};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -104,7 +104,23 @@ pub fn changed_l(
  
     println!("changed_l: end");
 }
-
+pub fn p_set(
+    set: ParamSet<(
+    //Query<(&mut Age0, &mut Age1)>,
+    // Query<(&mut Age1, &mut Age2)>,
+    )>
+    // r10: Res<Age10>,
+    // r11: Res<Age11>,
+) {
+    println!("p_set");
+    // for (age0, age1) in set.0.iter_mut() {
+    //     dbg!(age0, age1);
+    // }
+    // set.1.iter_mut().for_each(|(age1, age2)| {
+    //     dbg!(age1, age2);
+    // });
+    println!("p_set: end");
+}
 pub fn print_e(
     // i0: Insert<(Age2,)>,
     q0: Query<(Entity, &Age0, &Age1,
@@ -141,7 +157,7 @@ struct Velocity([f32;3]);
 
 #[cfg(test)]
 mod test_mod {
-    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, query::Queryer, system::*, table::Table};
+    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, query::Queryer, res::ResMut, system::*, table::Table};
     use pi_append_vec::AppendVec;
     use pi_null::Null;
     use test::Bencher;
@@ -153,12 +169,12 @@ mod test_mod {
         let mut c = Column::new(ComponentInfo::of::<Transform>());
         c.write(0, Transform([0.0;16]));
         c.write(1, Transform([1.0;16]));
-        println!("{:?}", c.get::<Transform>(0));
-        println!("{:?}", c.get::<Transform>(1));
+        dbg!(c.get::<Transform>(0));
+        dbg!(c.get::<Transform>(1));
         let mut action = Default::default();
         c.collect(2, &mut action);
-        println!("{:?}", c.get::<Transform>(0));
-        println!("{:?}", c.get::<Transform>(1));
+        dbg!(c.get::<Transform>(0));
+        dbg!(c.get::<Transform>(1));
     }
 
     #[test]  
@@ -247,7 +263,7 @@ mod test_mod {
         }
     }
     #[bench]
-    fn bench_add_remove(b: &mut Bencher) {
+    fn bench_heavy_compute(b: &mut Bencher) {
         use cgmath::*;
 
         #[derive(Copy, Clone)]
@@ -271,7 +287,6 @@ mod test_mod {
         )}));
         world.collect();
         let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
-        println!("world, {:?}", world.len());
         println!("query, {:?}", query.iter().size_hint());
         b.iter(move || {
         let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
@@ -355,7 +370,7 @@ mod test_mod {
         app.schedule.register(s, &[]);
         let s = Box::new(IntoSystem::into_system(alter1));
         app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(print_e));
+        let s = Box::new(IntoSystem::into_system(p_set));
         app.schedule.register(s, &[]);
         app.initialize();
         app.run();
@@ -452,28 +467,25 @@ mod test_mod {
         struct E(f32);
         
         fn ab(mut query: Query<(&mut A, &mut B)>) {
-            println!("ab: {}", query.iter().count());
             for (mut a, mut b) in query.iter_mut() {
                 std::mem::swap(&mut a.0, &mut b.0);
             }
         }
         
         fn cd(mut query: Query<(&mut C, &mut D)>) {
-            println!("cd: {}", query.iter().count());
             for (mut c, mut d) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut d.0);
             }
         }
         
         fn ce(mut query: Query<(&mut C, &mut E)>) {
-            println!("ce: {}", query.iter().count());
             for (mut c, mut e) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut e.0);
             }
         }
         let mut app = MultiThreadApp::new();
         let i = app.world.make_inserter::<(A,B,)>();
-        let it = (0..1).map(|_| {
+        let it = (0..10_000).map(|_| {
             (
                 A(0.0),
                 B(0.0),
@@ -482,7 +494,7 @@ mod test_mod {
         i.batch(it);
 
         let i = app.world.make_inserter::<(A,B,C,)>();
-        let it = (0..1).map(|_| {
+        let it = (0..10_000).map(|_| {
             (
                 A(0.0), 
                 B(0.0),
@@ -492,7 +504,7 @@ mod test_mod {
         i.batch(it);
 
         let i = app.world.make_inserter::<(A,B,C,D,)>();
-        let it = (0..1).map(|_| {
+        let it = (0..10_000).map(|_| {
             (
                 A(0.0),
                 B(0.0),
@@ -503,7 +515,7 @@ mod test_mod {
         i.batch(it);
 
         let i = app.world.make_inserter::<(A,B,C,E,)>();
-        let it = (0..1).map(|_| {
+        let it = (0..10_000).map(|_| {
             (
                 A(0.0),
                 B(0.0),
@@ -521,9 +533,52 @@ mod test_mod {
         let s = Box::new(IntoSystem::into_system(ce));
         app.schedule.register(s, &[]);
         app.initialize();
+        app.run();     
+        for _ in 0..1000 {            
+            app.run();
+        }
+    }
 
-        app.run();     
-        app.run();     
+
+    #[test]
+    fn test_res() {
+        
+        struct A(f32);
+        struct B(f32);
+        struct C(f32);
+        struct D(f32);
+        struct E(f32);
+        
+        fn ab(a: Res<A>, mut b: ResMut<B>) {
+            b.0 += a.0 + 1.0;
+        }
+        
+        fn cd(c: Res<C>, mut d: ResMut<D>) {
+            d.0 += c.0 + 1.0;
+        }
+        
+        fn ce(c: Res<C>, mut e: ResMut<E>, mut b: ResMut<B>) {
+            e.0 += c.0 + 1.0;
+            b.0 += c.0 + 1.0;
+        }
+        let mut app = MultiThreadApp::new();
+        app.world.register_res(A(0.0));
+        app.world.register_res(B(0.0));
+        app.world.register_res(C(0.0));
+        app.world.register_res(D(0.0));
+        app.world.register_res(E(0.0));
+        let s = Box::new(IntoSystem::into_system(ab));
+        app.schedule.register(s, &[]);
+        let s = Box::new(IntoSystem::into_system(cd));
+        app.schedule.register(s, &[]);
+        let s = Box::new(IntoSystem::into_system(ce));
+        app.schedule.register(s, &[]);
+        app.initialize();
+        app.run();
+        app.run();
+        assert_eq!(app.world.get_res::<B>().unwrap().0, 4.0);
+        assert_eq!(app.world.get_res::<D>().unwrap().0, 2.0);
+        assert_eq!(app.world.get_res::<E>().unwrap().0, 2.0);
     }
 }
 

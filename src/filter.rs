@@ -11,7 +11,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 
 use crate::archetype::Archetype;
-use crate::system::ReadWrite;
+use crate::system::SystemMeta;
 use crate::world::World;
 
 pub trait FilterArchetype {
@@ -22,7 +22,7 @@ pub trait FilterArchetype {
 pub trait FilterComponents {
     const LISTENER_COUNT: usize;
     /// initializes ReadWrite for this [`FilterComponents`] type.
-    fn init_read_write(_world: &World, _rw: &mut ReadWrite) {}
+    fn init_read_write(_world: &World, _meta: &mut SystemMeta) {}
     /// initializes listener for this [`FilterComponents`] type
     fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {}
     fn archetype_filter(_archetype: &Archetype) -> bool {
@@ -33,8 +33,8 @@ pub trait FilterComponents {
 pub struct Without<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Without<T> {
     const LISTENER_COUNT: usize = 0;
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.withouts.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param.withouts.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_filter(archetype: &Archetype) -> bool {
         archetype.get_column(&TypeId::of::<T>()).is_some()
@@ -49,8 +49,8 @@ impl<T: 'static> FilterArchetype for With<T> {
 }
 impl<T: 'static> FilterComponents for With<T> {
     const LISTENER_COUNT: usize = 0;
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.withs.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param.withs.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_filter(archetype: &Archetype) -> bool {
         archetype.get_column(&TypeId::of::<T>()).is_none()
@@ -80,8 +80,8 @@ macro_rules! impl_tuple_filter {
 
         impl<$($name: FilterComponents),*> FilterComponents for ($($name,)*) {
             const LISTENER_COUNT: usize = $($name::LISTENER_COUNT + )* 0;
-	        fn init_read_write(_world: &World, _rw: &mut ReadWrite) {
-                ($($name::init_read_write(_world, _rw),)*);
+	        fn init_read_write(_world: &World, _meta: &mut SystemMeta) {
+                ($($name::init_read_write(_world, _meta),)*);
             }
             fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
                 ($($name::init_listeners(_world, _listeners),)*);

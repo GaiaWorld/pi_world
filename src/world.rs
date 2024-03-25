@@ -1,9 +1,9 @@
 /// system上只能看到Query，Sys参数，资源 实体 组件 事件 命令
-/// world上包含了全部的单例和实体，及实体原型。 加一个监听管理器，
+/// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
-/// world上的数据（单例、实体和原型）的线程安全的保护仅在于保护容器，
+/// world上的数据（资源、实体和原型）的线程安全的保护仅在于保护容器，
 /// 由调度器生成的执行图，来保证正确的读写。
-/// 比如一个原型不可被多线程同时读写，是由执行图时分析依赖，先执行写的sys，再执行读到sys。
+/// 比如一个原型不可被多线程同时读写，是由执行图时分析依赖，先执行写的sys，再执行读的sys。
 /// 由于sys会进行组件的增删，导致实体对于的原型会变化，执行图可能会产生变化，执行图本身保证对原型的访问是安全的读写。
 /// 整理操作时，一般是在整个执行图执行完毕后，进行进行相应的调整。举例：
 ///
@@ -11,11 +11,12 @@
 /// 如果sys通过CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在下一帧会看到。
 ///
 ///
-/// world上tick不是每次调度执行时加1，而是每次sys执行时加1，默认从1开始。
-///
 use core::fmt::*;
 use core::result::Result;
 use std::any::{Any, TypeId};
+use std::borrow::Cow;
+use std::mem::transmute;
+use std::ptr::null_mut;
 use std::sync::atomic::Ordering;
 
 use crate::alter::{AlterState, Alterer, DelComponents};
@@ -27,7 +28,6 @@ use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
-use crate::system::SystemMeta;
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
@@ -51,7 +51,7 @@ pub struct ArchetypeOk<'a>(
 
 #[derive(Debug)]
 pub struct World {
-    pub(crate) _single_map: DashMap<TypeId, Box<dyn Any>>,
+    pub(crate) res_map: DashMap<TypeId, ResValue>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
@@ -66,7 +66,7 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         Self {
-            _single_map: DashMap::default(),
+            res_map: DashMap::default(),
             entities: SlotMap::default(),
             archetype_map: DashMap::new(),
             archetype_arr: SafeVec::default(),
@@ -96,8 +96,7 @@ impl World {
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &self,
     ) -> Queryer<Q, F> {
-        let mut system_meta = SystemMeta::new::<Queryer<Q, F>>();
-        let mut state = QueryState::create(self, &mut system_meta);
+        let mut state = QueryState::create(self);
         state.align(self);
         Queryer::new(self, state)
     }
@@ -108,10 +107,9 @@ impl World {
         A: InsertComponents + 'static,
         D: DelComponents + 'static,
     >(
-        &self,
+        &mut self,
     ) -> Alterer<Q, F, A, D> {
-        let mut system_meta = SystemMeta::new::<Alterer<Q, F, A, D>>();
-        let mut query_state = QueryState::create(self, &mut system_meta);
+        let mut query_state = QueryState::create(self);
         let mut alter_state = AlterState::new(A::components(), D::components());
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
@@ -129,17 +127,52 @@ impl World {
     pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
-
+    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
+    pub fn register_res<T: 'static>(&mut self, value: T) {
+        let tid = TypeId::of::<T>();
+        assert!(self.res_map.insert(tid, ResValue::new(value)).is_none());
+    }
+    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_res<T: 'static>(&self) -> Option<&T> {
+        unsafe { transmute(self.get_res_ptr::<T>())}
+    }
+    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_res_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        unsafe { transmute(self.get_res_ptr::<T>())}
+    }
+    pub(crate) fn get_res_ptr<T: 'static>(&self) -> *mut T {
+        let tid = TypeId::of::<T>();
+        self.res_map.get(&tid).map_or(null_mut(), |r| {
+            // todo downcast_ref_unchecked
+            unsafe { transmute(r.value().0.downcast_ref::<T>().unwrap()) }
+        })
+    }
+    pub(crate) fn get_res_any(&self, tid: &TypeId) -> Option<ResValue> {
+        self.res_map.get(tid).map(|r|
+            r.value().clone()
+        )
+    }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
+    pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&T, QueryError> {
+        unsafe { transmute(self.get_component_ptr::<T>(e))}
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
+        self.get_component_ptr::<T>(e)
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub(crate) fn get_component_ptr<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
+        unsafe { transmute(self.get_component_ptr_by_tid(e, &TypeId::of::<T>()))}
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub(crate) fn get_component_ptr_by_tid(&self, e: Entity, tid: &TypeId) -> Result<*mut u8, QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
-        let tid = TypeId::of::<T>();
-        if let Some(c) = ar.get_column(&tid) {
-            Ok(c.get_mut(addr.row))
+        if let Some(c) = ar.get_column(tid) {
+            Ok(c.get_row(addr.row))
         } else {
             Err(QueryError::MissingComponent)
         }
@@ -237,6 +270,24 @@ impl Default for World {
         Self::new()
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct ResValue(Share<dyn Any>, Cow<'static, str>);
+impl ResValue {
+    fn new<T: 'static>(value: T) -> Self {
+        Self(Share::new(value), std::any::type_name::<T>().into())
+    }
+    pub fn name(&self) -> &Cow<'static, str> {
+        &self.1
+    }
+    pub(crate) fn downcast<T: 'static>(&self) -> *mut T {
+        // todo downcast_ref_unchecked
+        unsafe { transmute(self.0.downcast_ref::<T>().unwrap()) }
+    }
+}
+unsafe impl Send for ResValue {}
+unsafe impl Sync for ResValue {}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EntityAddr {
     pub(crate) index: ArchetypeWorldIndex,

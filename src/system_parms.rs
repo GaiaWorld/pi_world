@@ -1,7 +1,9 @@
+use std::{any::TypeId, borrow::Cow};
+
 /// 系统参数的定义
 ///
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult},
+    archetype::{Archetype, ArchetypeDependResult, Flags},
     system::SystemMeta,
     world::World,
 };
@@ -22,11 +24,11 @@ pub trait SystemParam: Sized {
 
     /// Registers any [`World`] access used by this [`SystemParam`]
     /// and creates a new instance of this param's [`State`](Self::State).
-    fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
+    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State;
 
     #[inline]
     #[allow(unused_variables)]
-    fn depend(
+    fn archetype_depend(
         world: &World,
         system_meta: &SystemMeta,
         state: &Self::State,
@@ -34,14 +36,22 @@ pub trait SystemParam: Sized {
         result: &mut ArchetypeDependResult,
     ) {
     }
+    /// system depend the res.
     #[inline]
     #[allow(unused_variables)]
-    fn align(
+    fn res_depend(
         world: &World,
         system_meta: &SystemMeta,
-        state: &mut Self::State,
+        state: &Self::State,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        result: &mut Flags,
     ) {
     }
+
+    #[inline]
+    #[allow(unused_variables)]
+    fn align(world: &World, system_meta: &SystemMeta, state: &mut Self::State) {}
 
     /// Creates a parameter to be passed into a [`SystemParamFunction`].
     ///
@@ -59,6 +69,24 @@ pub trait SystemParam: Sized {
     ) -> Self::Item<'world>;
 }
 
+impl SystemParam for &World {
+    type State = ();
+
+    type Item<'world> = &'world World;
+
+    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        ()
+    }
+
+    fn get_param<'world>(
+        world: &'world World,
+        _system_meta: &'world SystemMeta,
+        _state: &'world mut Self::State,
+    ) -> Self::Item<'world> {
+        world
+    }
+}
+
 macro_rules! impl_system_param_tuple {
     ($($param: ident),*) => {
         // SAFETY: implementors of each `SystemParam` in the tuple have validated their impls
@@ -69,13 +97,18 @@ macro_rules! impl_system_param_tuple {
             type Item<'w> = ($($param::Item::<'w>,)*);
 
             #[inline]
-            fn init_state(_world: &World, _system_meta: &mut SystemMeta) -> Self::State {
+            fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
                 (($($param::init_state(_world, _system_meta),)*))
             }
             #[inline]
-            fn depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
+            fn archetype_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
                 let ($($param,)*) = state;
-                $($param::depend(_world, _system_meta, $param, _archetype, _result);)*
+                $($param::archetype_depend(_world, _system_meta, $param, _archetype, _result);)*
+            }
+            #[inline]
+            fn res_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {
+                let ($($param,)*) = state;
+                $($param::res_depend(_world, _system_meta, $param, _res_tid, _res_name, _result);)*
             }
             #[inline]
             fn align(_world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {

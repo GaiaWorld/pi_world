@@ -1,6 +1,7 @@
 #![feature(const_type_id)]
 #![feature(get_mut_unchecked)]
 #![allow(invalid_reference_casting)]
+#![feature(downcast_unchecked)]
 #![feature(test)]
 extern crate test;
 
@@ -10,6 +11,8 @@ pub mod archetype;
 pub mod query;
 pub mod fetch;
 pub mod filter;
+pub mod param_set;
+pub mod res;
 pub mod world;
 pub mod listener;
 pub mod app;

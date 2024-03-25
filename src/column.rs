@@ -130,16 +130,19 @@ impl Blob {
     pub unsafe fn get(&self, row: Row) -> *mut u8 {
         let row = row as usize;
         if row < self.vec_capacity {
+            // todo get_unchecked()
             return transmute(self.vec.get(row * self.info.mem_size).unwrap());
         }
         let mut loc = Location::of(row - self.vec_capacity);
         loc.entry *= self.info.mem_size;
-        transmute(self.arr.get(&loc).unwrap())
+            // todo get_unchecked()
+            transmute(self.arr.get(&loc).unwrap())
     }
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {
         let row = row as usize;
         if row < self.vec_capacity {
+            // todo get_unchecked()
             return transmute(self.vec.get(row * self.info.mem_size).unwrap());
         }
         let mut loc = Location::of(row - self.vec_capacity);

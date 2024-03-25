@@ -1,16 +1,18 @@
-
 use pi_null::Null;
 use pi_proc_macros::all_tuples;
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use crate::archetype::{Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, Flags, Row};
+use crate::archetype::{
+    Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, Flags, Row,
+};
 use crate::column::Column;
 use crate::dirty::ComponentDirty;
+use crate::system::SystemMeta;
 use crate::table::Table;
-use crate::system::ReadWrite;
-use crate::world::{Entity, World};
+use crate::world::{Entity, ResValue, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -26,9 +28,9 @@ pub trait FetchComponents {
     type State: Send + Sync + Sized;
 
     /// initializes ReadWrite for this [`FetchComponents`] type.
-    fn init_read_write(_world: &World, _rw: &mut ReadWrite) {}
-    fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
-    }
+    fn init_read_write(_world: &World, _meta: &mut SystemMeta) {}
+    fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {}
+    fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {}
 
     /// Creates and initializes a [`State`](FetchComponents::State) for this [`FetchComponents`] type.
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
@@ -46,7 +48,6 @@ pub trait FetchComponents {
         state: &'w Self::State,
     ) -> Self::Fetch<'w>;
 
-
     /// Fetch [`Self::Item`](`FetchComponents::Item`) for either the given `entity` in the current [`Table`],
     /// or for the given `entity` in the current [`Archetype`]. This must always be called after
     /// [`FetchComponents::set_table`] with a `table_row` in the range of the current [`Table`] or after
@@ -60,11 +61,7 @@ pub trait FetchComponents {
     /// If `update_component_access` includes any mutable accesses, then the caller must ensure
     /// that `fetch` is called no more than once for each `entity`/`table_row` in each archetype.
     /// If `Self` implements [`ReadOnlyFetchComponents`], then this can safely be called multiple times.
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        row: Row,
-        e: Entity,
-    ) -> Self::Item<'w>;
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w>;
 }
 
 impl FetchComponents for Entity {
@@ -73,19 +70,18 @@ impl FetchComponents for Entity {
     type ReadOnly = Entity;
     type State = ();
 
-    fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
-    }
+    fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {}
 
-    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, _state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        _state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         &archetype.table
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        _fetch: &mut Self::Fetch<'w>,
-        _row: Row,
-        e: Entity,
-    ) -> Self::Item<'w> {
+    fn fetch<'w>(_fetch: &mut Self::Fetch<'w>, _row: Row, e: Entity) -> Self::Item<'w> {
         e
     }
 }
@@ -96,31 +92,35 @@ impl<T: 'static> FetchComponents for &T {
     type ReadOnly = &'static T;
     type State = ColumnIndex;
 
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.reads.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .reads
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(if archetype.get_column(&TypeId::of::<T>()).is_none() {
-            Flags::WITHOUT
-        }else{
-            Flags::READ
-        }))
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::WITHOUT
+            } else {
+                Flags::READ
+            },
+        ))
     }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         &archetype.table.get_column_unchecked(*state)
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        row: Row,
-        _e: Entity,
-    ) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         fetch.get(row)
     }
 }
@@ -131,31 +131,35 @@ impl<T: 'static> FetchComponents for &mut T {
     type ReadOnly = &'static T;
     type State = ColumnIndex;
 
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.writes.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .writes
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(if archetype.get_column(&TypeId::of::<T>()).is_none() {
-            Flags::WITHOUT
-        }else{
-            Flags::WRITE
-        }))
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::WITHOUT
+            } else {
+                Flags::WRITE
+            },
+        ))
     }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         &archetype.table.get_column_unchecked(*state)
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        row: Row,
-        e: Entity,
-    ) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Mut {
             value: fetch.get_mut(row),
             dirty: &fetch.changed,
@@ -171,24 +175,35 @@ impl<T: 'static> FetchComponents for Option<&T> {
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
 
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.reads.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .reads
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::empty()
+            } else {
+                Flags::READ
+            },
+        ))
     }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype,  state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        row: Row,
-        _e: Entity,
-    ) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         fetch.and_then(|c| Some(c.get(row)))
     }
 }
@@ -199,34 +214,106 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
 
-    fn init_read_write(_world: &World, rw: &mut ReadWrite) {
-        rw.writes.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .writes
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::empty()
+            } else {
+                Flags::WRITE
+            },
+        ))
     }
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, archetype: &'w Archetype, state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        row: Row,
-        e: Entity,
-    ) -> Self::Item<'w> {
-        fetch.and_then(|c| Some(Mut {
-            value: c.get_mut(row),
-            dirty: &c.changed,
-            e,
-            row,
-        }))
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        fetch.and_then(|c| {
+            Some(Mut {
+                value: c.get_mut(row),
+                dirty: &c.changed,
+                e,
+                row,
+            })
+        })
+    }
+}
+/// 不存在T时，使用默认值。
+/// 默认值取Res<DefaultValue<T>>
+/// DefaultValue<T>默认为DefaultValue::from_world的返回值，也可被应用程序覆盖
+pub struct OrDefault<T: 'static>(PhantomData<T>);
+impl<T: 'static> FetchComponents for OrDefault<T> {
+    type Fetch<'w> = Result<&'w Column, &'w T>;
+    type Item<'w> = &'w T;
+    type ReadOnly = OrDefault<T>;
+    type State = Result<ColumnIndex, ResValue>;
+
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        let name: Cow<'static, str> = std::any::type_name::<T>().into();
+        meta.res_read(TypeId::of::<T>(), name.clone());
+        meta.cur_param.reads.insert(TypeId::of::<T>(), name);
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::empty()
+            } else {
+                Flags::READ
+            },
+        ))
+    }
+    fn res_depend(res_tid: &TypeId, _res_name: &Cow<'static, str>, result: &mut Flags) {
+        if &TypeId::of::<T>() == res_tid {
+            result.set(Flags::WRITE, true)
+        }
+    }
+
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        let index = archetype.get_column_index(&TypeId::of::<T>());
+        if index.is_null() {
+            Err(world.get_res_any(&TypeId::of::<T>()).unwrap())
+        } else {
+            Ok(index)
+        }
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
+        match state {
+            Ok(s) => Ok(&archetype.table.get_column_unchecked(*s)),
+            Err(r) => Err(unsafe { &mut *r.downcast::<T>() }),
+        }
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        match fetch {
+            Ok(c) => c.get(row),
+            Err(r) => r,
+        }
     }
 }
 
-pub struct Has<T: 'static> (PhantomData<T>);
+pub struct Has<T: 'static>(PhantomData<T>);
 impl<T: 'static> FetchComponents for Has<T> {
     type Fetch<'w> = bool;
     type Item<'w> = bool;
@@ -238,20 +325,19 @@ impl<T: 'static> FetchComponents for Has<T> {
     }
 
     #[inline]
-    fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, state: &'w Self::State) -> Self::Fetch<'w> {
+    fn init_fetch<'w>(
+        _world: &'w World,
+        _archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
         *state
     }
 
     #[inline(always)]
-    fn fetch<'w>(
-        fetch: &mut Self::Fetch<'w>,
-        _row: Row,
-        _e: Entity,
-    ) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
         *fetch
     }
 }
-
 
 /// Unique mutable borrow of an entity's component
 #[derive(Debug)]
@@ -293,12 +379,16 @@ macro_rules! impl_tuple_fetch {
             type ReadOnly = ($($name::ReadOnly,)*);
             type State = ($($name::State,)*);
 
-            fn init_read_write(_world: &World, _rw: &mut ReadWrite) {
-                ($($name::init_read_write(_world, _rw),)*);
+            fn init_read_write(_world: &World, _meta: &mut SystemMeta) {
+                ($($name::init_read_write(_world, _meta),)*);
             }
             fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
                 ($($name::archetype_depend(_archetype, _result),)*);
             }
+            fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {
+                ($($name::res_depend(_res_tid, _res_name, _result),)*);
+            }
+
             fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
                 ($(
                     $name::init_state(_world, _archetype),

@@ -41,10 +41,11 @@ pub type ColumnIndex = u32;
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Flags: u32 {
-        const WITHOUT =     0b0001;
-        const READ =        0b0010;
-        const WRITE =       0b0100;
-        const DELETE =      0b1000;
+        const WITHOUT =         0b00001;
+        const READ =            0b00010;
+        const WRITE =           0b00100;
+        const DELETE =          0b01000;
+        const SHARE_WRITE =     0b10000;
     }
 }
 

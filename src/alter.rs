@@ -15,6 +15,7 @@
 /// 如果有依赖，则立即将wait_count加1，如果原wait_count=0表示已经开始执行，那么循环等待该system的run_state为running或ok。 这样，对该system要么看到该原型，要么看不到。
 ///
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
@@ -29,6 +30,7 @@ use crate::column::Column;
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::InsertComponents;
+use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
@@ -57,7 +59,7 @@ impl<
     pub(crate) fn state_align(
         world: &World,
         state: &mut AlterState<A>,
-        query_state: &QueryState<Q, F, ()>,
+        query_state: &QueryState<Q, F>,
     ) {
         // 将新多出来的原型，创建原型空映射
         for i in state.vec.len()..query_state.vec.len() {
@@ -67,7 +69,7 @@ impl<
     }
     pub(crate) fn new(
         world: &'world World,
-        query_state: QueryState<Q, F, ()>,
+        query_state: QueryState<Q, F>,
         state: AlterState<A>,
     ) -> Self {
         Self {
@@ -104,7 +106,7 @@ impl<
         self.query.len()
     }
     #[inline]
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, ()> {
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         self.query.iter()
     }
     #[inline]
@@ -222,7 +224,7 @@ impl<
         self.query.len()
     }
     #[inline]
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, ()> {
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         self.query.iter()
     }
     #[inline]
@@ -272,21 +274,21 @@ impl<
         D: DelComponents + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
-    type State = (QueryState<Q, F, ()>, AlterState<A>);
+    type State = (QueryState<Q, F>, AlterState<A>);
     type Item<'w> = Alter<'w, Q, F, A, D>;
 
-    fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let q = Query::init_state(world, system_meta);
         (q, AlterState::new(A::components(), D::components()))
     }
-    fn depend(
-        world: &World,
-        system_meta: &SystemMeta,
+    fn archetype_depend(
+        _world: &World,
+        _system_meta: &SystemMeta,
         state: &Self::State,
         archetype: &Archetype,
         result: &mut ArchetypeDependResult,
     ) {
-        Query::depend(world, system_meta, &state.0, archetype, result);
+        Q::archetype_depend(archetype, result);
         // 如果相关， 则添加删除类型，并返回Alter后的原型id
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
             result.merge(ArchetypeDepend::Flag(Flags::DELETE));
@@ -295,6 +297,17 @@ impl<
             result.merge(ArchetypeDepend::Alter(id_name));
         }
     }
+    fn res_depend(
+        _world: &World,
+        _system_meta: &SystemMeta,
+        _state: &Self::State,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        result: &mut Flags,
+    ) {
+        Q::res_depend(res_tid, res_name, result);
+    }
+
     #[inline]
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
         state.0.align(world);
@@ -309,6 +322,21 @@ impl<
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(world, &mut state.1, &state.0);
         Alter::new(Query::new(world, &mut state.0), &mut state.1)
+    }
+}
+impl<
+        Q: FetchComponents + 'static,
+        F: FilterComponents + Send + Sync,
+        A: InsertComponents + 'static,
+        D: DelComponents + 'static,
+    > ParamSetElement for Alter<'_, Q, F, A, D>
+{
+    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+        Q::init_read_write(world, system_meta);
+        F::init_read_write(world, system_meta);
+        system_meta.param_set_check();
+        let q = QueryState::create(world);
+        (q, AlterState::new(A::components(), D::components()))
     }
 }
 impl<
@@ -431,7 +459,7 @@ pub struct AlterIter<
     F: FilterComponents + 'static,
     A: InsertComponents,
 > {
-    it: QueryIter<'w, Q, F, ()>,
+    it: QueryIter<'w, Q, F>,
     state: &'w mut AlterState<A>,
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter<'w, Q, F, A> {

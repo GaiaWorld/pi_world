@@ -3,6 +3,7 @@
 use core::fmt::*;
 use core::result::Result;
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -15,7 +16,8 @@ use crate::dirty::{DirtyIndex, EntityDirty};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::listener::Listener;
-use crate::system::{ReadWrite, SystemMeta};
+use crate::param_set::ParamSetElement;
+use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
@@ -31,16 +33,17 @@ pub enum QueryError {
     NoMatchEntity,
     NoSuchEntity,
     NoSuchRow,
+    NoSuchRes,
 }
 
 pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
-    pub(crate) state: QueryState<Q, F, ()>,
+    pub(crate) state: QueryState<Q, F>,
     // 缓存上次的索引映射关系
     pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
 impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'world, Q, F> {
-    pub(crate) fn new(world: &'world World, state: QueryState<Q, F, ()>) -> Self {
+    pub(crate) fn new(world: &'world World, state: QueryState<Q, F>) -> Self {
         let cache_mapping = UnsafeCell::new(state.cache_mapping);
         Self {
             world,
@@ -84,29 +87,24 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
         self.state.len()
     }
     #[inline]
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, ()> {
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         QueryIter::new(self.world, self.state.as_readonly())
     }
-    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F, ()> {
+    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F> {
         QueryIter::new(self.world, &self.state)
     }
 }
 
-pub struct Query<
-    'world,
-    Q: FetchComponents + 'static,
-    F: FilterComponents + 'static = (),
-    S: FetchComponents + 'static = (),
-> {
+pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
-    pub(crate) state: &'world mut QueryState<Q, F, S>,
+    pub(crate) state: &'world mut QueryState<Q, F>,
     // 缓存上次的索引映射关系
     pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
 
-impl<'world, Q: FetchComponents, F: FilterComponents, S: FetchComponents> Query<'world, Q, F, S> {
+impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     #[inline]
-    pub fn new(world: &'world World, state: &'world mut QueryState<Q, F, S>) -> Self {
+    pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>) -> Self {
         let cache_mapping = UnsafeCell::new(state.cache_mapping);
         Query {
             world,
@@ -150,27 +148,27 @@ impl<'world, Q: FetchComponents, F: FilterComponents, S: FetchComponents> Query<
         self.state.len()
     }
     #[inline]
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F, S> {
+    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         QueryIter::new(self.world, self.state.as_readonly())
     }
-    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F, S> {
+    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F> {
         QueryIter::new(self.world, &self.state)
     }
 }
 
-impl<
-        Q: FetchComponents + 'static,
-        F: FilterComponents + Send + Sync,
-        S: FetchComponents + 'static,
-    > SystemParam for Query<'_, Q, F, S>
+impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
+    for Query<'_, Q, F>
 {
-    type State = QueryState<Q, F, S>;
-    type Item<'w> = Query<'w, Q, F, S>;
+    type State = QueryState<Q, F>;
+    type Item<'w> = Query<'w, Q, F>;
 
-    fn init_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
-        Self::State::create(world, system_meta)
+    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
+        Q::init_read_write(world, system_meta);
+        F::init_read_write(world, system_meta);
+        system_meta.cur_param_ok();
+        Self::State::create(world)
     }
-    fn depend(
+    fn archetype_depend(
         _world: &World,
         _system_meta: &SystemMeta,
         _state: &Self::State,
@@ -182,6 +180,17 @@ impl<
             result.merge(ArchetypeDepend::Flag(Flags::WITHOUT));
         }
     }
+    fn res_depend(
+        _world: &World,
+        _system_meta: &SystemMeta,
+        _state: &Self::State,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        result: &mut Flags,
+    ) {
+        Q::res_depend(res_tid, res_name, result);
+    }
+
     #[inline]
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
         state.align(world);
@@ -196,36 +205,38 @@ impl<
         Query::new(world, state)
     }
 }
-
-impl<'world, Q: FetchComponents, F: FilterComponents, S: FetchComponents> Drop
-    for Query<'world, Q, F, S>
+impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement
+    for Query<'_, Q, F>
 {
+    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+        Q::init_read_write(world, system_meta);
+        F::init_read_write(world, system_meta);
+        system_meta.param_set_check();
+        Self::State::create(world)
+    }
+}
+impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
     fn drop(&mut self) {
         self.state.cache_mapping = *self.cache_mapping.get_mut();
     }
 }
 /// 监听原型创建， 添加record
-pub struct Notify<'a, Q: FetchComponents, F: FilterComponents, S: FetchComponents>(
+pub struct Notify<'a, Q: FetchComponents, F: FilterComponents>(
     SmallVec<[(TypeId, bool); 1]>,
     PhantomData<&'a ()>,
     PhantomData<Q>,
     PhantomData<F>,
-    PhantomData<S>,
 );
-impl<
-        'a,
-        Q: FetchComponents + 'static,
-        F: FilterComponents + 'static,
-        S: FetchComponents + 'static,
-    > Listener for Notify<'a, Q, F, S>
+impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
+    for Notify<'a, Q, F>
 {
     type Event = ArchetypeInit<'a>;
     fn listen(&self, ar: Self::Event) {
-        if !QueryState::<Q, F, S>::relate(ar.0) {
+        if !QueryState::<Q, F>::relate(ar.0) {
             return;
         }
         unsafe {
-            ar.0.add_dirty_listeners(TypeId::of::<QueryState<Q, F, S>>(), &self.0)
+            ar.0.add_dirty_listeners(TypeId::of::<QueryState<Q, F>>(), &self.0)
         };
     }
 }
@@ -233,18 +244,9 @@ impl<
 pub type ArchetypeLocalIndex = usize;
 
 #[derive(Debug)]
-pub struct QueryState<
-    Q: FetchComponents + 'static,
-    F: FilterComponents + 'static,
-    S: FetchComponents + 'static,
-> {
+pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) listeners: SmallVec<[(TypeId, bool); 1]>,
-    pub(crate) vec: Vec<(
-        ShareArchetype,
-        Q::State,
-        S::State,
-        SmallVec<[DirtyIndex; 1]>,
-    )>, // 每原型、查询状态及对应的脏监听
+    pub(crate) vec: Vec<(ShareArchetype, Q::State, SmallVec<[DirtyIndex; 1]>)>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // 脏world上的原型索引对于本地的原型索引
     pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
@@ -252,19 +254,11 @@ pub struct QueryState<
     _k: PhantomData<F>,
 }
 
-impl<Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryState<Q, F, S> {
-    pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F, S> {
-        unsafe { &*(self as *const QueryState<Q, F, S> as *const QueryState<Q::ReadOnly, F, S>) }
+impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
+    pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
+        unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
-    pub fn create(world: &World, system_meta: &mut SystemMeta) -> Self {
-        let mut rw = ReadWrite::default();
-        Q::init_read_write(world, &mut rw);
-        let mut sub_rw = ReadWrite::default();
-        S::init_read_write(world, &mut sub_rw);
-        // 主查询必须包含子查询
-        rw.contains(&sub_rw).unwrap();
-        F::init_read_write(world, &mut rw);
-        system_meta.add_rw(rw);
+    pub fn create(world: &World) -> Self {
         let mut listeners = Default::default();
         F::init_listeners(world, &mut listeners);
         if F::LISTENER_COUNT > 0 {
@@ -274,7 +268,6 @@ impl<Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryState<Q, 
                 PhantomData,
                 PhantomData::<Q>,
                 PhantomData::<F>,
-                PhantomData::<S>,
             );
             for r in world.archetype_arr.iter() {
                 notify.listen(ArchetypeInit(r, world))
@@ -340,12 +333,7 @@ impl<Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryState<Q, 
         }
         self.map
             .insert(index, self.vec.len() as ArchetypeLocalIndex);
-        self.vec.push((
-            ar.clone(),
-            Q::init_state(world, ar),
-            S::init_state(world, ar),
-            vec,
-        ));
+        self.vec.push((ar.clone(), Q::init_state(world, ar), vec));
     }
     pub fn get<'w>(
         &'w self,
@@ -395,14 +383,9 @@ pub(crate) fn check<'w>(
     Ok(addr)
 }
 
-pub struct QueryIter<
-    'w,
-    Q: FetchComponents + 'static,
-    F: FilterComponents + 'static,
-    S: FetchComponents + 'static,
-> {
+pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) world: &'w World,
-    state: &'w QueryState<Q, F, S>,
+    state: &'w QueryState<Q, F>,
     // 原型的位置
     pub(crate) ar_index: ArchetypeLocalIndex,
     // 原型
@@ -417,12 +400,12 @@ pub struct QueryIter<
     // 缓存上次的索引映射关系
     cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex),
 }
-impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<'w, Q, F, S> {
+impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// # Safety
     /// - `world` must have permission to access any of the components registered in `query_state`.
     /// - `world` must be the same one used to initialize `query_state`.
     #[inline(always)]
-    pub(crate) fn new(world: &'w World, state: &'w QueryState<Q, F, S>) -> Self {
+    pub(crate) fn new(world: &'w World, state: &'w QueryState<Q, F>) -> Self {
         let len = state.vec.len();
         // 该查询没有关联的原型
         if len == 0 {
@@ -458,8 +441,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
             }
         } else {
             // 该查询有组件变化监听器， 倒序迭代所脏的原型
-            let len = ar.3.len() - 1;
-            let d_index = unsafe { *ar.3.get_unchecked(len) };
+            let len = ar.2.len() - 1;
+            let d_index = unsafe { *ar.2.get_unchecked(len) };
             QueryIter {
                 world,
                 state,
@@ -533,7 +516,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
             if self.dirty.1 > 0 {
                 let len = self.dirty.1 - 1;
                 let ar = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
-                let d_index = unsafe { *ar.3.get_unchecked(len) };
+                let d_index = unsafe { *ar.2.get_unchecked(len) };
                 let iter = d_index.get_iter(&ar.0);
                 self.dirty = (iter, len);
                 continue;
@@ -549,8 +532,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
             self.ar = &ar.0;
             self.fetch = Q::init_fetch(self.world, self.ar, &ar.1);
             // 监听被脏组件
-            let len = ar.3.len() - 1;
-            let d_index = unsafe { *ar.3.get_unchecked(len) };
+            let len = ar.2.len() - 1;
+            let d_index = unsafe { *ar.2.get_unchecked(len) };
             let iter = d_index.get_iter(&ar.0);
             self.dirty = (iter, len);
             let len = ar.0.len();
@@ -565,7 +548,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
     #[inline(always)]
     fn size_hint_normal(&self) -> (usize, Option<usize>) {
         let it = self.state.vec[0..self.ar_index as usize].iter();
-        let count = it.map(|(ar, _, _, _)| ar.table.len()).count();
+        let count = it.map(|(ar, _, _)| ar.table.len()).count();
         (self.row as usize, Some(self.row as usize + count))
     }
     #[inline(always)]
@@ -580,11 +563,11 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
         let mut c: usize = self.dirty.0.size_hint().1.unwrap_or_default();
         let ar = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
         // 获得当前原型的剩余列的脏长度
-        c += self.size_hint_ar_column_dirty(&ar.0, &ar.3, self.dirty.1);
+        c += self.size_hint_ar_column_dirty(&ar.0, &ar.2, self.dirty.1);
         for i in 0..ar_index {
             let ar = unsafe { &self.state.vec.get_unchecked(i) };
             // 获得剩余原型的全部列的脏长度
-            c += self.size_hint_ar_column_dirty(&ar.0, &ar.3, ar.3.len());
+            c += self.size_hint_ar_column_dirty(&ar.0, &ar.2, ar.2.len());
         }
         c
     }
@@ -605,9 +588,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> QueryIter<
     }
 }
 
-impl<'w, Q: FetchComponents, F: FilterComponents, S: FetchComponents> Iterator
-    for QueryIter<'w, Q, F, S>
-{
+impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, F> {
     type Item = Q::Item<'w>;
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
