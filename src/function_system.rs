@@ -2,7 +2,7 @@ use std::{any::TypeId, borrow::Cow};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
-    system::{IntoSystem, System, SystemMeta},
+    system::{IntoSystem, RunSystem, System, SystemMeta},
     system_parms::SystemParam,
     world::*,
 };
@@ -17,7 +17,7 @@ pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
     type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run(&mut self, param_value: SystemParamItem<Self::Param>);
+    fn run(&mut self, _param_value: SystemParamItem<Self::Param>) {}
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -30,26 +30,23 @@ pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
 ///
 /// The [`Clone`] implementation for [`FunctionSystem`] returns a new instance which
 /// is NOT initialized. The cloned system must also be `.initialized` before it can be run.
-pub struct FunctionSystem<Marker, F>
+pub struct FunctionSystem<Marker: 'static, F>
 where
     F: SystemParamFunction<Marker>,
 {
     func: F,
-    param_state: Option<<F::Param as SystemParam>::State>,
-    system_meta: SystemMeta,
+    param: ParamSystem<F::Param>,
 }
 
-impl<Marker, F> IntoSystem<Marker> for F
+impl<Marker: 'static, F> IntoSystem<Marker> for F
 where
     F: SystemParamFunction<Marker>,
 {
     type System = FunctionSystem<Marker, F>;
     fn into_system(func: Self) -> Self::System {
-        let system_meta = SystemMeta::new::<F>();
         FunctionSystem {
             func,
-            param_state: None,
-            system_meta,
+            param: ParamSystem::new(SystemMeta::new::<F>()),
         }
     }
 }
@@ -60,20 +57,85 @@ where
 {
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
-        &self.system_meta.name
+        self.param.name()
     }
 
     #[inline]
     fn type_id(&self) -> TypeId {
-        TypeId::of::<F>()
+        self.param.type_id()
     }
     #[inline]
     fn initialize(&mut self, world: &mut World) {
-        self.param_state = Some(F::Param::init_state(world, &mut self.system_meta));
+        self.param.initialize(world)
     }
     /// system depend the archetype.
-    fn archetype_depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        F::Param::archetype_depend(
+    fn archetype_depend(
+        &self,
+        world: &World,
+        archetype: &Archetype,
+        result: &mut ArchetypeDependResult,
+    ) {
+        self.param.archetype_depend(world, archetype, result)
+    }
+    /// system depend the res.
+    fn res_depend(
+        &self,
+        world: &World,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        single: bool,
+        result: &mut Flags,
+    ) {
+        self.param
+            .res_depend(world, res_tid, res_name, single, result)
+    }
+    #[inline]
+    fn align(&mut self, world: &World) {
+        self.param.align(world)
+    }
+}
+impl<Marker, F> RunSystem for FunctionSystem<Marker, F>
+where
+    F: SystemParamFunction<Marker>,
+{
+    #[inline]
+    fn run(&mut self, world: &World) {
+        let params = self.param.get_param(world);
+        self.func.run(params);
+    }
+}
+pub struct ParamSystem<P: SystemParam> {
+    pub(crate) param_state: Option<P::State>,
+    pub(crate) system_meta: SystemMeta,
+}
+impl<P: SystemParam> ParamSystem<P> {
+    pub fn new(system_meta: SystemMeta) -> Self {
+        Self {
+            param_state: None,
+            system_meta,
+        }
+    }
+    #[inline]
+    pub(crate) fn name(&self) -> &Cow<'static, str> {
+        &self.system_meta.name
+    }
+
+    #[inline]
+    pub(crate) fn type_id(&self) -> TypeId {
+        self.system_meta.type_id
+    }
+    #[inline]
+    pub(crate) fn initialize(&mut self, world: &mut World) {
+        self.param_state = Some(P::init_state(world, &mut self.system_meta));
+    }
+    /// system depend the archetype.
+    pub(crate) fn archetype_depend(
+        &self,
+        world: &World,
+        archetype: &Archetype,
+        result: &mut ArchetypeDependResult,
+    ) {
+        P::archetype_depend(
             world,
             &self.system_meta,
             self.param_state.as_ref().unwrap(),
@@ -82,27 +144,33 @@ where
         )
     }
     /// system depend the res.
-    fn res_depend(&self, world: &World, res_tid: &TypeId, res_name: &Cow<'static, str>, result: &mut Flags) {
-        F::Param::res_depend(
+    pub(crate) fn res_depend(
+        &self,
+        world: &World,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        single: bool,
+        result: &mut Flags,
+    ) {
+        P::res_depend(
             world,
             &self.system_meta,
             self.param_state.as_ref().unwrap(),
             res_tid,
             res_name,
+            single,
             result,
         )
     }
     #[inline]
-    fn align(&mut self, world: &World) {
+    pub(crate) fn align(&mut self, world: &World) {
         let param_state = self.param_state.as_mut().unwrap();
-        F::Param::align(world, &mut self.system_meta, param_state);
+        P::align(world, &mut self.system_meta, param_state);
     }
-
     #[inline]
-    fn run(&mut self, world: &World) {
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParamItem<'w, P> {
         let param_state = self.param_state.as_mut().unwrap();
-        let params = F::Param::get_param(world, &mut self.system_meta, param_state);
-        self.func.run(params);
+        P::get_param(world, &mut self.system_meta, param_state)
     }
 }
 

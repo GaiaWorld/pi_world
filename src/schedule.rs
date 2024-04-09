@@ -7,7 +7,11 @@ use pi_share::Share;
 /// Schedule包含一个主执行器，及多个阶段执行器
 ///
 use crate::{
-    archetype::Row, exec_graph::ExecGraph, safe_vec::SafeVec, system::BoxedSystem, world::*,
+    archetype::Row,
+    exec_graph::ExecGraph,
+    safe_vec::SafeVec,
+    system::{BoxedSystem, IntoAsyncSystem, IntoSystem},
+    world::*,
 };
 
 pub struct Schedule {
@@ -37,8 +41,30 @@ impl Schedule {
     pub fn get_stage_graph(&self, name: &'static str) -> Option<&ExecGraph> {
         self.stage_graph.get(name)
     }
+    pub fn add_system<M>(&mut self, system: impl IntoSystem<M>) -> usize {
+        self.add_system_stages(system, &[])
+    }
+    pub fn add_system_stages<M>(
+        &mut self,
+        system: impl IntoSystem<M>,
+        stages: &[&'static str],
+    ) -> usize {
+        let s = Box::new(IntoSystem::into_system(system));
+        self.add_box_system(BoxedSystem::Sync(s), stages)
+    }
+    pub fn add_async_system<M>(&mut self, system: impl IntoAsyncSystem<M>) -> usize {
+        self.add_async_system_stages(system, &[])
+    }
+    pub fn add_async_system_stages<M>(
+        &mut self,
+        system: impl IntoAsyncSystem<M>,
+        stages: &[&'static str],
+    ) -> usize {
+        let s = Box::new(IntoAsyncSystem::into_system(system));
+        self.add_box_system(BoxedSystem::Async(s), stages)
+    }
 
-    pub fn register(&mut self, system: BoxedSystem, stages: &[&'static str]) -> usize {
+    pub fn add_box_system(&mut self, system: BoxedSystem, stages: &[&'static str]) -> usize {
         let name = system.name().clone();
         let index = self.systems.insert(system);
         self.graph.add_system(index, name.clone());

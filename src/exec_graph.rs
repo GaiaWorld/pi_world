@@ -143,9 +143,13 @@ impl ExecGraph {
         inner
             .to_len
             .store(inner.nodes.len() as u32, Ordering::Relaxed);
-        // 遍历world上的单例，测试和system的读写关系
-        for r in world.res_map.iter() {
-            self.add_res_node(&systems, r.key(), r.value().name(), world);
+        // 遍历world上的单例资源，测试和system的读写关系
+        for r in world.single_res_map.iter() {
+            self.add_res_node(&systems, r.key(), r.value().name(), true, world);
+        }
+        // 遍历world上的多例资源，测试和system的读写关系
+        for r in world.multi_res_map.iter() {
+            self.add_res_node(&systems, r.key(), r.value().name(), false, world);
         }
         // 遍历已有的原型，添加原型节点，添加原型和system的依赖关系产生的边
         for r in world.archetype_arr.iter() {
@@ -181,13 +185,14 @@ impl ExecGraph {
         //     self.to_len()
         // );
     }
-    // 添加单例节点，添加单例和system的依赖关系产生的边。
+    // 添加单例和多例节点，添加单例多例和system的依赖关系产生的边。
     // 只会在初始化时调用一次。
     fn add_res_node(
         &self,
         systems: &Share<SafeVec<BoxedSystem>>,
         tid: &TypeId,
         name: &Cow<'static, str>,
+        single: bool,
         world: &World,
     ) {
         let inner = self.0.as_ref();
@@ -202,7 +207,7 @@ impl ExecGraph {
                 NodeType::System(sys_index, _) => {
                     let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
                     let mut result = Flags::empty();
-                    sys.res_depend(world, tid, name, &mut result);
+                    sys.res_depend(world, tid, name, single, &mut result);
                     if result == Flags::READ {
                         // 如果只有读，则该system为该Res的to
                         inner.add_edge(node_index, system_index);
@@ -301,13 +306,8 @@ impl ExecGraph {
         }
         // 从graph的froms开始执行
         for i in inner.froms.iter() {
-            let rt1 = rt.clone();
-            let index = *i;
-            let g = self.clone();
-            let _ = rt.spawn(async move {
-                let rt2 = rt1;
-                g.exec(systems, &rt2, world, index);
-            });
+            let node = unsafe { inner.nodes.load_unchecked(i.index()) };
+            self.exec(systems, rt, world, *i, node);
         }
         inner.receiver.recv().await
     }
@@ -317,26 +317,43 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node_index: NodeIndex,
+        node: &Node,
     ) {
         // println!("exec, node_index: {:?}", node_index);
-        let inner = self.0.as_ref();
-        let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-        // RUN_START
-        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-        match &mut node.label {
+        match node.label {
             NodeType::System(sys_index, _) => {
-                let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
-                // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
-                // 如果node为要执行的system，则执行对齐原型
-                sys.align(world);
+                // RUN_START
                 node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-                sys.run(world);
+                let rt1 = rt.clone();
+                let g = self.clone();
+                let _ = rt.spawn(async move {
+                    let sys = unsafe { systems.load_unchecked_mut(sys_index) };
+                    // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
+                    // 如果node为要执行的system，则执行对齐原型
+                    sys.align(world);
+                    let inner = g.0.as_ref();
+                    let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
+                    // NODE_STATUS_RUNNING
+                    node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    sys.run(world).await;
+                    g.exec_end(systems, &rt1, world, node)
+                });
             }
             _ => {
-                // RUNNING
-                node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                // RUN_START + RUNNING
+                node.status
+                    .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
+                self.exec_end(systems, rt, world, node)
             }
         }
+    }
+    fn exec_end<A: AsyncRuntime>(
+        &self,
+        systems: &'static SafeVec<BoxedSystem>,
+        rt: &A,
+        world: &'static World,
+        node: &Node,
+    ) {
         // RUN_END
         let mut status =
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed) + NODE_STATUS_STEP;
@@ -346,6 +363,7 @@ impl ExecGraph {
             spin_loop();
             status = node.status.load(Ordering::Relaxed);
         }
+        let inner = self.0.as_ref();
         // 执行后，检查to边的数量
         // 创建to邻居节点的迭代器
         let it = NeighborIter::new(inner, Direction::To, node.edge(Direction::To));
@@ -367,19 +385,7 @@ impl ExecGraph {
             let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
             if r == 1 {
                 // 减到0，表示要执行该节点
-                if !node.is_system() {
-                    // 如果不是系统节点，则递归执行
-                    // todo self.exec(rt, world, n).await;
-                    self.exec(systems, rt, world, n);
-                } else {
-                    // 派发执行系统节点
-                    let rt1 = rt.clone();
-                    let g = self.clone();
-                    let _ = rt.spawn(async move {
-                        let rt2 = rt1;
-                        g.exec(systems, &rt2, world, n); //.await;
-                    });
-                }
+                self.exec(systems, rt, world, n, node);
             }
         }
         // 设置成结束状态
@@ -669,7 +675,7 @@ impl Debug for NodeType {
         match &self {
             NodeType::None => write!(f, "None"),
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
-            NodeType::Archetype(s) => write!(f, "Archetype({:?})", s),
+            NodeType::Archetype(s) => write!(f, "Archetype({:?})", s.1),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
         }
     }

@@ -180,6 +180,25 @@ pub struct Alter<
     _k: PhantomData<D>,
 }
 
+unsafe impl<
+        'world,
+        Q: FetchComponents + 'static,
+        F: FilterComponents + 'static,
+        A: InsertComponents,
+        D: DelComponents,
+    > Send for Alter<'world, Q, F, A, D>
+{
+}
+unsafe impl<
+        'world,
+        Q: FetchComponents + 'static,
+        F: FilterComponents + 'static,
+        A: InsertComponents,
+        D: DelComponents,
+    > Sync for Alter<'world, Q, F, A, D>
+{
+}
+
 impl<
         'world,
         Q: FetchComponents + 'static,
@@ -271,7 +290,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync + 'static,
         A: InsertComponents + 'static,
-        D: DelComponents + 'static,
+        D: DelComponents + Send + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
     type State = (QueryState<Q, F>, AlterState<A>);
@@ -303,9 +322,10 @@ impl<
         _state: &Self::State,
         res_tid: &TypeId,
         res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        Q::res_depend(res_tid, res_name, result);
+        Q::res_depend(res_tid, res_name, single, result);
     }
 
     #[inline]
@@ -328,7 +348,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync,
         A: InsertComponents + 'static,
-        D: DelComponents + 'static,
+        D: DelComponents + Send + 'static,
     > ParamSetElement for Alter<'_, Q, F, A, D>
 {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {

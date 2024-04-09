@@ -12,7 +12,7 @@ use crate::column::Column;
 use crate::dirty::ComponentDirty;
 use crate::system::SystemMeta;
 use crate::table::Table;
-use crate::world::{Entity, ResValue, World};
+use crate::world::{Entity, SingleResource, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -30,7 +30,13 @@ pub trait FetchComponents {
     /// initializes ReadWrite for this [`FetchComponents`] type.
     fn init_read_write(_world: &World, _meta: &mut SystemMeta) {}
     fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {}
-    fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {}
+    fn res_depend(
+        _res_tid: &TypeId,
+        _res_name: &Cow<'static, str>,
+        _single: bool,
+        _result: &mut Flags,
+    ) {
+    }
 
     /// Creates and initializes a [`State`](FetchComponents::State) for this [`FetchComponents`] type.
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
@@ -261,7 +267,7 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
     type Fetch<'w> = Result<&'w Column, &'w T>;
     type Item<'w> = &'w T;
     type ReadOnly = OrDefault<T>;
-    type State = Result<ColumnIndex, ResValue>;
+    type State = Result<ColumnIndex, SingleResource>;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         let name: Cow<'static, str> = std::any::type_name::<T>().into();
@@ -277,8 +283,13 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
             },
         ))
     }
-    fn res_depend(res_tid: &TypeId, _res_name: &Cow<'static, str>, result: &mut Flags) {
-        if &TypeId::of::<T>() == res_tid {
+    fn res_depend(
+        res_tid: &TypeId,
+        _res_name: &Cow<'static, str>,
+        single: bool,
+        result: &mut Flags,
+    ) {
+        if single && &TypeId::of::<T>() == res_tid {
             result.set(Flags::WRITE, true)
         }
     }
@@ -286,7 +297,7 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
     fn init_state(world: &World, archetype: &Archetype) -> Self::State {
         let index = archetype.get_column_index(&TypeId::of::<T>());
         if index.is_null() {
-            Err(world.get_res_any(&TypeId::of::<T>()).unwrap())
+            Err(world.get_single_res_any(&TypeId::of::<T>()).unwrap())
         } else {
             Ok(index)
         }
@@ -385,8 +396,8 @@ macro_rules! impl_tuple_fetch {
             fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
                 ($($name::archetype_depend(_archetype, _result),)*);
             }
-            fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {
-                ($($name::res_depend(_res_tid, _res_name, _result),)*);
+            fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
+                ($($name::res_depend(_res_tid, _res_name, _single, _result),)*);
             }
 
             fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {

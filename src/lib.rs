@@ -2,7 +2,10 @@
 #![feature(get_mut_unchecked)]
 #![allow(invalid_reference_casting)]
 #![feature(downcast_unchecked)]
+#![feature(sync_unsafe_cell)]
 #![feature(test)]
+#[warn(async_fn_in_trait)]
+
 extern crate test;
 
 pub mod column;
@@ -12,13 +15,15 @@ pub mod query;
 pub mod fetch;
 pub mod filter;
 pub mod param_set;
-pub mod res;
+pub mod single_res;
+pub mod multi_res;
 pub mod world;
 pub mod listener;
 pub mod app;
 pub mod system;
 pub mod system_parms;
 pub mod function_system;
+pub mod async_function_system;
 pub mod insert;
 pub mod insert_batch;
 pub mod alter;

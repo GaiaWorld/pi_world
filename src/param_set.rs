@@ -16,25 +16,25 @@ pub trait ParamSetElement: SystemParam {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
 }
 
-pub struct ParamSet<T: 'static + ParamSetElement>(T);
-impl<T: ParamSetElement + 'static> Deref for ParamSet<T> {
-    type Target = T;
+pub struct ParamSet<'w, T: 'static + ParamSetElement>(<T as SystemParam>::Item<'w>);
+impl<'w, T: ParamSetElement + 'static> Deref for ParamSet<'w, T> {
+    type Target = <T as SystemParam>::Item<'w>;
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<T: ParamSetElement + 'static> DerefMut for ParamSet<T> {
+impl<'w, T: ParamSetElement + 'static> DerefMut for ParamSet<'w, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<T: 'static + ParamSetElement> SystemParam for ParamSet<T> {
+impl<T: 'static + ParamSetElement> SystemParam for ParamSet<'_, T> {
     type State = <T as SystemParam>::State;
 
-    type Item<'world> = <T as SystemParam>::Item<'world>;
+    type Item<'w> = ParamSet<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let s = T::init_set_state(world, system_meta);
@@ -58,9 +58,10 @@ impl<T: 'static + ParamSetElement> SystemParam for ParamSet<T> {
         state: &Self::State,
         res_tid: &TypeId,
         res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        <T as SystemParam>::res_depend(world, system_meta, state, res_tid, res_name, result)
+        <T as SystemParam>::res_depend(world, system_meta, state, res_tid, res_name, single, result)
     }
     #[inline]
     fn align(world: &World, system_meta: &SystemMeta, state: &mut Self::State) {
@@ -71,7 +72,7 @@ impl<T: 'static + ParamSetElement> SystemParam for ParamSet<T> {
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        <T as SystemParam>::get_param(world, system_meta, state)
+        ParamSet(<T as SystemParam>::get_param(world, system_meta, state))
     }
 }
 
@@ -87,4 +88,4 @@ macro_rules! impl_param_set_tuple_fetch {
         }
     };
 }
-all_tuples!(impl_param_set_tuple_fetch, 0, 15, F);
+all_tuples!(impl_param_set_tuple_fetch, 1, 15, F);

@@ -1,3 +1,5 @@
+//! 单例资源， 先system依次写，然后多system并行读
+
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -7,19 +9,21 @@ use crate::system::SystemMeta;
 use crate::system_parms::SystemParam;
 use crate::world::*;
 
-pub struct Res<'w, T: 'static> {
+pub struct SingleRes<'w, T: 'static> {
     pub(crate) value: &'w T,
 }
+unsafe impl<T> Send for SingleRes<'_, T> {}
+unsafe impl<T> Sync for SingleRes<'_, T> {}
 
-impl<T: 'static> SystemParam for Res<'_, T> {
-    type State = ResValue;
-    type Item<'w> = Res<'w, T>;
+impl<T: 'static> SystemParam for SingleRes<'_, T> {
+    type State = SingleResource;
+    type Item<'w> = SingleRes<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_read(tid, name);
-        world.get_res_any(&tid).unwrap()
+        world.get_single_res_any(&tid).unwrap()
     }
     fn res_depend(
         _world: &World,
@@ -27,9 +31,10 @@ impl<T: 'static> SystemParam for Res<'_, T> {
         _state: &Self::State,
         res_tid: &TypeId,
         _res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        if &TypeId::of::<T>() == res_tid {
+        if single && &TypeId::of::<T>() == res_tid {
             result.set(Flags::READ, true)
         }
     }
@@ -40,13 +45,13 @@ impl<T: 'static> SystemParam for Res<'_, T> {
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        Res {
+        SingleRes {
             value: unsafe { &*state.downcast::<T>() },
         }
     }
 }
 
-impl<'w, T: Sync + Send + 'static> Deref for Res<'w, T> {
+impl<'w, T: Sync + Send + 'static> Deref for SingleRes<'w, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -54,19 +59,21 @@ impl<'w, T: Sync + Send + 'static> Deref for Res<'w, T> {
     }
 }
 
-pub struct ResMut<'w, T: 'static> {
+pub struct SingleResMut<'w, T: 'static> {
     pub(crate) value: &'w mut T,
 }
+unsafe impl<T> Send for SingleResMut<'_, T> {}
+unsafe impl<T> Sync for SingleResMut<'_, T> {}
 
-impl<T: 'static> SystemParam for ResMut<'_, T> {
-    type State = ResValue;
-    type Item<'w> = ResMut<'w, T>;
+impl<T: 'static> SystemParam for SingleResMut<'_, T> {
+    type State = SingleResource;
+    type Item<'w> = SingleResMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_write(tid, name);
-        world.get_res_any(&TypeId::of::<T>()).unwrap()
+        world.get_single_res_any(&TypeId::of::<T>()).unwrap()
     }
     fn res_depend(
         _world: &World,
@@ -74,9 +81,10 @@ impl<T: 'static> SystemParam for ResMut<'_, T> {
         _state: &Self::State,
         res_tid: &TypeId,
         _res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        if &TypeId::of::<T>() == res_tid {
+        if single && &TypeId::of::<T>() == res_tid {
             result.set(Flags::WRITE, true)
         }
     }
@@ -87,34 +95,34 @@ impl<T: 'static> SystemParam for ResMut<'_, T> {
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        ResMut {
+        SingleResMut {
             value: unsafe { &mut *state.downcast::<T>() },
         }
     }
 }
-impl<'w, T: Sync + Send + 'static> Deref for ResMut<'w, T> {
+impl<'w, T: Sync + Send + 'static> Deref for SingleResMut<'w, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.value
     }
 }
-impl<'w, T: Sync + Send + 'static> DerefMut for ResMut<'w, T> {
+impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.value
     }
 }
 
-impl<T: 'static> SystemParam for Option<Res<'_, T>> {
-    type State = Option<ResValue>;
-    type Item<'w> = Option<Res<'w, T>>;
+impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
+    type State = Option<SingleResource>;
+    type Item<'w> = Option<SingleRes<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_read(tid, name);
-        world.get_res_any(&tid)
+        world.get_single_res_any(&tid)
     }
     fn res_depend(
         _world: &World,
@@ -122,9 +130,10 @@ impl<T: 'static> SystemParam for Option<Res<'_, T>> {
         _state: &Self::State,
         res_tid: &TypeId,
         _res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        if &TypeId::of::<T>() == res_tid {
+        if single && &TypeId::of::<T>() == res_tid {
             result.set(Flags::READ, true)
         }
     }
@@ -136,7 +145,7 @@ impl<T: 'static> SystemParam for Option<Res<'_, T>> {
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         match state {
-            Some(s) => Some(Res {
+            Some(s) => Some(SingleRes {
                 value: unsafe { &*s.downcast::<T>() },
             }),
             None => None,
@@ -144,15 +153,15 @@ impl<T: 'static> SystemParam for Option<Res<'_, T>> {
     }
 }
 
-impl<T: 'static> SystemParam for Option<ResMut<'_, T>> {
-    type State = Option<ResValue>;
-    type Item<'w> = Option<ResMut<'w, T>>;
+impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
+    type State = Option<SingleResource>;
+    type Item<'w> = Option<SingleResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_write(tid, name);
-        world.get_res_any(&tid)
+        world.get_single_res_any(&tid)
     }
     fn res_depend(
         _world: &World,
@@ -160,9 +169,10 @@ impl<T: 'static> SystemParam for Option<ResMut<'_, T>> {
         _state: &Self::State,
         res_tid: &TypeId,
         _res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        if &TypeId::of::<T>() == res_tid {
+        if single && &TypeId::of::<T>() == res_tid {
             result.set(Flags::WRITE, true)
         }
     }
@@ -174,7 +184,7 @@ impl<T: 'static> SystemParam for Option<ResMut<'_, T>> {
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         match state {
-            Some(s) => Some(ResMut {
+            Some(s) => Some(SingleResMut {
                 value: unsafe { &mut *s.downcast::<T>() },
             }),
             None => None,

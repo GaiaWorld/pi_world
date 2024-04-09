@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 
 use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
@@ -101,7 +102,8 @@ pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'st
     // 缓存上次的索引映射关系
     pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
-
+unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Send for Query<'world, Q, F> {}
+unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'world, Q, F> {}
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     #[inline]
     pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>) -> Self {
@@ -186,9 +188,10 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemPara
         _state: &Self::State,
         res_tid: &TypeId,
         res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
-        Q::res_depend(res_tid, res_name, result);
+        Q::res_depend(res_tid, res_name, single, result);
     }
 
     #[inline]
@@ -250,7 +253,6 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // 脏world上的原型索引对于本地的原型索引
     pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
-    empty: Q::State,
     _k: PhantomData<F>,
 }
 
@@ -275,16 +277,15 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             // 监听原型创建， 添加record
             world.listener_mgr.register_event(Share::new(notify));
         }
-        QueryState::new(listeners, Q::init_state(world, &world.empty_archetype))
+        QueryState::new(listeners)
     }
-    pub fn new(listeners: SmallVec<[(TypeId, bool); 1]>, empty: Q::State) -> Self {
+    pub fn new(listeners: SmallVec<[(TypeId, bool); 1]>) -> Self {
         Self {
             listeners,
             vec: Vec::new(),
             archetype_len: 0,
             map: Default::default(),
             cache_mapping: (ArchetypeWorldIndex::null(), 0),
-            empty,
             _k: PhantomData,
         }
     }
@@ -390,7 +391,7 @@ pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'st
     pub(crate) ar_index: ArchetypeLocalIndex,
     // 原型
     pub(crate) ar: &'w Archetype,
-    fetch: Q::Fetch<'w>,
+    fetch: MaybeUninit<Q::Fetch<'w>>,
     pub(crate) e: Entity,
     pub(crate) row: Row,
     // 脏迭代器，监听多个组件变化，可能entity相同，需要进行去重
@@ -414,7 +415,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 state,
                 ar: world.empty_archetype(),
                 ar_index: 0,
-                fetch: Q::init_fetch(world, world.empty_archetype(), &state.empty),
+                fetch: MaybeUninit::uninit(),
                 e: Entity::null(),
                 row: 0,
                 dirty: (Iter::empty(), 0),
@@ -424,7 +425,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
         let ar_index = len - 1;
         let ar = unsafe { state.vec.get_unchecked(ar_index) };
-        let fetch = Q::init_fetch(world, &ar.0, &ar.1);
+        let fetch = MaybeUninit::new(Q::init_fetch(world, &ar.0, &ar.1));
         if F::LISTENER_COUNT == 0 {
             // 该查询没有监听组件变化，倒序迭代原型的行
             QueryIter {
@@ -470,7 +471,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 self.e = self.ar.table.get(self.row);
                 // 要求条目不为空
                 if !self.e.is_null() {
-                    let item = Q::fetch(&mut self.fetch, self.row, self.e);
+                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
                 continue;
@@ -484,7 +485,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             self.ar_index -= 1;
             let ar = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
             self.ar = &ar.0;
-            self.fetch = Q::init_fetch(self.world, self.ar, &ar.1);
+            self.fetch = MaybeUninit::new(Q::init_fetch(self.world, self.ar, &ar.1));
             self.row = self.ar.table.len();
         }
     }
@@ -501,7 +502,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 self.e = self.ar.table.get(self.row);
                 // 要求条目不为空
                 if !self.e.is_null() {
-                    let item = Q::fetch(&mut self.fetch, self.row, self.e);
+                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 } else {
                     // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
@@ -530,7 +531,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             self.ar_index -= 1;
             let ar = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
             self.ar = &ar.0;
-            self.fetch = Q::init_fetch(self.world, self.ar, &ar.1);
+            self.fetch = MaybeUninit::new(Q::init_fetch(self.world, self.ar, &ar.1));
             // 监听被脏组件
             let len = ar.2.len() - 1;
             let d_index = unsafe { *ar.2.get_unchecked(len) };

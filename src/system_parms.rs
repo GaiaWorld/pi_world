@@ -10,7 +10,7 @@ use crate::{
 
 use pi_proc_macros::all_tuples;
 
-pub trait SystemParam: Sized {
+pub trait SystemParam: Sized + Send + Sync {
     /// Used to store data which persists across invocations of a system.
     type State: Send + Sync + 'static;
 
@@ -45,10 +45,12 @@ pub trait SystemParam: Sized {
         state: &Self::State,
         res_tid: &TypeId,
         res_name: &Cow<'static, str>,
+        single: bool,
         result: &mut Flags,
     ) {
     }
 
+    /// system align the world archetypes.
     #[inline]
     #[allow(unused_variables)]
     fn align(world: &World, system_meta: &SystemMeta, state: &mut Self::State) {}
@@ -106,9 +108,9 @@ macro_rules! impl_system_param_tuple {
                 $($param::archetype_depend(_world, _system_meta, $param, _archetype, _result);)*
             }
             #[inline]
-            fn res_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _res_tid: &TypeId, _res_name: &Cow<'static, str>, _result: &mut Flags) {
+            fn res_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
                 let ($($param,)*) = state;
-                $($param::res_depend(_world, _system_meta, $param, _res_tid, _res_name, _result);)*
+                $($param::res_depend(_world, _system_meta, $param, _res_tid, _res_name, _single, _result);)*
             }
             #[inline]
             fn align(_world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {

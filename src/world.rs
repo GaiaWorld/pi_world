@@ -1,4 +1,4 @@
-/// system上只能看到Query，Sys参数，资源 实体 组件 事件 命令
+/// system上只能看到Query等SystemParam参数，SystemParam参数一般包含：单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
 /// world上的数据（资源、实体和原型）的线程安全的保护仅在于保护容器，
@@ -8,15 +8,16 @@
 /// 整理操作时，一般是在整个执行图执行完毕后，进行进行相应的调整。举例：
 ///
 /// 如果sys上通过Alter来增删组件，则可以在entity插入时，分析出sys的依赖。除了首次原型创建时，时序不确定，其余的增删，sys会保证先写后读。
-/// 如果sys通过CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在下一帧会看到。
+/// 如果sys通过是MultiRes实现的CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在可能在下一帧才会看到。
 ///
 ///
 use core::fmt::*;
 use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
+use std::cell::SyncUnsafeCell;
 use std::mem::transmute;
-use std::ptr::null_mut;
+use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
 use crate::alter::{AlterState, Alterer, DelComponents};
@@ -51,7 +52,8 @@ pub struct ArchetypeOk<'a>(
 
 #[derive(Debug)]
 pub struct World {
-    pub(crate) res_map: DashMap<TypeId, ResValue>,
+    pub(crate) single_res_map: DashMap<TypeId, SingleResource>,
+    pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
@@ -66,7 +68,8 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         Self {
-            res_map: DashMap::default(),
+            single_res_map: DashMap::default(),
+            multi_res_map: DashMap::default(),
             entities: SlotMap::default(),
             archetype_map: DashMap::new(),
             archetype_arr: SafeVec::default(),
@@ -85,7 +88,7 @@ impl World {
         InsertBatchIter::new(self, iter.into_iter())
     }
     /// 创建一个插入器
-    pub fn make_inserter<I: InsertComponents>(&self) -> Inserter<I> {
+    pub fn make_inserter<I: InsertComponents>(&mut self) -> Inserter<I> {
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = self.find_archtype(id, components);
@@ -127,34 +130,90 @@ impl World {
     pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
-    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
-    pub fn register_res<T: 'static>(&mut self, value: T) {
+    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn register_single_res<T: 'static>(&mut self, value: T) {
         let tid = TypeId::of::<T>();
-        assert!(self.res_map.insert(tid, ResValue::new(value)).is_none());
+        assert!(self
+            .single_res_map
+            .insert(tid, SingleResource::new(value))
+            .is_none());
     }
-    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
-    pub fn get_res<T: 'static>(&self) -> Option<&T> {
-        unsafe { transmute(self.get_res_ptr::<T>())}
+    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_single_res<T: 'static>(&self) -> Option<&T> {
+        unsafe { transmute(self.get_single_res_ptr::<T>()) }
     }
-    /// 获得指定的全局资源，为了安全，必须保证不在ECS执行中调用
-    pub fn get_res_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        unsafe { transmute(self.get_res_ptr::<T>())}
+    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_single_res_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        unsafe { transmute(self.get_single_res_ptr::<T>()) }
     }
-    pub(crate) fn get_res_ptr<T: 'static>(&self) -> *mut T {
+    pub(crate) fn get_single_res_ptr<T: 'static>(&self) -> *mut T {
         let tid = TypeId::of::<T>();
-        self.res_map.get(&tid).map_or(null_mut(), |r| {
-            // todo downcast_ref_unchecked
-            unsafe { transmute(r.value().0.downcast_ref::<T>().unwrap()) }
-        })
+        self.single_res_map
+            .get(&tid)
+            .map_or(null_mut(), |r| unsafe {
+                transmute(r.value().0.downcast_ref_unchecked::<T>())
+            })
     }
-    pub(crate) fn get_res_any(&self, tid: &TypeId) -> Option<ResValue> {
-        self.res_map.get(tid).map(|r|
-            r.value().clone()
-        )
+    pub(crate) fn get_single_res_any(&self, tid: &TypeId) -> Option<SingleResource> {
+        self.single_res_map.get(tid).map(|r| r.value().clone())
     }
+    /// 注册指定类型的多例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn register_multi_res<T: 'static>(&mut self) {
+        let tid = TypeId::of::<T>();
+        assert!(self
+            .multi_res_map
+            .insert(tid, MultiResource::new::<T>())
+            .is_none());
+    }
+    /// system系统读取多例资源
+    pub(crate) fn system_read_multi_res(&self, tid: &TypeId) -> Option<MultiResource> {
+        self.multi_res_map.get(&tid).map(|r| r.clone())
+    }
+    /// system系统初始化自己写入的多例资源
+    pub(crate) fn system_init_write_multi_res<T: 'static, F>(
+        &mut self,
+        f: F,
+    ) -> Option<SingleResource>
+    where
+        F: FnOnce() -> T,
+    {
+        let tid = TypeId::of::<T>();
+        self.multi_res_map.get_mut(&tid).map(|mut r| r.insert(f()))
+    }
+    /// 获得指定的多例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_multi_res<T: 'static>(&self, index: usize) -> Option<&T> {
+        let tid = TypeId::of::<T>();
+        self.multi_res_map
+            .get(&tid)
+            .map(|v| unsafe { transmute(v.get::<T>(index)) })
+    }
+    /// 获得指定的多例资源，为了安全，必须保证不在ECS执行中调用
+    pub fn get_multi_res_mut<T: 'static>(&mut self, index: usize) -> Option<&mut T> {
+        let tid = TypeId::of::<T>();
+        self.multi_res_map
+            .get(&tid)
+            .map(|v| unsafe { transmute(v.get::<T>(index)) })
+    }
+    pub unsafe fn get_multi_res_unchecked<T: 'static>(&self, index: usize) -> Option<&T> {
+        let tid = TypeId::of::<T>();
+        self.multi_res_map
+            .get(&tid)
+            .map(|v| unsafe { transmute(v.get_unchecked::<T>(index)) })
+    }
+    /// 获得指定的多例资源，为了安全，必须保证不在ECS执行中调用
+    pub unsafe fn get_multi_res_mut_unchecked<T: 'static>(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut T> {
+        let tid = TypeId::of::<T>();
+        self.multi_res_map
+            .get(&tid)
+            .map(|v| unsafe { transmute(v.get_unchecked::<T>(index)) })
+    }
+
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&T, QueryError> {
-        unsafe { transmute(self.get_component_ptr::<T>(e))}
+        unsafe { transmute(self.get_component_ptr::<T>(e)) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
@@ -162,10 +221,14 @@ impl World {
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub(crate) fn get_component_ptr<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
-        unsafe { transmute(self.get_component_ptr_by_tid(e, &TypeId::of::<T>()))}
+        unsafe { transmute(self.get_component_ptr_by_tid(e, &TypeId::of::<T>())) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub(crate) fn get_component_ptr_by_tid(&self, e: Entity, tid: &TypeId) -> Result<*mut u8, QueryError> {
+    pub(crate) fn get_component_ptr_by_tid(
+        &self,
+        e: Entity,
+        tid: &TypeId,
+    ) -> Result<*mut u8, QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -272,8 +335,8 @@ impl Default for World {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResValue(Share<dyn Any>, Cow<'static, str>);
-impl ResValue {
+pub struct SingleResource(Share<dyn Any>, Cow<'static, str>);
+impl SingleResource {
     fn new<T: 'static>(value: T) -> Self {
         Self(Share::new(value), std::any::type_name::<T>().into())
     }
@@ -281,12 +344,54 @@ impl ResValue {
         &self.1
     }
     pub(crate) fn downcast<T: 'static>(&self) -> *mut T {
-        // todo downcast_ref_unchecked
-        unsafe { transmute(self.0.downcast_ref::<T>().unwrap()) }
+        unsafe { transmute(self.0.downcast_ref_unchecked::<T>()) }
     }
 }
-unsafe impl Send for ResValue {}
-unsafe impl Sync for ResValue {}
+unsafe impl Send for SingleResource {}
+unsafe impl Sync for SingleResource {}
+
+#[derive(Debug, Clone)]
+pub struct MultiResource(
+    Share<SyncUnsafeCell<Vec<Share<dyn Any>>>>,
+    Cow<'static, str>,
+);
+impl MultiResource {
+    fn new<T: 'static>() -> Self {
+        Self(
+            Share::new(SyncUnsafeCell::new(Vec::new())),
+            std::any::type_name::<T>().into(),
+        )
+    }
+    pub fn name(&self) -> &Cow<'static, str> {
+        &self.1
+    }
+    pub fn insert<T: 'static>(&mut self, value: T) -> SingleResource {
+        let r = Share::new(value);
+        let vec = unsafe { &mut *self.0.get() };
+        vec.push(r.clone());
+        SingleResource(r, self.1.clone())
+    }
+    pub fn len(&self) -> usize {
+        let vec = unsafe { &*self.0.get() };
+        vec.len()
+    }
+    pub fn vec(&self) -> &Vec<Share<dyn Any>> {
+        unsafe { &*self.0.get() }
+    }
+    pub(crate) fn get<T: 'static>(&self, index: usize) -> *mut T {
+        let vec = unsafe { &*self.0.get() };
+        vec.get(index).map_or(ptr::null_mut(), |r| unsafe {
+            transmute(r.downcast_ref_unchecked::<T>())
+        })
+    }
+    pub(crate) fn get_unchecked<T: 'static>(&self, index: usize) -> *mut T {
+        let vec = unsafe { &*self.0.get() };
+        unsafe { transmute(vec.get_unchecked(index).downcast_ref_unchecked::<T>()) }
+    }
+}
+
+unsafe impl Send for MultiResource {}
+unsafe impl Sync for MultiResource {}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EntityAddr {

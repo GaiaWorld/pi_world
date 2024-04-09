@@ -1,4 +1,4 @@
-use std::{any::TypeId, borrow::Cow, collections::HashMap, mem::take};
+use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
@@ -39,17 +39,19 @@ impl ReadWrite {
 /// The metadata of a [`System`].
 #[derive(Debug)]
 pub struct SystemMeta {
+    pub(crate) type_id: TypeId,
     pub(crate) name: Cow<'static, str>,
-    pub(crate) components: ReadWrite,  // 该系统所有组件级读写依赖
-    pub(crate) cur_param: ReadWrite, // 当前参数的读写依赖
-    pub(crate) param_set: ReadWrite, // 参数集的读写依赖
+    pub(crate) components: ReadWrite, // 该系统所有组件级读写依赖
+    pub(crate) cur_param: ReadWrite,  // 当前参数的读写依赖
+    pub(crate) param_set: ReadWrite,  // 参数集的读写依赖
     pub(crate) res_reads: HashMap<TypeId, Cow<'static, str>>, // 读Res
     pub(crate) res_writes: HashMap<TypeId, Cow<'static, str>>, // 写ResMut
 }
 
 impl SystemMeta {
-    pub(crate) fn new<T>() -> Self {
+    pub(crate) fn new<T: 'static>() -> Self {
         Self {
+            type_id: TypeId::of::<T>(),
             name: std::any::type_name::<T>().into(),
             components: Default::default(),
             cur_param: Default::default(),
@@ -57,6 +59,11 @@ impl SystemMeta {
             res_reads: Default::default(),
             res_writes: Default::default(),
         }
+    }
+    /// Returns the system's type_id
+    #[inline]
+    pub fn type_id(&self) -> &TypeId {
+        &self.type_id
     }
 
     /// Returns the system's name
@@ -129,7 +136,7 @@ impl SystemMeta {
     }
 }
 
-pub trait System: Send + Sync {
+pub trait System: Send + Sync + 'static {
     /// Returns the system's name.
     fn name(&self) -> &Cow<'static, str>;
     /// Returns the [`TypeId`] of the underlying system type.
@@ -137,12 +144,44 @@ pub trait System: Send + Sync {
     /// Initialize the system.
     fn initialize(&mut self, world: &mut World);
     /// system depend the archetype.
-    fn archetype_depend(&self, world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult);
+    fn archetype_depend(
+        &self,
+        world: &World,
+        archetype: &Archetype,
+        result: &mut ArchetypeDependResult,
+    );
     /// system depend the res.
-    fn res_depend(&self, world: &World, res_tid: &TypeId, res_name: &Cow<'static, str>, result: &mut Flags);
+    fn res_depend(
+        &self,
+        world: &World,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        single: bool,
+        result: &mut Flags,
+    );
 
-    /// system align archetype
+    /// system align the world archetypes
     fn align(&mut self, world: &World);
+
+    // /// Runs the system with the given input in the world. Unlike [`System::run`], this function
+    // /// can be called in parallel with other systems and may break Rust's aliasing rules
+    // /// if used incorrectly, making it unsafe to call.
+    // ///
+    // /// # Safety
+    // ///
+    // /// - The caller must ensure that `world` has permission to access any world data
+    // ///   registered in [`Self::archetype_component_access`]. There must be no conflicting
+    // ///   simultaneous accesses while the system is running.
+    // /// - The method [`Self::update_archetype_component_access`] must be called at some
+    // ///   point before this one, with the same exact [`World`]. If `update_archetype_component_access`
+    // ///   panics (or otherwise does not return for any reason), this method must not be called.
+    // fn run(&mut self, world: &World);
+    // fn async_run(&mut self, _world: &World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    //     Box::pin(async move {})
+    // }
+}
+
+pub trait RunSystem: System {
     /// Runs the system with the given input in the world. Unlike [`System::run`], this function
     /// can be called in parallel with other systems and may break Rust's aliasing rules
     /// if used incorrectly, making it unsafe to call.
@@ -157,12 +196,101 @@ pub trait System: Send + Sync {
     ///   panics (or otherwise does not return for any reason), this method must not be called.
     fn run(&mut self, world: &World);
 }
-/// A convenience type alias for a boxed [`System`] trait object.
-pub type BoxedSystem = Box<dyn System>;
 
+pub trait AsyncRunSystem: System {
+    /// Runs the system with the given input in the world. Unlike [`System::run`], this function
+    /// can be called in parallel with other systems and may break Rust's aliasing rules
+    /// if used incorrectly, making it unsafe to call.
+    ///
+    /// # Safety
+    ///
+    /// - The caller must ensure that `world` has permission to access any world data
+    ///   registered in [`Self::archetype_component_access`]. There must be no conflicting
+    ///   simultaneous accesses while the system is running.
+    /// - The method [`Self::update_archetype_component_access`] must be called at some
+    ///   point before this one, with the same exact [`World`]. If `update_archetype_component_access`
+    ///   panics (or otherwise does not return for any reason), this method must not be called.
+    fn run(&mut self, _world: &'static World)
+        -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+}
+
+/// A convenience type alias for a boxed [`System`] trait object.
+pub enum BoxedSystem {
+    Sync(Box<dyn RunSystem>),
+    Async(Box<dyn AsyncRunSystem>),
+}
+impl BoxedSystem {
+    pub fn name(&self) -> &Cow<'static, str> {
+        match self {
+            BoxedSystem::Sync(s) => s.name(),
+            BoxedSystem::Async(s) => s.name(),
+        }
+    }
+
+    pub fn type_id(&self) -> TypeId {
+        match self {
+            BoxedSystem::Sync(s) => s.type_id(),
+            BoxedSystem::Async(s) => s.type_id(),
+        }
+    }
+
+    pub fn initialize(&mut self, world: &mut World) {
+        match self {
+            BoxedSystem::Sync(s) => s.initialize(world),
+            BoxedSystem::Async(s) => s.initialize(world),
+        }
+    }
+
+    pub fn archetype_depend(
+        &self,
+        world: &World,
+        archetype: &Archetype,
+        result: &mut ArchetypeDependResult,
+    ) {
+        match self {
+            BoxedSystem::Sync(s) => s.archetype_depend(world, archetype, result),
+            BoxedSystem::Async(s) => s.archetype_depend(world, archetype, result),
+        }
+    }
+
+    pub fn res_depend(
+        &self,
+        world: &World,
+        res_tid: &TypeId,
+        res_name: &Cow<'static, str>,
+        single: bool,
+        result: &mut Flags,
+    ) {
+        match self {
+            BoxedSystem::Sync(s) => s.res_depend(world, res_tid, res_name, single, result),
+            BoxedSystem::Async(s) => s.res_depend(world, res_tid, res_name, single, result),
+        }
+    }
+
+    pub fn align(&mut self, world: &World) {
+        match self {
+            BoxedSystem::Sync(s) => s.align(world),
+            BoxedSystem::Async(s) => s.align(world),
+        }
+    }
+
+    pub async fn run(&mut self, world: &'static World) {
+        match self {
+            BoxedSystem::Sync(s) => s.run(world),
+            BoxedSystem::Async(s) => s.run(world).await,
+        }
+    }
+}
 pub trait IntoSystem<Marker>: Sized {
     /// The type of [`System`] that this instance converts into.
-    type System: System;
+    type System: RunSystem;
+
+    /// Turns this value into its corresponding [`System`].
+    fn into_system(this: Self) -> Self::System;
+}
+pub trait IntoAsyncSystem<Marker>: Sized {
+    /// The type of [`System`] that this instance converts into.
+    type System: AsyncRunSystem;
 
     /// Turns this value into its corresponding [`System`].
     fn into_system(this: Self) -> Self::System;

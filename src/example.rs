@@ -1,4 +1,4 @@
-use crate::{param_set::ParamSet, prelude::*, res::Res};
+use crate::{param_set::ParamSet, prelude::*, single_res::SingleRes};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -81,7 +81,7 @@ pub fn alter1(
     println!("alter1");
     for (e, _, _) in q0.iter() {
         let r = i0.alter(e, (Age3(2),));
-        println!("e {:?}, r: {:?} is now", e, r);
+        dbg!(e, r);
     }
     println!("alter1: end");
 }
@@ -105,20 +105,21 @@ pub fn changed_l(
     println!("changed_l: end");
 }
 pub fn p_set(
-    set: ParamSet<(
-    //Query<(&mut Age0, &mut Age1)>,
-    // Query<(&mut Age1, &mut Age2)>,
-    )>
+    mut set: ParamSet<(
+    Query<(&mut Age0, &mut Age1)>,
+    Query<(&mut Age1, &mut Age2)>,
+    )>,
     // r10: Res<Age10>,
     // r11: Res<Age11>,
 ) {
     println!("p_set");
-    // for (age0, age1) in set.0.iter_mut() {
-    //     dbg!(age0, age1);
-    // }
-    // set.1.iter_mut().for_each(|(age1, age2)| {
-    //     dbg!(age1, age2);
-    // });
+    for (age0, age1) in set.0.iter_mut() {
+        // dbg!(age0, age1);
+    }
+    println!("p_set1");
+    set.1.iter_mut().for_each(|(age1, age2)| {
+        // dbg!(age1, age2);
+    });
     println!("p_set: end");
 }
 pub fn print_e(
@@ -157,7 +158,9 @@ struct Velocity([f32;3]);
 
 #[cfg(test)]
 mod test_mod {
-    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, query::Queryer, res::ResMut, system::*, table::Table};
+    use std::{future::Future, marker::PhantomData, mem::transmute, pin::Pin};
+
+    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, function_system::ParamSystem, multi_res::{MultiRes, MultiResMut}, query::Queryer, single_res::SingleResMut, system::*, table::Table, async_function_system::AsyncFunctionSystem};
     use pi_append_vec::AppendVec;
     use pi_null::Null;
     use test::Bencher;
@@ -205,8 +208,7 @@ mod test_mod {
         let i = app.world.make_inserter::<(Age1,Age0,)>();
         let e1 = i.insert((Age1(1),Age0(0),));
         let e2 = i.insert((Age1(1),Age0(0),));
-        let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.schedule.register(s, &[]);
+        app.schedule.add_system(print_changed_entities);
         app.initialize();
         app.run();
         app.run();
@@ -223,10 +225,8 @@ mod test_mod {
     #[test]
     fn test_insert() {
         let mut app = App::<SingleTaskRuntime>::new();
-        let s = Box::new(IntoSystem::into_system(insert1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.schedule.register(s, &[]);
+        app.schedule.add_system(insert1);
+        app.schedule.add_system(print_changed_entities);
         app.initialize();
         app.run();
         app.run();
@@ -331,7 +331,7 @@ mod test_mod {
         for _ in 0..1 {
             
         
-        let world = World::new();
+        let mut world = World::new();
         let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
         let mut e = Entity::null();
         for a in 0..10_000 {
@@ -361,17 +361,13 @@ mod test_mod {
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 1);
     }
 
-    #[test]
+    #[test] 
     fn test_alter() {
-        let mut app = MultiThreadApp::new();
-        let s = Box::new(IntoSystem::into_system(insert1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(alter1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(p_set));
-        app.schedule.register(s, &[]);
+        let mut app = SingleThreadApp::new();
+        app.schedule.add_system(insert1);
+        app.schedule.add_system(print_changed_entities);
+        app.schedule.add_system(alter1);
+        app.schedule.add_system(p_set);
         app.initialize();
         app.run();
         app.run();
@@ -429,14 +425,10 @@ mod test_mod {
     #[test] 
     fn test_added() {
         let mut app = App::<SingleTaskRuntime>::new();
-        let s = Box::new(IntoSystem::into_system(insert1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(added_l));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(alter1));
-        app.schedule.register(s, &["add"]);
+        app.schedule.add_system(insert1);
+        app.schedule.add_system(print_changed_entities);
+        app.schedule.add_system(added_l);
+        app.schedule.add_system_stages(alter1, &["add"]);
         app.initialize();
         app.run_stage("add");
         app.run_stage("add");
@@ -444,14 +436,10 @@ mod test_mod {
     #[test]
     fn test_changed() {
         let mut app = App::<SingleTaskRuntime>::new();
-        let s = Box::new(IntoSystem::into_system(insert1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(print_changed_entities));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(alter1));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(changed_l));
-        app.schedule.register(s, &[]);
+        app.schedule.add_system(insert1);
+        app.schedule.add_system(print_changed_entities);
+        app.schedule.add_system(alter1);
+        app.schedule.add_system(changed_l);
         app.initialize();
         app.run();
         app.run();
@@ -526,12 +514,88 @@ mod test_mod {
         i.batch(it);
 
         app.world.collect();
-        let s = Box::new(IntoSystem::into_system(ab));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(cd));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(ce));
-        app.schedule.register(s, &[]);
+        app.schedule.add_system(ab);
+        app.schedule.add_system(cd);
+        app.schedule.add_system(ce);
+        app.initialize();
+        app.run();     
+        for _ in 0..1000 {            
+            app.run();
+        }
+    }
+
+    #[test]
+    fn test_async_schedule() {
+
+        struct A(f32);
+        struct B(f32);
+        struct C(f32);
+        struct D(f32);
+        struct E(f32);
+        
+        async fn ab<'w>(mut query: Query<'w, (&mut A, &mut B)>) {
+            for (mut a, mut b) in query.iter_mut() {
+                std::mem::swap(&mut a.0, &mut b.0);
+            }
+        }
+        
+        fn cd(mut query: Query<(&mut C, &mut D)>) {
+            for (mut c, mut d) in query.iter_mut() {
+                std::mem::swap(&mut c.0, &mut d.0);
+            }
+        }
+        
+        fn ce(mut query: Query<(&mut C, &mut E)>) {
+            for (mut c, mut e) in query.iter_mut() {
+                std::mem::swap(&mut c.0, &mut e.0);
+            }
+        }
+        let mut app = MultiThreadApp::new();
+        let i = app.world.make_inserter::<(A,B,)>();
+        let it = (0..10_000).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,)>();
+        let it = (0..10_000).map(|_| {
+            (
+                A(0.0), 
+                B(0.0),
+                C(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,D,)>();
+        let it = (0..10_000).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+                C(0.0),
+                D(0.0),
+            )
+        });
+        i.batch(it);
+
+        let i = app.world.make_inserter::<(A,B,C,E,)>();
+        let it = (0..10_000).map(|_| {
+            (
+                A(0.0),
+                B(0.0),
+                C(0.0),
+                E(0.0),
+            )
+        });
+        i.batch(it);
+
+        app.world.collect();
+        //app.schedule.add_async_system(ab);
+        app.schedule.add_system(cd);
+        app.schedule.add_system(ce);
         app.initialize();
         app.run();     
         for _ in 0..1000 {            
@@ -549,36 +613,117 @@ mod test_mod {
         struct D(f32);
         struct E(f32);
         
-        fn ab(a: Res<A>, mut b: ResMut<B>) {
+        fn ab(a: SingleRes<A>, mut b: SingleResMut<B>) {
             b.0 += a.0 + 1.0;
         }
         
-        fn cd(c: Res<C>, mut d: ResMut<D>) {
+        fn cd(c: SingleRes<C>, mut d: SingleResMut<D>) {
             d.0 += c.0 + 1.0;
         }
         
-        fn ce(c: Res<C>, mut e: ResMut<E>, mut b: ResMut<B>) {
+        fn ce(c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
         }
         let mut app = MultiThreadApp::new();
-        app.world.register_res(A(0.0));
-        app.world.register_res(B(0.0));
-        app.world.register_res(C(0.0));
-        app.world.register_res(D(0.0));
-        app.world.register_res(E(0.0));
-        let s = Box::new(IntoSystem::into_system(ab));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(cd));
-        app.schedule.register(s, &[]);
-        let s = Box::new(IntoSystem::into_system(ce));
-        app.schedule.register(s, &[]);
+        app.world.register_single_res(A(0.0));
+        app.world.register_single_res(B(0.0));
+        app.world.register_single_res(C(0.0));
+        app.world.register_single_res(D(0.0));
+        app.world.register_single_res(E(0.0));
+        app.schedule.add_system(ab);
+        app.schedule.add_system(cd);
+        app.schedule.add_system(ce);
         app.initialize();
         app.run();
         app.run();
-        assert_eq!(app.world.get_res::<B>().unwrap().0, 4.0);
-        assert_eq!(app.world.get_res::<D>().unwrap().0, 2.0);
-        assert_eq!(app.world.get_res::<E>().unwrap().0, 2.0);
+        assert_eq!(app.world.get_single_res::<B>().unwrap().0, 4.0);
+        assert_eq!(app.world.get_single_res::<D>().unwrap().0, 2.0);
+        assert_eq!(app.world.get_single_res::<E>().unwrap().0, 2.0);
+    }
+
+    #[test]
+    fn test_multi_res() {
+        
+        struct A(f32);
+        #[derive(Clone, Copy, Default)]
+        struct B(f32);
+        #[derive(Clone, Copy, Default)]
+        struct C(f32);
+        #[derive(Clone, Copy, Default)]
+        struct D(f32);
+        #[derive(Clone, Copy, Default)]
+        struct E(f32);
+        
+        fn ab(a: SingleRes<A>, mut b: MultiResMut<B>) {
+            b.0 += a.0 + 1.0;
+        }
+        
+        fn cd(c: MultiRes<C>, mut d: MultiResMut<D>) {
+            d.0 += c.iter().next().unwrap().0 + 1.0;
+        }
+        
+        fn ce(b: MultiRes<B>, mut e: MultiResMut<E>, mut c: MultiResMut<C>) {
+            e.0 += b.iter().count() as f32 + 1.0;
+            c.0 += b.iter().count() as f32 + 1.0;
+        }
+        let mut app = MultiThreadApp::new();
+        app.world.register_single_res(A(1.0));
+        app.world.register_multi_res::<B>();
+        app.world.register_multi_res::<C>();
+        app.world.register_multi_res::<D>();
+        app.world.register_multi_res::<E>();
+        app.schedule.add_system(ab);
+        app.schedule.add_system(cd);
+        app.schedule.add_system(ce);
+        app.initialize();
+        app.run();
+        app.run();
+        assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);
+        assert_eq!(app.world.get_multi_res::<C>(0).unwrap().0, 4.0);
+        assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 8.0);
+        assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
+    }
+    pub trait AT: Send + Sync + 'static {
+        type Param: Send + Sync + 'static;
+    
+        /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
+        fn run<'w>(
+            self,
+            _param_value: &'w Self::Param,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+    }
+    
+    pub struct AFS<A: AT> {
+        pub param: <A as AT>::Param,
+    }
+    unsafe impl<A: AT> Send for AFS<A> where <A as AT>::Param: Send {}
+    unsafe impl<A: AT> Sync for AFS<A> where <A as AT>::Param: Sync {}
+    impl <A: AT> AT for AFS<A> {
+        type Param = <A as AT>::Param;
+    
+        fn run<'w>(
+            self,
+            param_value: &'w Self::Param,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+            todo!()
+        }
+    }
+    struct AA<'a>
+    {
+        _p: PhantomData<&'a ()>,
+    }
+    async fn aaa<'a>(_a: AA<'a>) {
+
+    }
+    fn bbb<'a>(a: AA<'a>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        let a1 = unsafe { transmute(a) };
+        Box::pin(
+            aaa(a1)
+        )
+    }
+    async fn ccc(a: AA<'static>) {
+        aaa(a).await
     }
 }
 
