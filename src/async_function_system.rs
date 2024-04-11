@@ -1,23 +1,21 @@
-use std::{any::TypeId, borrow::Cow, future::Future, pin::Pin, mem::transmute};
+use std::{any::TypeId, borrow::Cow, future::Future, mem::transmute, pin::Pin};
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags}, function_system::ParamSystem, system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta}, system_parms::SystemParam, world::*
+    archetype::{Archetype, ArchetypeDependResult, Flags},
+    function_system::ParamSystem,
+    system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta},
+    system_parms::SystemParam,
+    world::*,
 };
 
 use pi_proc_macros::all_tuples;
-
-/// Shorthand way of accessing the associated type [`SystemParam::Item`] for a given [`SystemParam`].
-pub type SystemParamItem<'w, P> = <P as SystemParam>::Item<'w>;
 
 pub trait AsyncSystemParamFunction<Marker>: Clone + Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
     type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run<'w>(
-        self,
-        _param_value: SystemParamItem<'w, Self::Param>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+    fn run(self, _param_value: Self::Param) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -43,9 +41,9 @@ where
     F: AsyncSystemParamFunction<Marker>,
 {
     type System = AsyncFunctionSystem<Marker, F>;
-    fn into_system(func: Self) -> Self::System {
+    fn into_async_system(self) -> Self::System {
         AsyncFunctionSystem {
-            func,
+            func: self,
             param: ParamSystem::new(SystemMeta::new::<F>()),
         }
     }
@@ -101,7 +99,7 @@ where
     #[inline]
     fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         let param_state = self.param.param_state.as_mut().unwrap();
-        let params = F::Param::get_param(world, &mut self.param.system_meta, param_state);
+        let params = F::Param::get_self(world, &mut self.param.system_meta, param_state);
         self.func.clone().run(params)
     }
 }
@@ -109,27 +107,17 @@ where
 macro_rules! impl_async_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Clone + Send + Sync + 'static, R, $($param: SystemParam),*> AsyncSystemParamFunction<fn($($param,)*)> for Func
+        impl<Func: Clone + Send + Sync + 'static, R, $($param: SystemParam),*> AsyncSystemParamFunction<fn($($param,)*)->R> for Func
         where Func:
-                FnMut($($param),*) -> R +
-                FnMut($(SystemParamItem<$param>),*) -> R,
-                R: Future<Output=()> + Send + 'static,
+                FnMut($($param),*) -> R,
+                R: Future<Output=()>,
         {
             type Param = ($($param,)*);
             #[inline]
-            fn run<'w>(self, param_value: SystemParamItem<'w, ($($param,)*)>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-                // Yes, this is strange, but `rustc` fails to compile this impl
-                // without using this function. It fails to recognize that `func`
-                // is a function, potentially because of the multiple impls of `FnMut`
-                #[allow(clippy::too_many_arguments)]
-                fn call_inner<$($param,)* R>(
-                    mut f: impl FnMut($($param,)*) -> R,
-                    $($param: $param,)*
-                ) -> Pin<Box<R>> {
-                    Box::pin(f($($param,)*))
-                }
-                let ($($param,)*) = unsafe { param_value};
-                call_inner(self, $($param),*)
+            fn run(mut self, param_value: ($($param,)*)) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+                let ($($param,)*) = param_value;
+                let r: Pin<Box<dyn Future<Output = ()>>> = Box::pin(self($($param,)*));
+                unsafe {transmute(r)}
             }
         }
     };

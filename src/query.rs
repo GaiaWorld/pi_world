@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{transmute, MaybeUninit};
 
 use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
@@ -158,8 +158,8 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
 }
 
-impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
-    for Query<'_, Q, F>
+impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
+    for Query<'a, Q, F>
 {
     type State = QueryState<Q, F>;
     type Item<'w> = Query<'w, Q, F>;
@@ -206,6 +206,14 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemPara
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         Query::new(world, state)
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement

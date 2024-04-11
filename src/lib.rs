@@ -46,7 +46,7 @@ pub mod prelude {
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem},
-        system_parms::SystemParam,
+        system_parms::{SystemParam, Local},
         world::{Entity, World},
         listener::Listener,
         app::{App, SingleThreadApp, MultiThreadApp},

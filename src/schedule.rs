@@ -60,7 +60,7 @@ impl Schedule {
         system: impl IntoAsyncSystem<M>,
         stages: &[&'static str],
     ) -> usize {
-        let s = Box::new(IntoAsyncSystem::into_system(system));
+        let s = Box::new(IntoAsyncSystem::into_async_system(system));
         self.add_box_system(BoxedSystem::Async(s), stages)
     }
 

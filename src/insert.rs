@@ -103,6 +103,14 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     ) -> Self::Item<'world> {
         Insert::new(world, state)
     }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
 }
 
 pub trait InsertComponents {

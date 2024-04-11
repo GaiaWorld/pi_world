@@ -5,6 +5,7 @@
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
 use pi_share::Share;
@@ -74,6 +75,14 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
             _p: PhantomData,
         }
     }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
 }
 
 pub struct MultiResMut<'w, T: Default + 'static> {
@@ -115,6 +124,14 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         MultiResMut {
             value: unsafe { &mut *state.downcast::<T>() },
         }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 impl<'w, T: Default + Sync + Send + 'static> Deref for MultiResMut<'w, T> {
@@ -169,6 +186,14 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
             None => None,
         }
     }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
 }
 
 impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
@@ -207,5 +232,13 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
             }),
             None => None,
         }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }

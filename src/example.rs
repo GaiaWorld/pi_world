@@ -13,7 +13,7 @@ pub struct Age2(usize);
 pub struct Age3(usize);
 
 pub struct Age4(usize);
-pub struct Age5([usize;16]);
+pub struct Age5([usize; 16]);
 pub struct Age6(usize);
 pub struct Age7(usize);
 pub struct Age8(usize);
@@ -30,16 +30,17 @@ pub struct Age18(usize);
 pub struct Age19(usize);
 pub struct Age20(usize);
 
-pub fn insert1(
-    i0: Insert<(Age1,Age0,)>,
-) {
+pub fn insert1(i0: Insert<(Age1, Age0)>) {
     println!("insert1 is now");
-    let e = i0.insert((Age1(1),Age0(0),));
+    let e = i0.insert((Age1(1), Age0(0)));
     println!("insert1 is end, e:{:?}", e);
 }
 pub fn print_changed_entities(
     // i0: Insert<(Age2,)>,
-    mut q0: Query<(Entity, &mut Age0, &mut Age1,
+    mut q0: Query<(
+        Entity,
+        &mut Age0,
+        &mut Age1,
         // &Age2, &Age3, &Age4, &Age5, &Age6, &Age7, &Age8
     )>,
     // q1: Query<(Entity, &mut Age1)>,
@@ -50,11 +51,15 @@ pub fn print_changed_entities(
     // let q = q0.iter();
     // let s = q.size_hint();
     let q = q0.iter_mut();
-    for (e, mut age0, age1,
+    for (
+        e,
+        mut age0,
+        age1,
         // age2, age3, age4, age5, age6, age7, age8
-        ) in q {
+    ) in q
+    {
         // let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
-        age0.0 +=1+age1.0;
+        age0.0 += 1 + age1.0;
         //+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         // age1.0 +=1+age5.0[0];
     }
@@ -85,30 +90,23 @@ pub fn alter1(
     }
     println!("alter1: end");
 }
-pub fn added_l(
-    q0: Query<(Entity, &mut Age1, &mut Age0), (Added<Age1>, Added<Age2>)>,
-) {
+pub fn added_l(q0: Query<(Entity, &mut Age1, &mut Age0), (Added<Age1>, Added<Age2>)>) {
     println!("add_l");
     for (e, age1, _) in q0.iter() {
         println!("e {:?}, age1: {:?}", e, age1);
     }
     println!("add_l: end");
 }
-pub fn changed_l(
-    q0: Query<(Entity, &mut Age0, &mut Age1), (Changed<Age0>, Changed<Age2>)>,
-) {
+pub fn changed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Changed<Age0>, Changed<Age2>)>) {
     println!("changed_l");
     for (e, age0, _) in q0.iter() {
         println!("e {:?}, age0: {:?}", e, age0);
     }
- 
+
     println!("changed_l: end");
 }
 pub fn p_set(
-    mut set: ParamSet<(
-    Query<(&mut Age0, &mut Age1)>,
-    Query<(&mut Age1, &mut Age2)>,
-    )>,
+    mut set: ParamSet<(Query<(&mut Age0, &mut Age1)>, Query<(&mut Age1, &mut Age2)>)>,
     // r10: Res<Age10>,
     // r11: Res<Age11>,
 ) {
@@ -124,7 +122,10 @@ pub fn p_set(
 }
 pub fn print_e(
     // i0: Insert<(Age2,)>,
-    q0: Query<(Entity, &Age0, &Age1,
+    q0: Query<(
+        Entity,
+        &Age0,
+        &Age1,
         // &Age2, &Age3, &Age4, &Age5, &Age6, &Age7, &Age8
     )>,
     // q1: Query<(Entity, &mut Age1)>,
@@ -144,34 +145,48 @@ struct A(u32);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct B(u32);
 
-#[derive(Copy, Clone,Debug)]
-struct Transform([f32;16]);
+#[derive(Copy, Clone, Debug)]
+struct Transform([f32; 16]);
 
 #[derive(Copy, Clone)]
-struct Position([f32;3]);
+struct Position([f32; 3]);
 
 #[derive(Copy, Clone)]
-struct Rotation([f32;3]);
+struct Rotation([f32; 3]);
 
 #[derive(Copy, Clone)]
-struct Velocity([f32;3]);
+struct Velocity([f32; 3]);
 
 #[cfg(test)]
 mod test_mod {
-    use std::{future::Future, marker::PhantomData, mem::transmute, pin::Pin};
+    use std::{future::Future, marker::PhantomData, pin::Pin};
 
-    use crate::{app::*, archetype::{ComponentInfo, Row}, column::Column, function_system::ParamSystem, multi_res::{MultiRes, MultiResMut}, query::Queryer, single_res::SingleResMut, system::*, table::Table, async_function_system::AsyncFunctionSystem};
+    use super::*;
+    use crate::{
+        app::*,
+        archetype::{ComponentInfo, Row},
+        async_function_system::{AsyncFunctionSystem},
+        column::Column,
+        function_system::ParamSystem,
+        multi_res::{MultiRes, MultiResMut},
+        query::Queryer,
+        single_res::SingleResMut,
+        system::*,
+        table::Table,
+    };
     use pi_append_vec::AppendVec;
+    use pi_async_rt::{
+        prelude::{SingleTaskPool, SingleTaskRunner},
+        rt::single_thread::SingleTaskRuntime,
+    };
     use pi_null::Null;
     use test::Bencher;
-    use super::*;
-    use pi_async_rt::{prelude::{SingleTaskPool, SingleTaskRunner}, rt::single_thread::SingleTaskRuntime};
-    
+
     #[test]
     fn test_columns() {
         let mut c = Column::new(ComponentInfo::of::<Transform>());
-        c.write(0, Transform([0.0;16]));
-        c.write(1, Transform([1.0;16]));
+        c.write(0, Transform([0.0; 16]));
+        c.write(1, Transform([1.0; 16]));
         dbg!(c.get::<Transform>(0));
         dbg!(c.get::<Transform>(1));
         let mut action = Default::default();
@@ -180,7 +195,7 @@ mod test_mod {
         dbg!(c.get::<Transform>(1));
     }
 
-    #[test]  
+    #[test]
     fn test_removes() {
         let mut action = Default::default();
         let mut set = Default::default();
@@ -193,7 +208,7 @@ mod test_mod {
         assert_eq!(action.len(), 2);
         assert_eq!(action[0], (6, 1));
         assert_eq!(action[1], (5, 2));
-        removes.clear(); 
+        removes.clear();
         removes.insert(1);
         removes.insert(6);
         //removes.insert(0);
@@ -205,9 +220,9 @@ mod test_mod {
     #[test]
     fn test() {
         let mut app = App::<SingleTaskRuntime>::new();
-        let i = app.world.make_inserter::<(Age1,Age0,)>();
-        let e1 = i.insert((Age1(1),Age0(0),));
-        let e2 = i.insert((Age1(1),Age0(0),));
+        let i = app.world.make_inserter::<(Age1, Age0)>();
+        let e1 = i.insert((Age1(1), Age0(0)));
+        let e2 = i.insert((Age1(1), Age0(0)));
         app.schedule.add_system(print_changed_entities);
         app.initialize();
         app.run();
@@ -235,11 +250,7 @@ mod test_mod {
     fn test_add_remove() {
         let mut world = World::new();
         let i = world.make_inserter::<(A,)>();
-        let entities = (0..10_000).map(|_| {
-            i.insert((
-                A(0),
-            ))
-        }).collect::<Vec<_>>();
+        let entities = (0..10_000).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
         world.collect();
         {
             let mut alter = world.make_alterer::<(), (With<A>,), (B,), ()>();
@@ -278,28 +289,30 @@ mod test_mod {
         #[derive(Copy, Clone)]
         struct Velocity(Vector3<f32>);
         let mut world = World::new();
-        let i = world.make_inserter::<(Mat,Position,Rotation, Velocity)>();
-        i.batch((0..1000).map(|_| {(
+        let i = world.make_inserter::<(Mat, Position, Rotation, Velocity)>();
+        i.batch((0..1000).map(|_| {
+            (
                 Mat(Matrix4::from_scale(1.0)),
                 Position(Vector3::unit_x()),
                 Rotation(Vector3::unit_x()),
                 Velocity(Vector3::unit_x()),
-        )}));
+            )
+        }));
         world.collect();
         let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
         println!("query, {:?}", query.iter().size_hint());
         b.iter(move || {
-        let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
+            let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
 
-        query.iter_mut().for_each(|(mut pos, mut mat)| {
-            //let mat = &mut *mat;
-            for _ in 0..100 {
-                *mat = Mat(mat.0.invert().unwrap());
-            }
+            query.iter_mut().for_each(|(mut pos, mut mat)| {
+                //let mat = &mut *mat;
+                for _ in 0..100 {
+                    *mat = Mat(mat.0.invert().unwrap());
+                }
 
-            pos.0 = mat.0.transform_vector(pos.0);
+                pos.0 = mat.0.transform_vector(pos.0);
+            });
         });
-    });
     }
     #[bench]
     fn bench_simple_insert(b: &mut Bencher) {
@@ -313,7 +326,7 @@ mod test_mod {
                     Velocity([a as f32; 3]),
                 )
             });
-            let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+            let i = world.make_inserter::<(Transform, Position, Rotation, Velocity)>();
             i.batch(iter);
             // let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
             // for a in 0..9990 {
@@ -329,39 +342,37 @@ mod test_mod {
     #[test]
     pub fn simple_insert() {
         for _ in 0..1 {
-            
-        
-        let mut world = World::new();
-        let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
-        let mut e = Entity::null();
-        for a in 0..10_000 {
-            e = i.insert((
-                Transform([a as f32; 16]),
-                Position([a as f32; 3]),
-                Rotation([a as f32; 3]),
-                Velocity([a as f32; 3]),
-            ));
-        };
-        assert_eq!(world.get_component::<Transform>(e).unwrap().0[0], 9999f32);
-    }
+            let mut world = World::new();
+            let i = world.make_inserter::<(Transform, Position, Rotation, Velocity)>();
+            let mut e = Entity::null();
+            for a in 0..10_000 {
+                e = i.insert((
+                    Transform([a as f32; 16]),
+                    Position([a as f32; 3]),
+                    Rotation([a as f32; 3]),
+                    Velocity([a as f32; 3]),
+                ));
+            }
+            assert_eq!(world.get_component::<Transform>(e).unwrap().0[0], 9999f32);
+        }
     }
 
     #[test]
     fn test_query() {
         let mut world = World::new();
-        let i = world.make_inserter::<(Age1,Age0,)>();
-        let e1 = i.insert((Age1(1),Age0(0),));
-        let e2 = i.insert((Age1(1),Age0(0),));
+        let i = world.make_inserter::<(Age1, Age0)>();
+        let e1 = i.insert((Age1(1), Age0(0)));
+        let e2 = i.insert((Age1(1), Age0(0)));
         //world.collect();
-        let mut q = world.make_queryer::<(&Age1,&mut Age0), ()>();
-        for (a,mut b) in q.iter_mut() {
+        let mut q = world.make_queryer::<(&Age1, &mut Age0), ()>();
+        for (a, mut b) in q.iter_mut() {
             b.0 += a.0;
         }
         assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 1);
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 1);
     }
 
-    #[test] 
+    #[test]
     fn test_alter() {
         let mut app = SingleThreadApp::new();
         app.schedule.add_system(insert1);
@@ -376,19 +387,21 @@ mod test_mod {
     #[test]
     fn test_alter1() {
         let mut world = World::new();
-        let i = world.make_inserter::<(Age1,Age0,)>();
-        let e1 = i.insert((Age1(2),Age0(1),));
-        let e2 = i.insert((Age1(4),Age0(2),));
+        let i = world.make_inserter::<(Age1, Age0)>();
+        let e1 = i.insert((Age1(2), Age0(1)));
+        let e2 = i.insert((Age1(4), Age0(2)));
         world.collect();
-        {let mut alter = world.make_alterer::<(&Age1,&mut Age0), (), (Age2,), ()>();
-        let mut it = alter.iter_mut();
-        while let Some((a,mut b)) = it.next() {
-            if a.0 == 2 {
-                b.0 += 1;
-            }else{
-                it.alter((Age2(a.0),)).unwrap();
+        {
+            let mut alter = world.make_alterer::<(&Age1, &mut Age0), (), (Age2,), ()>();
+            let mut it = alter.iter_mut();
+            while let Some((a, mut b)) = it.next() {
+                if a.0 == 2 {
+                    b.0 += 1;
+                } else {
+                    it.alter((Age2(a.0),)).unwrap();
+                }
             }
-        }}
+        }
         world.collect();
         assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 2);
         assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
@@ -400,11 +413,9 @@ mod test_mod {
     fn test_alter2() {
         let mut world = World::new();
         let i = world.make_inserter::<(Age0,)>();
-        let _entities = (0..10_000).map(|_| {
-            i.insert((
-                Age0(0),
-            ))
-        }).collect::<Vec<_>>();
+        let _entities = (0..10_000)
+            .map(|_| i.insert((Age0(0),)))
+            .collect::<Vec<_>>();
         world.collect();
         {
             let mut alter = world.make_alterer::<(&Age0,), (), (Age1,), ()>();
@@ -422,7 +433,7 @@ mod test_mod {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_added() {
         let mut app = App::<SingleTaskRuntime>::new();
         app.schedule.add_system(insert1);
@@ -447,70 +458,44 @@ mod test_mod {
 
     #[test]
     fn test_schedule() {
-
         struct A(f32);
         struct B(f32);
         struct C(f32);
         struct D(f32);
         struct E(f32);
-        
+
         fn ab(mut query: Query<(&mut A, &mut B)>) {
             for (mut a, mut b) in query.iter_mut() {
                 std::mem::swap(&mut a.0, &mut b.0);
             }
         }
-        
+
         fn cd(mut query: Query<(&mut C, &mut D)>) {
             for (mut c, mut d) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut d.0);
             }
         }
-        
+
         fn ce(mut query: Query<(&mut C, &mut E)>) {
             for (mut c, mut e) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut e.0);
             }
         }
         let mut app = MultiThreadApp::new();
-        let i = app.world.make_inserter::<(A,B,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0), 
-                B(0.0),
-                C(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,D,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-                C(0.0),
-                D(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C, D)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,E,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-                C(0.0),
-                E(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C, E)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
         i.batch(it);
 
         app.world.collect();
@@ -518,109 +503,96 @@ mod test_mod {
         app.schedule.add_system(cd);
         app.schedule.add_system(ce);
         app.initialize();
-        app.run();     
-        for _ in 0..1000 {            
+        app.run();
+        for _ in 0..1000 {
             app.run();
         }
     }
 
     #[test]
     fn test_async_schedule() {
-
         struct A(f32);
         struct B(f32);
         struct C(f32);
         struct D(f32);
         struct E(f32);
-        
-        async fn ab<'w>(mut query: Query<'w, (&mut A, &mut B)>) {
+
+        fn ab(
+            mut local: Local<usize>,
+            mut query: Query<(&mut A, &mut B)>,
+        ) {
             for (mut a, mut b) in query.iter_mut() {
                 std::mem::swap(&mut a.0, &mut b.0);
             }
+            *local += 1;
         }
-        
+        async fn ab5<'w>(
+            mut local: Local<'w, usize>,
+            mut query: Query<'w, (&mut A, &mut B)>,
+        ) {
+            for (mut a, mut b) in query.iter_mut() {
+                std::mem::swap(&mut a.0, &mut b.0);
+            }
+            *local += 1;
+        }
         fn cd(mut query: Query<(&mut C, &mut D)>) {
             for (mut c, mut d) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut d.0);
             }
         }
-        
+
         fn ce(mut query: Query<(&mut C, &mut E)>) {
             for (mut c, mut e) in query.iter_mut() {
                 std::mem::swap(&mut c.0, &mut e.0);
             }
         }
+
+        
         let mut app = MultiThreadApp::new();
-        let i = app.world.make_inserter::<(A,B,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0), 
-                B(0.0),
-                C(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,D,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-                C(0.0),
-                D(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C, D)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
         i.batch(it);
 
-        let i = app.world.make_inserter::<(A,B,C,E,)>();
-        let it = (0..10_000).map(|_| {
-            (
-                A(0.0),
-                B(0.0),
-                C(0.0),
-                E(0.0),
-            )
-        });
+        let i = app.world.make_inserter::<(A, B, C, E)>();
+        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
         i.batch(it);
 
         app.world.collect();
-        //app.schedule.add_async_system(ab);
+        app.schedule.add_async_system(ab5);
+        // app.schedule.add_system(ab);
         app.schedule.add_system(cd);
         app.schedule.add_system(ce);
         app.initialize();
-        app.run();     
-        for _ in 0..1000 {            
+        app.run();
+        for _ in 0..1000 {
             app.run();
         }
     }
 
-
     #[test]
     fn test_res() {
-        
         struct A(f32);
         struct B(f32);
         struct C(f32);
         struct D(f32);
         struct E(f32);
-        
+
         fn ab(a: SingleRes<A>, mut b: SingleResMut<B>) {
             b.0 += a.0 + 1.0;
         }
-        
+
         fn cd(c: SingleRes<C>, mut d: SingleResMut<D>) {
             d.0 += c.0 + 1.0;
         }
-        
+
         fn ce(c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
@@ -644,7 +616,6 @@ mod test_mod {
 
     #[test]
     fn test_multi_res() {
-        
         struct A(f32);
         #[derive(Clone, Copy, Default)]
         struct B(f32);
@@ -654,15 +625,15 @@ mod test_mod {
         struct D(f32);
         #[derive(Clone, Copy, Default)]
         struct E(f32);
-        
+
         fn ab(a: SingleRes<A>, mut b: MultiResMut<B>) {
             b.0 += a.0 + 1.0;
         }
-        
+
         fn cd(c: MultiRes<C>, mut d: MultiResMut<D>) {
             d.0 += c.iter().next().unwrap().0 + 1.0;
         }
-        
+
         fn ce(b: MultiRes<B>, mut e: MultiResMut<E>, mut c: MultiResMut<C>) {
             e.0 += b.iter().count() as f32 + 1.0;
             c.0 += b.iter().count() as f32 + 1.0;
@@ -684,46 +655,4 @@ mod test_mod {
         assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 8.0);
         assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
     }
-    pub trait AT: Send + Sync + 'static {
-        type Param: Send + Sync + 'static;
-    
-        /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-        fn run<'w>(
-            self,
-            _param_value: &'w Self::Param,
-        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-    }
-    
-    pub struct AFS<A: AT> {
-        pub param: <A as AT>::Param,
-    }
-    unsafe impl<A: AT> Send for AFS<A> where <A as AT>::Param: Send {}
-    unsafe impl<A: AT> Sync for AFS<A> where <A as AT>::Param: Sync {}
-    impl <A: AT> AT for AFS<A> {
-        type Param = <A as AT>::Param;
-    
-        fn run<'w>(
-            self,
-            param_value: &'w Self::Param,
-        ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-            todo!()
-        }
-    }
-    struct AA<'a>
-    {
-        _p: PhantomData<&'a ()>,
-    }
-    async fn aaa<'a>(_a: AA<'a>) {
-
-    }
-    fn bbb<'a>(a: AA<'a>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-        let a1 = unsafe { transmute(a) };
-        Box::pin(
-            aaa(a1)
-        )
-    }
-    async fn ccc(a: AA<'static>) {
-        aaa(a).await
-    }
 }
-

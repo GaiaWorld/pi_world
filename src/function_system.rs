@@ -43,9 +43,9 @@ where
     F: SystemParamFunction<Marker>,
 {
     type System = FunctionSystem<Marker, F>;
-    fn into_system(func: Self) -> Self::System {
+    fn into_system(self) -> Self::System {
         FunctionSystem {
-            func,
+            func: self,
             param: ParamSystem::new(SystemMeta::new::<F>()),
         }
     }

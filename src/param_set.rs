@@ -3,6 +3,7 @@
 
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
@@ -73,6 +74,14 @@ impl<T: 'static + ParamSetElement> SystemParam for ParamSet<'_, T> {
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         ParamSet(<T as SystemParam>::get_param(world, system_meta, state))
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 

@@ -2,6 +2,7 @@
 
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::Flags;
@@ -48,6 +49,14 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         SingleRes {
             value: unsafe { &*state.downcast::<T>() },
         }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 
@@ -98,6 +107,14 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
         SingleResMut {
             value: unsafe { &mut *state.downcast::<T>() },
         }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 impl<'w, T: Sync + Send + 'static> Deref for SingleResMut<'w, T> {
@@ -151,6 +168,14 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
             None => None,
         }
     }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
 }
 
 impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
@@ -189,5 +214,13 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
             }),
             None => None,
         }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }

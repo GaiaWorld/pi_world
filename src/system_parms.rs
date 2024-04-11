@@ -1,4 +1,9 @@
-use std::{any::TypeId, borrow::Cow};
+use std::{
+    any::TypeId,
+    borrow::Cow,
+    mem::transmute,
+    ops::{Deref, DerefMut},
+};
 
 /// 系统参数的定义
 ///
@@ -69,6 +74,52 @@ pub trait SystemParam: Sized + Send + Sync {
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
     ) -> Self::Item<'world>;
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self;
+}
+
+pub struct Local<'a, T: ?Sized>(&'a mut T);
+
+impl<'a, T: ?Sized> Deref for Local<'a, T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<'a, T: ?Sized> DerefMut for Local<'a, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
+    type State = T;
+
+    type Item<'world> = Local<'world, T>;
+
+    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        T::default()
+    }
+
+    fn get_param<'world>(
+        _world: &'world World,
+        _system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self::Item<'world> {
+        Local(state)
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
 }
 
 impl SystemParam for &World {
@@ -86,6 +137,14 @@ impl SystemParam for &World {
         _state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         world
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
 
@@ -127,6 +186,15 @@ macro_rules! impl_system_param_tuple {
             ) -> Self::Item<'world> {
                 let ($($param,)*) = state;
                 ($($param::get_param(_world, _system_meta, $param),)*)
+            }
+            #[inline]
+            fn get_self<'world>(
+                _world: &'world World,
+                _system_meta: &'world SystemMeta,
+                state: &'world mut Self::State,
+            ) -> Self {
+                let ($($param,)*) = state;
+                ($($param::get_self(_world, _system_meta, $param),)*)
             }
         }
     };

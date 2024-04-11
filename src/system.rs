@@ -286,14 +286,14 @@ pub trait IntoSystem<Marker>: Sized {
     type System: RunSystem;
 
     /// Turns this value into its corresponding [`System`].
-    fn into_system(this: Self) -> Self::System;
+    fn into_system(self) -> Self::System;
 }
 pub trait IntoAsyncSystem<Marker>: Sized {
     /// The type of [`System`] that this instance converts into.
     type System: AsyncRunSystem;
 
     /// Turns this value into its corresponding [`System`].
-    fn into_system(this: Self) -> Self::System;
+    fn into_async_system(self) -> Self::System;
 }
 
 // All systems implicitly implement IntoSystem.
