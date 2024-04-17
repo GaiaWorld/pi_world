@@ -307,7 +307,7 @@ impl ExecGraph {
         // 从graph的froms开始执行
         for i in inner.froms.iter() {
             let node = unsafe { inner.nodes.load_unchecked(i.index()) };
-            self.exec(systems, rt, world, *i, node);
+            self.exec(systems, rt, world, *i, node, Vec::new());
         }
         inner.receiver.recv().await
     }
@@ -318,12 +318,14 @@ impl ExecGraph {
         world: &'static World,
         node_index: NodeIndex,
         node: &Node,
+        mut vec: Vec<u32>,
     ) {
         // println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
                 // RUN_START
-                node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                vec.push(r);
                 let rt1 = rt.clone();
                 let g = self.clone();
                 let _ = rt.spawn(async move {
@@ -334,16 +336,17 @@ impl ExecGraph {
                     let inner = g.0.as_ref();
                     let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
                     // NODE_STATUS_RUNNING
-                    node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    vec.push(r);
                     sys.run(world).await;
-                    g.exec_end(systems, &rt1, world, node)
+                    g.exec_end(systems, &rt1, world, node, vec)
                 });
             }
             _ => {
                 // RUN_START + RUNNING
                 node.status
                     .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
-                self.exec_end(systems, rt, world, node)
+                self.exec_end(systems, rt, world, node, vec)
             }
         }
     }
@@ -353,6 +356,7 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node: &Node,
+        vec: Vec<u32>,
     ) {
         // RUN_END
         let mut status =
@@ -363,7 +367,7 @@ impl ExecGraph {
             let s = status;
             spin_loop();
             status = node.status.load(Ordering::Relaxed);
-            panic!("status err:{}={} {} {:?}", s, status, NODE_STATUS_RUN_END, node);
+            panic!("status err:{}={} {} {:?} vec:{:?}", s, status, NODE_STATUS_RUN_END, node, vec);
         }
         let inner = self.0.as_ref();
         // 执行后，检查to边的数量
@@ -387,7 +391,7 @@ impl ExecGraph {
             let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
             if r == 1 {
                 // 减到0，表示要执行该节点
-                self.exec(systems, rt, world, n, node);
+                self.exec(systems, rt, world, n, node, vec![]);
             }
         }
         // 设置成结束状态

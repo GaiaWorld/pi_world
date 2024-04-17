@@ -1,4 +1,4 @@
-use crate::{param_set::ParamSet, prelude::*, single_res::SingleRes};
+use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -159,23 +159,16 @@ struct Velocity([f32; 3]);
 
 #[cfg(test)]
 mod test_mod {
-    use std::{future::Future, marker::PhantomData, pin::Pin};
 
     use super::*;
     use crate::{
         app::*,
         archetype::{ComponentInfo, Row},
-        async_function_system::{AsyncFunctionSystem},
         column::Column,
-        multi_res::{MultiRes, MultiResMut},
-        query::Queryer,
-        single_res::SingleResMut,
-        system::*,
         table::Table,
     };
     use pi_append_vec::AppendVec;
     use pi_async_rt::{
-        prelude::{SingleTaskPool, SingleTaskRunner},
         rt::single_thread::SingleTaskRuntime,
     };
     use pi_null::Null;
