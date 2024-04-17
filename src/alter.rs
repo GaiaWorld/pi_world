@@ -30,10 +30,10 @@ use crate::column::Column;
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::InsertComponents;
-use crate::param_set::ParamSetElement;
+use crate::parm_set::ParmSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_parms::SystemParm;
 use crate::world::*;
 
 pub struct Alterer<
@@ -291,7 +291,7 @@ impl<
         F: FilterComponents + Send + Sync + 'static,
         A: InsertComponents + 'static,
         D: DelComponents + Send + 'static,
-    > SystemParam for Alter<'_, Q, F, A, D>
+    > SystemParm for Alter<'_, Q, F, A, D>
 {
     type State = (QueryState<Q, F>, AlterState<A>);
     type Item<'w> = Alter<'w, Q, F, A, D>;
@@ -357,7 +357,7 @@ impl<
         F: FilterComponents + Send + Sync,
         A: InsertComponents + 'static,
         D: DelComponents + Send + 'static,
-    > ParamSetElement for Alter<'_, Q, F, A, D>
+    > ParmSetElement for Alter<'_, Q, F, A, D>
 {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
         Q::init_read_write(world, system_meta);

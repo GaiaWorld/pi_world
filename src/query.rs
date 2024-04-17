@@ -17,9 +17,9 @@ use crate::dirty::{DirtyIndex, EntityDirty};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::listener::Listener;
-use crate::param_set::ParamSetElement;
+use crate::parm_set::ParmSetElement;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_parms::SystemParm;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
 use pi_arr::Iter;
@@ -158,7 +158,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
 }
 
-impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
+impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParm
     for Query<'a, Q, F>
 {
     type State = QueryState<Q, F>;
@@ -216,7 +216,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         unsafe { transmute(Self::get_param(world, system_meta, state)) }
     }
 }
-impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement
+impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParmSetElement
     for Query<'_, Q, F>
 {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {

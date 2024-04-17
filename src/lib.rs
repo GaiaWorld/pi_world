@@ -14,7 +14,7 @@ pub mod archetype;
 pub mod query;
 pub mod fetch;
 pub mod filter;
-pub mod param_set;
+pub mod parm_set;
 pub mod single_res;
 pub mod multi_res;
 pub mod world;
@@ -43,10 +43,11 @@ pub mod prelude {
         insert::Insert,
         insert_batch::InsertBatchIter,
         alter::Alter,
+        parm_set::ParmSet,
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem},
-        system_parms::{SystemParam, Local},
+        system_parms::{SystemParm, Local},
         world::{Entity, World},
         listener::Listener,
         app::{App, SingleThreadApp, MultiThreadApp},

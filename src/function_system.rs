@@ -3,21 +3,21 @@ use std::{any::TypeId, borrow::Cow};
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     system::{IntoSystem, RunSystem, System, SystemMeta},
-    system_parms::SystemParam,
+    system_parms::SystemParm,
     world::*,
 };
 
 use pi_proc_macros::all_tuples;
 
 /// Shorthand way of accessing the associated type [`SystemParam::Item`] for a given [`SystemParam`].
-pub type SystemParamItem<'w, P> = <P as SystemParam>::Item<'w>;
+pub type SystemParmItem<'w, P> = <P as SystemParm>::Item<'w>;
 
-pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
+pub trait SystemParmFunction<Marker>: Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
-    type Param: SystemParam;
+    type Param: SystemParm;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run(&mut self, _param_value: SystemParamItem<Self::Param>) {}
+    fn run(&mut self, _param_value: SystemParmItem<Self::Param>) {}
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -32,7 +32,7 @@ pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
 /// is NOT initialized. The cloned system must also be `.initialized` before it can be run.
 pub struct FunctionSystem<Marker: 'static, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParmFunction<Marker>,
 {
     func: F,
     param: ParamSystem<F::Param>,
@@ -40,7 +40,7 @@ where
 
 impl<Marker: 'static, F> IntoSystem<Marker> for F
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParmFunction<Marker>,
 {
     type System = FunctionSystem<Marker, F>;
     fn into_system(self) -> Self::System {
@@ -53,7 +53,7 @@ where
 
 impl<Marker, F> System for FunctionSystem<Marker, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParmFunction<Marker>,
 {
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
@@ -96,7 +96,7 @@ where
 }
 impl<Marker, F> RunSystem for FunctionSystem<Marker, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParmFunction<Marker>,
 {
     #[inline]
     fn run(&mut self, world: &World) {
@@ -104,11 +104,11 @@ where
         self.func.run(params);
     }
 }
-pub struct ParamSystem<P: SystemParam> {
+pub struct ParamSystem<P: SystemParm> {
     pub(crate) param_state: Option<P::State>,
     pub(crate) system_meta: SystemMeta,
 }
-impl<P: SystemParam> ParamSystem<P> {
+impl<P: SystemParm> ParamSystem<P> {
     pub fn new(system_meta: SystemMeta) -> Self {
         Self {
             param_state: None,
@@ -168,7 +168,7 @@ impl<P: SystemParam> ParamSystem<P> {
         P::align(world, &mut self.system_meta, param_state);
     }
     #[inline]
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParamItem<'w, P> {
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParmItem<'w, P> {
         let param_state = self.param_state.as_mut().unwrap();
         P::get_param(world, &mut self.system_meta, param_state)
     }
@@ -177,15 +177,15 @@ impl<P: SystemParam> ParamSystem<P> {
 macro_rules! impl_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Send + Sync + 'static, $($param: SystemParam),*> SystemParamFunction<fn($($param,)*)> for Func
+        impl<Func: Send + Sync + 'static, $($param: SystemParm),*> SystemParmFunction<fn($($param,)*)> for Func
         where
         for <'a> &'a mut Func:
                 FnMut($($param),*) +
-                FnMut($(SystemParamItem<$param>),*),
+                FnMut($(SystemParmItem<$param>),*),
         {
             type Param = ($($param,)*);
             #[inline]
-            fn run(&mut self, param_value: SystemParamItem< ($($param,)*)>) {
+            fn run(&mut self, param_value: SystemParmItem< ($($param,)*)>) {
                 // Yes, this is strange, but `rustc` fails to compile this impl
                 // without using this function. It fails to recognize that `func`
                 // is a function, potentially because of the multiple impls of `FnMut`

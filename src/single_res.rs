@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::archetype::Flags;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_parms::SystemParm;
 use crate::world::*;
 
 pub struct SingleRes<'w, T: 'static> {
@@ -16,7 +16,7 @@ pub struct SingleRes<'w, T: 'static> {
 unsafe impl<T> Send for SingleRes<'_, T> {}
 unsafe impl<T> Sync for SingleRes<'_, T> {}
 
-impl<T: 'static> SystemParam for SingleRes<'_, T> {
+impl<T: 'static> SystemParm for SingleRes<'_, T> {
     type State = SingleResource;
     type Item<'w> = SingleRes<'w, T>;
 
@@ -74,7 +74,7 @@ pub struct SingleResMut<'w, T: 'static> {
 unsafe impl<T> Send for SingleResMut<'_, T> {}
 unsafe impl<T> Sync for SingleResMut<'_, T> {}
 
-impl<T: 'static> SystemParam for SingleResMut<'_, T> {
+impl<T: 'static> SystemParm for SingleResMut<'_, T> {
     type State = SingleResource;
     type Item<'w> = SingleResMut<'w, T>;
 
@@ -131,7 +131,7 @@ impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
     }
 }
 
-impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
+impl<T: 'static> SystemParm for Option<SingleRes<'_, T>> {
     type State = Option<SingleResource>;
     type Item<'w> = Option<SingleRes<'w, T>>;
 
@@ -178,7 +178,7 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
     }
 }
 
-impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
+impl<T: 'static> SystemParm for Option<SingleResMut<'_, T>> {
     type State = Option<SingleResource>;
     type Item<'w> = Option<SingleResMut<'w, T>>;
 

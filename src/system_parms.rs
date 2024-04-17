@@ -15,11 +15,11 @@ use crate::{
 
 use pi_proc_macros::all_tuples;
 
-pub trait SystemParam: Sized + Send + Sync {
+pub trait SystemParm: Sized + Send + Sync {
     /// Used to store data which persists across invocations of a system.
     type State: Send + Sync + 'static;
 
-    type Item<'world>: SystemParam<State = Self::State>;
+    type Item<'world>: SystemParm<State = Self::State>;
 
     /// The item type returned when constructing this system param.
     /// The value of this associated type should be `Self`, instantiated with new lifetimes.
@@ -96,7 +96,7 @@ impl<'a, T: ?Sized> DerefMut for Local<'a, T> {
         self.0
     }
 }
-impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
+impl<T: Send + Sync + Default + 'static> SystemParm for Local<'_, T> {
     type State = T;
 
     type Item<'world> = Local<'world, T>;
@@ -122,7 +122,7 @@ impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
     }
 }
 
-impl SystemParam for &World {
+impl SystemParm for &World {
     type State = ();
 
     type Item<'world> = &'world World;
@@ -153,7 +153,7 @@ macro_rules! impl_system_param_tuple {
         // SAFETY: implementors of each `SystemParam` in the tuple have validated their impls
         #[allow(clippy::undocumented_unsafe_blocks)] // false positive by clippy
         #[allow(non_snake_case)]
-        impl<$($param: SystemParam),*> SystemParam for ($($param,)*) {
+        impl<$($param: SystemParm),*> SystemParm for ($($param,)*) {
             type State = ($($param::State,)*);
             type Item<'w> = ($($param::Item::<'w>,)*);
 
