@@ -327,7 +327,7 @@ impl ExecGraph {
                 // RUN_START
                 let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                 if r != NODE_STATUS_WAIT {
-                    panic!("status err:{}, node_index:{} node:{:?}, parent:{}", r, node_index.index(), node, parent)
+                    panic!("status err:{}, node_index:{} node:{:?}, parent:{} vec:{:?}", r, node_index.index(), node, parent, vec)
                 }
                 vec.push(r);
                 let rt1 = rt.clone();
