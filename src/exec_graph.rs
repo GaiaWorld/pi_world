@@ -360,7 +360,7 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node: &Node,
-        vec: Vec<u32>,
+        mut vec: Vec<u32>,
         node_index: NodeIndex,
     ) {
         // RUN_END
@@ -384,6 +384,12 @@ impl ExecGraph {
         //     print!("n:{:?}, ", n);
         // }
         // println!("]");
+        vec.clear();
+        let mut it1 = it.clone();
+        while let Some(n) = it1.next() {
+            vec.push(n.index() as u32);
+        }
+        vec.push(u32::null());
         if it.edge.0 == 0 {
             // 设置成结束状态
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
@@ -396,7 +402,7 @@ impl ExecGraph {
             let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
             if r == 1 {
                 // 减到0，表示要执行该节点
-                self.exec(systems, rt, world, n, node, vec![], node_index.index() as u32);
+                self.exec(systems, rt, world, n, node, vec.clone(), node_index.index() as u32);
             }
         }
         // 设置成结束状态
