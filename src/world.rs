@@ -1,4 +1,4 @@
-/// system上只能看到Query等SystemParam参数，SystemParam参数一般包含：单例和多例资源、实体、组件
+/// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
 /// world上的数据（资源、实体和原型）的线程安全的保护仅在于保护容器，

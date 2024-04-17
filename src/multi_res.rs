@@ -12,7 +12,7 @@ use pi_share::Share;
 
 use crate::archetype::Flags;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParm;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 pub struct MultiRes<'w, T: 'static> {
@@ -40,7 +40,7 @@ impl<T> MultiRes<'_, T> {
             .map(|r| unsafe { r.downcast_ref_unchecked::<T>() })
     }
 }
-impl<T: 'static> SystemParm for MultiRes<'_, T> {
+impl<T: 'static> SystemParam for MultiRes<'_, T> {
     type State = MultiResource;
     type Item<'w> = MultiRes<'w, T>;
 
@@ -91,7 +91,7 @@ pub struct MultiResMut<'w, T: Default + 'static> {
 unsafe impl<T: Default> Send for MultiResMut<'_, T> {}
 unsafe impl<T: Default> Sync for MultiResMut<'_, T> {}
 
-impl<T: Default + 'static> SystemParm for MultiResMut<'_, T> {
+impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
     type State = SingleResource;
     type Item<'w> = MultiResMut<'w, T>;
 
@@ -148,7 +148,7 @@ impl<'w, T: Default + Sync + Send + 'static> DerefMut for MultiResMut<'w, T> {
     }
 }
 
-impl<T: 'static> SystemParm for Option<MultiRes<'_, T>> {
+impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
     type State = Option<MultiResource>;
     type Item<'w> = Option<MultiRes<'w, T>>;
 
@@ -196,7 +196,7 @@ impl<T: 'static> SystemParm for Option<MultiRes<'_, T>> {
     }
 }
 
-impl<T: Default + 'static> SystemParm for Option<MultiResMut<'_, T>> {
+impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
     type State = Option<SingleResource>;
     type Item<'w> = Option<MultiResMut<'w, T>>;
 

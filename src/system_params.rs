@@ -1,9 +1,4 @@
-use std::{
-    any::TypeId,
-    borrow::Cow,
-    mem::transmute,
-    ops::{Deref, DerefMut},
-};
+use std::{any::TypeId, borrow::Cow, mem::transmute, ops::{Deref, DerefMut}};
 
 /// 系统参数的定义
 ///
@@ -15,11 +10,11 @@ use crate::{
 
 use pi_proc_macros::all_tuples;
 
-pub trait SystemParm: Sized + Send + Sync {
+pub trait SystemParam: Sized + Send + Sync {
     /// Used to store data which persists across invocations of a system.
     type State: Send + Sync + 'static;
 
-    type Item<'world>: SystemParm<State = Self::State>;
+    type Item<'world>: SystemParam<State = Self::State>;
 
     /// The item type returned when constructing this system param.
     /// The value of this associated type should be `Self`, instantiated with new lifetimes.
@@ -81,22 +76,22 @@ pub trait SystemParm: Sized + Send + Sync {
     ) -> Self;
 }
 
-pub struct Local<'a, T: ?Sized>(&'a mut T);
+pub struct Local<'a, T>(&'a mut T);
 
-impl<'a, T: ?Sized> Deref for Local<'a, T> {
+impl<'a, T: Sized> Deref for Local<'a, T> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'a, T: ?Sized> DerefMut for Local<'a, T> {
+impl<'a, T: Sized> DerefMut for Local<'a, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0
     }
 }
-impl<T: Send + Sync + Default + 'static> SystemParm for Local<'_, T> {
+impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
     type State = T;
 
     type Item<'world> = Local<'world, T>;
@@ -122,7 +117,7 @@ impl<T: Send + Sync + Default + 'static> SystemParm for Local<'_, T> {
     }
 }
 
-impl SystemParm for &World {
+impl SystemParam for &World {
     type State = ();
 
     type Item<'world> = &'world World;
@@ -153,7 +148,7 @@ macro_rules! impl_system_param_tuple {
         // SAFETY: implementors of each `SystemParam` in the tuple have validated their impls
         #[allow(clippy::undocumented_unsafe_blocks)] // false positive by clippy
         #[allow(non_snake_case)]
-        impl<$($param: SystemParm),*> SystemParm for ($($param,)*) {
+        impl<$($param: SystemParam),*> SystemParam for ($($param,)*) {
             type State = ($($param::State,)*);
             type Item<'w> = ($($param::Item::<'w>,)*);
 

@@ -8,7 +8,7 @@ use pi_slot::SlotMap;
 use crate::archetype::*;
 use crate::column::Column;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParm;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
@@ -69,7 +69,7 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
     }
 }
 
-impl<I: InsertComponents + 'static> SystemParm for Insert<'_, I> {
+impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     type State = (ArchetypeWorldIndex, ShareArchetype, I::State);
     type Item<'w> = Insert<'w, I>;
 

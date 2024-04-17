@@ -1,4 +1,4 @@
-use crate::{parm_set::ParmSet, prelude::*, single_res::SingleRes};
+use crate::{param_set::ParamSet, prelude::*, single_res::SingleRes};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -106,7 +106,7 @@ pub fn changed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Changed<Age0>, Chang
     println!("changed_l: end");
 }
 pub fn p_set(
-    mut set: ParmSet<(Query<(&mut Age0, &mut Age1)>, Query<(&mut Age1, &mut Age2)>)>,
+    mut set: ParamSet<(Query<(&mut Age0, &mut Age1)>, Query<(&mut Age1, &mut Age2)>)>,
     // r10: Res<Age10>,
     // r11: Res<Age11>,
 ) {
@@ -167,7 +167,6 @@ mod test_mod {
         archetype::{ComponentInfo, Row},
         async_function_system::{AsyncFunctionSystem},
         column::Column,
-        function_system::ParamSystem,
         multi_res::{MultiRes, MultiResMut},
         query::Queryer,
         single_res::SingleResMut,

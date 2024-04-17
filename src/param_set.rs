@@ -9,33 +9,33 @@ use std::ops::{Deref, DerefMut};
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParm;
+use crate::system_params::SystemParam;
 use crate::world::*;
 use pi_proc_macros::all_tuples;
 
-pub trait ParmSetElement: SystemParm {
+pub trait ParamSetElement: SystemParam {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
 }
 
-pub struct ParmSet<'w, T: 'static + ParmSetElement>(<T as SystemParm>::Item<'w>);
-impl<'w, T: ParmSetElement + 'static> Deref for ParmSet<'w, T> {
-    type Target = <T as SystemParm>::Item<'w>;
+pub struct ParamSet<'w, T: 'static + ParamSetElement>(<T as SystemParam>::Item<'w>);
+impl<'w, T: ParamSetElement + 'static> Deref for ParamSet<'w, T> {
+    type Target = <T as SystemParam>::Item<'w>;
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'w, T: ParmSetElement + 'static> DerefMut for ParmSet<'w, T> {
+impl<'w, T: ParamSetElement + 'static> DerefMut for ParamSet<'w, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<T: 'static + ParmSetElement> SystemParm for ParmSet<'_, T> {
-    type State = <T as SystemParm>::State;
+impl<T: 'static + ParamSetElement> SystemParam for ParamSet<'_, T> {
+    type State = <T as SystemParam>::State;
 
-    type Item<'w> = ParmSet<'w, T>;
+    type Item<'w> = ParamSet<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let s = T::init_set_state(world, system_meta);
@@ -50,7 +50,7 @@ impl<T: 'static + ParmSetElement> SystemParm for ParmSet<'_, T> {
         archetype: &Archetype,
         result: &mut ArchetypeDependResult,
     ) {
-        <T as SystemParm>::archetype_depend(world, system_meta, state, archetype, result)
+        <T as SystemParam>::archetype_depend(world, system_meta, state, archetype, result)
     }
     #[inline]
     fn res_depend(
@@ -62,18 +62,18 @@ impl<T: 'static + ParmSetElement> SystemParm for ParmSet<'_, T> {
         single: bool,
         result: &mut Flags,
     ) {
-        <T as SystemParm>::res_depend(world, system_meta, state, res_tid, res_name, single, result)
+        <T as SystemParam>::res_depend(world, system_meta, state, res_tid, res_name, single, result)
     }
     #[inline]
     fn align(world: &World, system_meta: &SystemMeta, state: &mut Self::State) {
-        <T as SystemParm>::align(world, system_meta, state)
+        <T as SystemParam>::align(world, system_meta, state)
     }
     fn get_param<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        ParmSet(<T as SystemParm>::get_param(world, system_meta, state))
+        ParamSet(<T as SystemParam>::get_param(world, system_meta, state))
     }
     #[inline]
     fn get_self<'world>(
@@ -89,7 +89,7 @@ macro_rules! impl_param_set_tuple_fetch {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
-        impl<$($param: ParmSetElement),*> ParmSetElement for ($($param,)*) {
+        impl<$($param: ParamSetElement),*> ParamSetElement for ($($param,)*) {
 
             fn init_set_state(_world: &World, _system_meta: &mut SystemMeta) -> Self::State{
                 (($($param::init_set_state(_world, _system_meta),)*))

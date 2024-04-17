@@ -1,4 +1,4 @@
-# 测试 ParamSet, Query的读写冲突
+# 测试 ParmSet, Query的读写冲突
 # ecs的性能测试 不太满意， 而且schedule 多线程运行时会卡住，测试很奇怪，在run前加了个打印就不卡住了
 # 差 ExecGraph的多线程 测试用例的覆盖率
 # 差 Query的异步迭代，Insert异步并行插入，提供一个异步的劈分方法？为世界矩阵的层脏做个异步多线程的测试用例

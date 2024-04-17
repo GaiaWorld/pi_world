@@ -14,14 +14,14 @@ pub mod archetype;
 pub mod query;
 pub mod fetch;
 pub mod filter;
-pub mod parm_set;
+pub mod param_set;
 pub mod single_res;
 pub mod multi_res;
 pub mod world;
 pub mod listener;
 pub mod app;
 pub mod system;
-pub mod system_parms;
+pub mod system_params;
 pub mod function_system;
 pub mod async_function_system;
 pub mod insert;
@@ -43,11 +43,11 @@ pub mod prelude {
         insert::Insert,
         insert_batch::InsertBatchIter,
         alter::Alter,
-        parm_set::ParmSet,
+        param_set::ParamSet,
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem},
-        system_parms::{SystemParm, Local},
+        system_params::{SystemParam, Local},
         world::{Entity, World},
         listener::Listener,
         app::{App, SingleThreadApp, MultiThreadApp},

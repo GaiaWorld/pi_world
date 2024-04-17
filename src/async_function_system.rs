@@ -4,15 +4,15 @@ use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     function_system::ParamSystem,
     system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta},
-    system_parms::SystemParm,
+    system_params::SystemParam,
     world::*,
 };
 
 use pi_proc_macros::all_tuples;
 
-pub trait AsyncSystemParmFunction<Marker>: Clone + Send + Sync + 'static {
+pub trait AsyncSystemParamFunction<Marker>: Clone + Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
-    type Param: SystemParm;
+    type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
     fn run(self, _param_value: Self::Param) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -30,7 +30,7 @@ pub trait AsyncSystemParmFunction<Marker>: Clone + Send + Sync + 'static {
 /// is NOT initialized. The cloned system must also be `.initialized` before it can be run.
 pub struct AsyncFunctionSystem<Marker, F>
 where
-    F: AsyncSystemParmFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker>,
 {
     pub func: F,
     pub param: ParamSystem<F::Param>,
@@ -38,7 +38,7 @@ where
 
 impl<Marker: 'static, F> IntoAsyncSystem<Marker> for F
 where
-    F: AsyncSystemParmFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker>,
 {
     type System = AsyncFunctionSystem<Marker, F>;
     fn into_async_system(self) -> Self::System {
@@ -51,7 +51,7 @@ where
 
 impl<Marker: 'static, F> System for AsyncFunctionSystem<Marker, F>
 where
-    F: AsyncSystemParmFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker>,
 {
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
@@ -94,7 +94,7 @@ where
 }
 impl<Marker: 'static, F> AsyncRunSystem for AsyncFunctionSystem<Marker, F>
 where
-    F: AsyncSystemParmFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker>,
 {
     #[inline]
     fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
@@ -107,7 +107,7 @@ where
 macro_rules! impl_async_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Clone + Send + Sync + 'static, R, $($param: SystemParm),*> AsyncSystemParmFunction<fn($($param,)*)->R> for Func
+        impl<Func: Clone + Send + Sync + 'static, R, $($param: SystemParam),*> AsyncSystemParamFunction<fn($($param,)*)->R> for Func
         where Func:
                 FnMut($($param),*) -> R,
                 R: Future<Output=()>,
