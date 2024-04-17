@@ -20,7 +20,7 @@ pub trait FetchComponents {
     /// ReadOnly
     type ReadOnly: FetchComponents;
     /// Per archetype/table state used by this [`FetchComponents`] to fetch [`Self::Item`](crate::query::FetchComponents::Item)
-    type Fetch<'a>: Clone;
+    type Fetch<'a>;
 
     /// State used to construct a [`Self::Fetch`](crate::query::FetchComponents::Fetch). This will be cached inside [`QueryState`](crate::query::QueryState),
     /// so it is best to move as much data / computation here as possible to reduce the cost of

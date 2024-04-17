@@ -360,8 +360,10 @@ impl ExecGraph {
         // 添加to邻居时，会锁定状态。如果被锁定，则等待锁定结束才去获取邻居
         // 如果全局同时有2个原型被添加，NODE_STATUS_RUN_END之后status又被加1，则会陷入死循环
         while status != NODE_STATUS_RUN_END {
+            let s = status;
             spin_loop();
             status = node.status.load(Ordering::Relaxed);
+            panic!("status err:{}={} {} {:?}", s, status, NODE_STATUS_RUN_END, node);
         }
         let inner = self.0.as_ref();
         // 执行后，检查to边的数量
