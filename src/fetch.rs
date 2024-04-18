@@ -363,6 +363,12 @@ impl<'a, T: ?Sized> Mut<'a, T> {
     pub fn entity(&self) -> Entity {
         self.e
     }
+
+    #[inline(always)]
+    pub fn into_inner(self) -> &'a mut T {
+        self.dirty.record(self.e, self.row);
+        self.value
+    }
 }
 impl<'a, T: ?Sized> Deref for Mut<'a, T> {
     type Target = T;
