@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.1.17"
+version = "0.1.18"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"

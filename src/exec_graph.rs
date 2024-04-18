@@ -393,6 +393,8 @@ impl ExecGraph {
         let mut it1 = it.clone();
         while let Some(n) = it1.next() {
             vec.push(n.index() as u32);
+            let nn = unsafe { inner.nodes.load_unchecked(n.index()) };
+            vec.push(nn.status.load(Ordering::Relaxed));
         }
         vec.push(u32::null());
         if it.edge.0 == 0 {
