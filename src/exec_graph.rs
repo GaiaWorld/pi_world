@@ -328,6 +328,11 @@ impl ExecGraph {
                 let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                 if r != NODE_STATUS_WAIT {
                     panic!("status err:{}, node_index:{} node:{:?}, parent:{} vec:{:?}", r, node_index.index(), node, parent, vec)
+                }else if parent == 0 {
+                    let p = unsafe { self.0.as_ref().nodes.load_unchecked(parent as usize) };
+                    if p.status.load(Ordering::Relaxed) != NODE_STATUS_RUN_END {
+                        panic!("parent status err, node_index:{} node:{:?}, vec:{:?}", r, node, vec)
+                    }
                 }
                 vec.push(r);
                 let rt1 = rt.clone();
