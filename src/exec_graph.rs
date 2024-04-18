@@ -346,6 +346,9 @@ impl ExecGraph {
                     let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
                     // NODE_STATUS_RUNNING
                     let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    if r != NODE_STATUS_RUN_START {
+                        panic!("run status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
+                    }
                     vec.push(r);
                     sys.run(world).await;
                     g.exec_end(systems, &rt1, world, node, vec, node_index)
@@ -394,7 +397,11 @@ impl ExecGraph {
         while let Some(n) = it1.next() {
             vec.push(n.index() as u32);
             let nn = unsafe { inner.nodes.load_unchecked(n.index()) };
-            vec.push(nn.status.load(Ordering::Relaxed));
+            let r = nn.status.load(Ordering::Relaxed);
+            if r != NODE_STATUS_WAIT {
+                panic!("child status err node_index:{} child_status:{} child_node:{:?} child_index:{:?}, ", node_index.index(), r, node, nn);
+            }
+            vec.push(r);
         }
         vec.push(u32::null());
         if it.edge.0 == 0 {
@@ -413,8 +420,11 @@ impl ExecGraph {
             }
         }
         // 设置成结束状态
-        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-    }
+        let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+        if r != NODE_STATUS_RUN_END {
+            panic!("end status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
+        }
+}
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn collect(&mut self) {
         let inner = unsafe { Share::get_mut_unchecked(&mut self.0) };
