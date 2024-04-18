@@ -351,11 +351,14 @@ mod test_mod {
 
     #[test]
     fn test_query() {
-        let mut world = World::new();
-        let i = world.make_inserter::<(Age1, Age0)>();
+        let world = World::new();
+        let mut w = world.unsafe_world();
+        let mut w1 = world.unsafe_world();
+        let i = w.make_inserter::<(Age1, Age0)>();
+        let _i1 = w1.make_inserter::<(Age2, Age3)>();
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
-        //world.collect();
+        // world.collect();
         let mut q = world.make_queryer::<(&Age1, &mut Age0), ()>();
         for (a, mut b) in q.iter_mut() {
             b.0 += a.0;
