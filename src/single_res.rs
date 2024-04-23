@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::archetype::Flags;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 pub struct SingleRes<'w, T: 'static> {

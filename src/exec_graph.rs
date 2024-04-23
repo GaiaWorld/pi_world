@@ -307,7 +307,7 @@ impl ExecGraph {
         // 从graph的froms开始执行
         for i in inner.froms.iter() {
             let node = unsafe { inner.nodes.load_unchecked(i.index()) };
-            self.exec(systems, rt, world, *i, node);
+            self.exec(systems, rt, world, *i, node, vec![], u32::null());
         }
         inner.receiver.recv().await
     }
@@ -318,12 +318,23 @@ impl ExecGraph {
         world: &'static World,
         node_index: NodeIndex,
         node: &Node,
+        mut vec: Vec<u32>,
+        parent: u32,
     ) {
         // println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
                 // RUN_START
-                node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                if r != NODE_STATUS_WAIT {
+                    panic!("status err:{}, node_index:{} node:{:?}, parent:{} vec:{:?}", r, node_index.index(), node, parent, vec)
+                }else if parent == 0 {
+                    let p = unsafe { self.0.as_ref().nodes.load_unchecked(parent as usize) };
+                    if p.status.load(Ordering::Relaxed) != NODE_STATUS_RUN_END {
+                        panic!("parent status err, node_index:{} node:{:?}, vec:{:?}", r, node, vec)
+                    }
+                }
+                vec.push(r);
                 let rt1 = rt.clone();
                 let g = self.clone();
                 let _ = rt.spawn(async move {
@@ -334,16 +345,20 @@ impl ExecGraph {
                     let inner = g.0.as_ref();
                     let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
                     // NODE_STATUS_RUNNING
-                    node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    if r != NODE_STATUS_RUN_START {
+                        panic!("run status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
+                    }
+                    vec.push(r);
                     sys.run(world).await;
-                    g.exec_end(systems, &rt1, world, node)
+                    g.exec_end(systems, &rt1, world, node, vec, node_index)
                 });
             }
             _ => {
                 // RUN_START + RUNNING
                 node.status
                     .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
-                self.exec_end(systems, rt, world, node)
+                self.exec_end(systems, rt, world, node, vec, node_index)
             }
         }
     }
@@ -353,6 +368,8 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node: &Node,
+        mut vec: Vec<u32>,
+        node_index: NodeIndex,
     ) {
         // RUN_END
         let mut status =
@@ -360,8 +377,10 @@ impl ExecGraph {
         // 添加to邻居时，会锁定状态。如果被锁定，则等待锁定结束才去获取邻居
         // 如果全局同时有2个原型被添加，NODE_STATUS_RUN_END之后status又被加1，则会陷入死循环
         while status != NODE_STATUS_RUN_END {
+            let s = status;
             spin_loop();
             status = node.status.load(Ordering::Relaxed);
+            panic!("status err node_index:{} status:{}={} node:{:?} vec:{:?}, ", node_index.index(), s, status, node, vec);
         }
         let inner = self.0.as_ref();
         // 执行后，检查to边的数量
@@ -373,6 +392,18 @@ impl ExecGraph {
         //     print!("n:{:?}, ", n);
         // }
         // println!("]");
+        vec.clear();
+        let mut it1 = it.clone();
+        while let Some(n) = it1.next() {
+            vec.push(n.index() as u32);
+            let nn = unsafe { inner.nodes.load_unchecked(n.index()) };
+            let r = nn.status.load(Ordering::Relaxed);
+            if r != NODE_STATUS_WAIT {
+                panic!("child status err node_index:{} child_status:{} child_node:{:?} child_index:{:?}, ", node_index.index(), r, node, nn);
+            }
+            vec.push(r);
+        }
+        vec.push(u32::null());
         if it.edge.0 == 0 {
             // 设置成结束状态
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
@@ -385,12 +416,15 @@ impl ExecGraph {
             let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
             if r == 1 {
                 // 减到0，表示要执行该节点
-                self.exec(systems, rt, world, n, node);
+                self.exec(systems, rt, world, n, node, vec.clone(), node_index.index() as u32);
             }
         }
         // 设置成结束状态
-        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-    }
+        let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+        if r != NODE_STATUS_RUN_END {
+            panic!("end status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
+        }
+}
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn collect(&mut self) {
         let inner = unsafe { Share::get_mut_unchecked(&mut self.0) };

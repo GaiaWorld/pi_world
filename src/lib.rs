@@ -21,7 +21,7 @@ pub mod world;
 pub mod listener;
 pub mod app;
 pub mod system;
-pub mod system_parms;
+pub mod system_params;
 pub mod function_system;
 pub mod async_function_system;
 pub mod insert;
@@ -49,10 +49,13 @@ pub mod prelude {
         insert::Insert,
         insert_batch::InsertBatchIter,
         alter::Alter,
+        param_set::ParamSet,
+        single_res::{SingleRes, SingleResMut},
+        multi_res::{MultiRes, MultiResMut},
         filter::{Added, Changed, With, Without, Or},
         fetch::{Has, Mut},
-        system::{BoxedSystem, IntoSystem},
-        system_parms::{SystemParam, Local},
+        system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
+        system_params::{SystemParam, Local},
         world::{Entity, World},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},

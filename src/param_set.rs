@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 use pi_proc_macros::all_tuples;
 

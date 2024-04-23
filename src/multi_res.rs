@@ -12,7 +12,7 @@ use pi_share::Share;
 
 use crate::archetype::Flags;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 pub struct MultiRes<'w, T: 'static> {

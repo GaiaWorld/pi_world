@@ -1,4 +1,4 @@
-use crate::{param_set::ParamSet, prelude::*, single_res::SingleRes};
+use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age0(usize);
@@ -159,24 +159,16 @@ struct Velocity([f32; 3]);
 
 #[cfg(test)]
 mod test_mod {
-    use std::{future::Future, marker::PhantomData, pin::Pin};
 
     use super::*;
     use crate::{
         // app::*,
         archetype::{ComponentInfo, Row},
-        async_function_system::{AsyncFunctionSystem},
         column::Column,
-        function_system::ParamSystem,
-        multi_res::{MultiRes, MultiResMut},
-        query::Queryer,
-        single_res::SingleResMut,
-        system::*,
         table::Table,
     };
     use pi_append_vec::AppendVec;
     use pi_async_rt::{
-        prelude::{SingleTaskPool, SingleTaskRunner},
         rt::single_thread::SingleTaskRuntime,
     };
     use pi_null::Null;
@@ -359,11 +351,14 @@ mod test_mod {
 
     #[test]
     fn test_query() {
-        let mut world = World::new();
-        let i = world.make_inserter::<(Age1, Age0)>();
+        let world = World::new();
+        let mut w = world.unsafe_world();
+        let mut w1 = world.unsafe_world();
+        let i = w.make_inserter::<(Age1, Age0)>();
+        let _i1 = w1.make_inserter::<(Age2, Age3)>();
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
-        //world.collect();
+        // world.collect();
         let mut q = world.make_queryer::<(&Age1, &mut Age0), ()>();
         for (a, mut b) in q.iter_mut() {
             b.0 += a.0;
@@ -526,9 +521,18 @@ mod test_mod {
             }
             *local += 1;
         }
-        async fn ab5<'w>(
+        async fn ab1<'w>(
             mut local: Local<'w, usize>,
             mut query: Query<'w, (&mut A, &mut B)>,
+        ) {
+            for (mut a, mut b) in query.iter_mut() {
+                std::mem::swap(&mut a.0, &mut b.0);
+            }
+            *local += 1;
+        }
+        async fn ab5(
+            mut local: Local<'static, usize>,
+            mut query: Query<'static, (&mut A, &mut B)>,
         ) {
             for (mut a, mut b) in query.iter_mut() {
                 std::mem::swap(&mut a.0, &mut b.0);

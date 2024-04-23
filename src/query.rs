@@ -19,7 +19,7 @@ use crate::filter::FilterComponents;
 use crate::listener::Listener;
 use crate::param_set::ParamSetElement;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
 use pi_arr::Iter;

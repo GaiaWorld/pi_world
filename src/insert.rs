@@ -8,7 +8,7 @@ use pi_slot::SlotMap;
 use crate::archetype::*;
 use crate::column::Column;
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用

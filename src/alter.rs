@@ -33,7 +33,7 @@ use crate::insert::InsertComponents;
 use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
-use crate::system_parms::SystemParam;
+use crate::system_params::SystemParam;
 use crate::world::*;
 
 pub struct Alterer<

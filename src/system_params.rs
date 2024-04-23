@@ -1,9 +1,4 @@
-use std::{
-    any::TypeId,
-    borrow::Cow,
-    mem::transmute,
-    ops::{Deref, DerefMut},
-};
+use std::{any::TypeId, borrow::Cow, mem::transmute, ops::{Deref, DerefMut}};
 
 /// 系统参数的定义
 ///
@@ -81,16 +76,16 @@ pub trait SystemParam: Sized + Send + Sync {
     ) -> Self;
 }
 
-pub struct Local<'a, T: ?Sized>(&'a mut T);
+pub struct Local<'a, T>(&'a mut T);
 
-impl<'a, T: ?Sized> Deref for Local<'a, T> {
+impl<'a, T: Sized> Deref for Local<'a, T> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'a, T: ?Sized> DerefMut for Local<'a, T> {
+impl<'a, T: Sized> DerefMut for Local<'a, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0

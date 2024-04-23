@@ -4,7 +4,7 @@ use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     function_system::ParamSystem,
     system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta},
-    system_parms::SystemParam,
+    system_params::SystemParam,
     world::*,
 };
 

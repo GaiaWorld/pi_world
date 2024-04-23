@@ -3,7 +3,7 @@ use std::{any::TypeId, borrow::Cow};
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     system::{IntoSystem, RunSystem, System, SystemMeta},
-    system_parms::SystemParam,
+    system_params::SystemParam,
     world::*,
 };
 

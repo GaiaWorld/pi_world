@@ -1,4 +1,4 @@
-/// system上只能看到Query等SystemParam参数，SystemParam参数一般包含：单例和多例资源、实体、组件
+/// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
 /// world上的数据（资源、实体和原型）的线程安全的保护仅在于保护容器，
@@ -16,7 +16,7 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
-use std::mem::transmute;
+use std::mem::{transmute, ManuallyDrop};
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
@@ -49,6 +49,7 @@ pub struct ArchetypeOk<'a>(
     pub ArchetypeWorldIndex,
     pub &'a World,
 );
+
 
 #[derive(Debug)]
 pub struct World {
@@ -118,6 +119,9 @@ impl World {
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
         Alterer::new(self, query_state, alter_state)
+    }
+    pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
+        unsafe { transmute(self) }
     }
 
     pub(crate) fn empty_archetype(&self) -> &ShareArchetype {
