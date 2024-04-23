@@ -47,7 +47,7 @@ impl<'world, I: InsertComponents> Inserter<'world, I> {
 }
 
 pub struct Insert<'world, I: InsertComponents> {
-    world: &'world World,
+    pub(crate) world: &'world World,
     state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
 }
 
@@ -113,7 +113,7 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-pub trait InsertComponents {
+pub trait InsertComponents{
     type Item;
 
     type State: Send + Sync + Sized;

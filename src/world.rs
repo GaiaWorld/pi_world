@@ -96,6 +96,12 @@ impl World {
         let s = I::init_state(self, &ar);
         Inserter::new(self, (ar_index, ar, s))
     }
+
+    /// 是否存在实体
+    #[inline]
+    pub fn contains(&self, entity: Entity) -> bool {
+        self.entities.contains_key(entity)
+    }
     /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &self,
@@ -335,6 +341,21 @@ unsafe impl Sync for World {}
 impl Default for World {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Creates an instance of the type this trait is implemented for
+/// using data from the supplied [World].
+///
+/// This can be helpful for complex initialization or context-aware defaults.
+pub trait FromWorld {
+    /// Creates `Self` using data from the given [World]
+    fn from_world(world: &mut World) -> Self;
+}
+
+impl<T: Default> FromWorld for T {
+    fn from_world(_world: &mut World) -> Self {
+        T::default()
     }
 }
 

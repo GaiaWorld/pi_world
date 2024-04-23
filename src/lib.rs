@@ -33,7 +33,10 @@ pub mod exec_graph;
 pub mod dot;
 pub mod schedule;
 
+pub mod commands;
+
 pub mod example;
+
 
 /// Most commonly used re-exported types.
 pub mod prelude {

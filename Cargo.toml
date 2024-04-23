@@ -26,6 +26,7 @@ dashmap ="5.5"
 pi-async-rt = "0.2"
 async-channel = "2.2"
 pi_proc_macros = "0.1"
+bevy_ptr = "0.13"
 
 [dev-dependencies]
 cgmath="0.18"
