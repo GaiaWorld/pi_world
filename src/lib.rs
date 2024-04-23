@@ -37,6 +37,12 @@ pub mod example;
 
 /// Most commonly used re-exported types.
 pub mod prelude {
+    #[cfg(target_arch = "wasm32")]
+    pub type App = crate::app::SingleThreadApp;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub type App = crate::app::MultiThreadApp;
+
     #[doc(hidden)]
     pub use crate::{
         query::{Query, QueryError},
@@ -49,7 +55,7 @@ pub mod prelude {
         system_parms::{SystemParam, Local},
         world::{Entity, World},
         listener::Listener,
-        app::{App, SingleThreadApp, MultiThreadApp},
+        app::{SingleThreadApp, MultiThreadApp},
         schedule::Schedule,
         exec_graph::ExecGraph,
         dot::{Dot, Config},

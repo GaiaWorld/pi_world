@@ -163,7 +163,7 @@ mod test_mod {
 
     use super::*;
     use crate::{
-        app::*,
+        // app::*,
         archetype::{ComponentInfo, Row},
         async_function_system::{AsyncFunctionSystem},
         column::Column,
@@ -219,7 +219,7 @@ mod test_mod {
     }
     #[test]
     fn test() {
-        let mut app = App::<SingleTaskRuntime>::new();
+        let mut app = App::new();
         let i = app.world.make_inserter::<(Age1, Age0)>();
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
@@ -239,7 +239,7 @@ mod test_mod {
     }
     #[test]
     fn test_insert() {
-        let mut app = App::<SingleTaskRuntime>::new();
+        let mut app = App::new();
         app.schedule.add_system(insert1);
         app.schedule.add_system(print_changed_entities);
         app.initialize();
@@ -435,7 +435,7 @@ mod test_mod {
 
     #[test]
     fn test_added() {
-        let mut app = App::<SingleTaskRuntime>::new();
+        let mut app = App::new();
         app.schedule.add_system(insert1);
         app.schedule.add_system(print_changed_entities);
         app.schedule.add_system(added_l);
@@ -446,7 +446,7 @@ mod test_mod {
     }
     #[test]
     fn test_changed() {
-        let mut app = App::<SingleTaskRuntime>::new();
+        let mut app = App::new();
         app.schedule.add_system(insert1);
         app.schedule.add_system(print_changed_entities);
         app.schedule.add_system(alter1);
@@ -593,9 +593,10 @@ mod test_mod {
             d.0 += c.0 + 1.0;
         }
 
-        fn ce(c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
+        fn ce(w: &World, c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
+            
         }
         let mut app = MultiThreadApp::new();
         app.world.register_single_res(A(0.0));
