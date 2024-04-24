@@ -705,11 +705,21 @@ fn delete_columns(am: &mut ArchetypeMapping, del_columns: &Vec<ColumnIndex>) {
     for i in am.del_indexs.clone().into_iter() {
         let column_index = unsafe { del_columns.get_unchecked(i) };
         let column = am.src.table.get_column_unchecked(*column_index);
-        if !column.needs_drop() {
-            continue;
-        }
-        for (src_row, _dst_row, _) in am.moves.iter() {
-            column.drop_row_unchecked(*src_row)
+        if column.removed.listener_len() > 0 {
+            if column.needs_drop() {
+                for (src_row, _dst_row, e) in am.moves.iter() {
+                    column.drop_row_unchecked(*src_row);
+                    column.removed.record_unchecked(*e, *src_row);
+                }
+            } else {
+                for (src_row, _dst_row, e) in am.moves.iter() {
+                    column.removed.record_unchecked(*e, *src_row);
+                }
+            }
+        } else if column.needs_drop() {
+            for (src_row, _dst_row, _) in am.moves.iter() {
+                column.drop_row_unchecked(*src_row)
+            }
         }
     }
 }

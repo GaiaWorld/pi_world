@@ -55,7 +55,7 @@ pub mod prelude {
         param_set::ParamSet,
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
-        filter::{Added, Changed, With, Without, Or},
+        filter::{Added, Changed, Removed, With, Without, Or},
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},

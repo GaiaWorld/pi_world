@@ -399,7 +399,7 @@ impl ExecGraph {
             let nn = unsafe { inner.nodes.load_unchecked(n.index()) };
             let r = nn.status.load(Ordering::Relaxed);
             if r != NODE_STATUS_WAIT {
-                panic!("child status err node_index:{} child_status:{} child_node:{:?} child_index:{:?}, ", node_index.index(), r, node, nn);
+                panic!("child status err node_index:{} child_status:{} node:{:?} child_index:{:?}, ", node_index.index(), r, node, n.index());
             }
             vec.push(r);
         }

@@ -15,7 +15,7 @@ use crate::archetype::{
 };
 use crate::dirty::{DirtyIndex, EntityDirty};
 use crate::fetch::FetchComponents;
-use crate::filter::FilterComponents;
+use crate::filter::{FilterComponents, ListenType};
 use crate::listener::Listener;
 use crate::param_set::ParamSetElement;
 use crate::system::SystemMeta;
@@ -126,19 +126,15 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     #[inline]
     pub fn get(
-        & self,
+        &self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError>
-    {
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
             .get(self.world, e, unsafe { &mut *self.cache_mapping.get() })
     }
     #[inline]
-    pub fn get_mut(
-        &mut self,
-        e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state.get(self.world, e, self.cache_mapping.get_mut())
     }
     #[inline]
@@ -233,7 +229,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
 }
 /// 监听原型创建， 添加record
 pub struct Notify<'a, Q: FetchComponents, F: FilterComponents>(
-    SmallVec<[(TypeId, bool); 1]>,
+    SmallVec<[(TypeId, ListenType); 1]>,
     PhantomData<&'a ()>,
     PhantomData<Q>,
     PhantomData<F>,
@@ -256,7 +252,7 @@ pub type ArchetypeLocalIndex = usize;
 
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-    pub(crate) listeners: SmallVec<[(TypeId, bool); 1]>,
+    pub(crate) listeners: SmallVec<[(TypeId, ListenType); 1]>,
     pub(crate) vec: Vec<(ShareArchetype, Q::State, SmallVec<[DirtyIndex; 1]>)>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // 脏world上的原型索引对于本地的原型索引
@@ -287,7 +283,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         QueryState::new(listeners)
     }
-    pub fn new(listeners: SmallVec<[(TypeId, bool); 1]>) -> Self {
+    pub fn new(listeners: SmallVec<[(TypeId, ListenType); 1]>) -> Self {
         Self {
             listeners,
             vec: Vec::new(),
@@ -335,10 +331,10 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let mut vec = SmallVec::new();
         if F::LISTENER_COUNT > 0 {
             ar.find_dirty_listeners(TypeId::of::<Self>(), &self.listeners, &mut vec);
-            if vec.len() == 0 {
-                // 表示该原型没有监听的组件，本查询可以不关心该原型
-                return;
-            }
+            // if vec.len() == 0 {
+            //     // 表示该原型没有监听的组件，本查询可以不关心该原型
+            //     return;
+            // }
         }
         self.map
             .insert(index, self.vec.len() as ArchetypeLocalIndex);
@@ -415,55 +411,55 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// - `world` must be the same one used to initialize `query_state`.
     #[inline(always)]
     pub(crate) fn new(world: &'w World, state: &'w QueryState<Q, F>) -> Self {
-        let len = state.vec.len();
-        // 该查询没有关联的原型
-        if len == 0 {
-            return QueryIter {
-                world,
-                state,
-                ar: world.empty_archetype(),
-                ar_index: 0,
-                fetch: MaybeUninit::uninit(),
-                e: Entity::null(),
-                row: 0,
-                dirty: (Iter::empty(), 0),
-                bitset: FixedBitSet::new(),
-                cache_mapping: state.cache_mapping,
-            };
+        let mut ar_index = state.vec.len();
+        while ar_index > 0 {
+            ar_index -= 1;
+            let ar = unsafe { state.vec.get_unchecked(ar_index) };
+            let fetch = MaybeUninit::new(Q::init_fetch(world, &ar.0, &ar.1));
+            if F::LISTENER_COUNT == 0 {
+                // 该查询没有监听组件变化，倒序迭代原型的行
+                return QueryIter {
+                    world,
+                    state,
+                    ar: &ar.0,
+                    ar_index,
+                    fetch,
+                    e: Entity::null(),
+                    row: ar.0.table.len(),
+                    dirty: (Iter::empty(), 0),
+                    bitset: FixedBitSet::new(),
+                    cache_mapping: state.cache_mapping,
+                };
+            } else if ar.2.len() > 0 {
+                // 该查询有组件变化监听器， 倒序迭代所脏的原型
+                let len = ar.2.len() - 1;
+                let d_index = unsafe { *ar.2.get_unchecked(len) };
+                return QueryIter {
+                    world,
+                    state,
+                    ar: &ar.0,
+                    ar_index,
+                    fetch,
+                    e: Entity::null(),
+                    row: u32::null(),
+                    dirty: (d_index.get_iter(&ar.0), len),
+                    bitset: FixedBitSet::with_capacity(ar.0.len()),
+                    cache_mapping: state.cache_mapping,
+                };
+            }
         }
-        let ar_index = len - 1;
-        let ar = unsafe { state.vec.get_unchecked(ar_index) };
-        let fetch = MaybeUninit::new(Q::init_fetch(world, &ar.0, &ar.1));
-        if F::LISTENER_COUNT == 0 {
-            // 该查询没有监听组件变化，倒序迭代原型的行
-            QueryIter {
-                world,
-                state,
-                ar: &ar.0,
-                ar_index,
-                fetch,
-                e: Entity::null(),
-                row: ar.0.table.len(),
-                dirty: (Iter::empty(), 0),
-                bitset: FixedBitSet::new(),
-                cache_mapping: state.cache_mapping,
-            }
-        } else {
-            // 该查询有组件变化监听器， 倒序迭代所脏的原型
-            let len = ar.2.len() - 1;
-            let d_index = unsafe { *ar.2.get_unchecked(len) };
-            QueryIter {
-                world,
-                state,
-                ar: &ar.0,
-                ar_index,
-                fetch,
-                e: Entity::null(),
-                row: u32::null(),
-                dirty: (d_index.get_iter(&ar.0), len),
-                bitset: FixedBitSet::with_capacity(ar.0.len()),
-                cache_mapping: state.cache_mapping,
-            }
+        // 该查询没有关联的原型
+        QueryIter {
+            world,
+            state,
+            ar: world.empty_archetype(),
+            ar_index: 0,
+            fetch: MaybeUninit::uninit(),
+            e: Entity::null(),
+            row: 0,
+            dirty: (Iter::empty(), 0),
+            bitset: FixedBitSet::new(),
+            cache_mapping: state.cache_mapping,
         }
     }
     #[inline(always)]
@@ -538,6 +534,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 下一个原型
             self.ar_index -= 1;
             let ar = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+            if ar.2.len() == 0 {
+                continue;
+            }
             self.ar = &ar.0;
             self.fetch = MaybeUninit::new(Q::init_fetch(self.world, self.ar, &ar.1));
             // 监听被脏组件

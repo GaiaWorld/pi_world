@@ -29,6 +29,7 @@ use smallvec::SmallVec;
 
 use crate::column::Column;
 use crate::dirty::DirtyIndex;
+use crate::filter::ListenType;
 use crate::table::Table;
 use crate::world::World;
 
@@ -168,19 +169,19 @@ impl Archetype {
     pub(crate) unsafe fn add_dirty_listeners(
         &self,
         owner: TypeId,
-        listeners: &SmallVec<[(TypeId, bool); 1]>,
+        listeners: &SmallVec<[(TypeId, ListenType); 1]>,
     ) {
         //println!("add_dirty_listeners");
-        for (tid, changed) in listeners.iter() {
+        for (tid, ltype) in listeners.iter() {
             let index = self.get_column_index(tid);
             if index.is_null() {
                 continue;
             }
             let c = self.table.get_column_unchecked(index);
-            if *changed {
-                c.changed.insert_listener(owner);
-            } else {
-                c.added.insert_listener(owner);
+            match ltype {
+                ListenType::Add =>  c.added.insert_listener(owner),
+                ListenType::Change => c.changed.insert_listener(owner),
+                ListenType::Remove => c.removed.insert_listener(owner),
             }
         }
     }
@@ -188,17 +189,21 @@ impl Archetype {
     pub fn find_dirty_listeners(
         &self,
         owner: TypeId,
-        listens: &SmallVec<[(TypeId, bool); 1]>,
+        listens: &SmallVec<[(TypeId, ListenType); 1]>,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
-        for (tid, changed) in listens.iter() {
+        for (tid, ltype) in listens.iter() {
             let index = self.get_column_index(tid);
             if index.is_null() {
                 continue;
             }
             let c = self.table.get_column_unchecked(index);
-            let d = if *changed { &c.changed } else { &c.added };
-            d.find(index, owner, *changed, vec);
+            let d = match ltype {
+                ListenType::Add => &c.added,
+                ListenType::Change => &c.changed,
+                ListenType::Remove => &c.removed,
+            };
+            d.find(index, owner, *ltype, vec);
         }
     }
 
