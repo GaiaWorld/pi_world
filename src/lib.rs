@@ -63,7 +63,7 @@ pub mod prelude {
         world::{Entity, World, FromWorld},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
-        schedule::Schedule,
+        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
         schedule_config::{ScheduleLabel, StageLabel, SystemSet},
         exec_graph::ExecGraph,
         dot::{Dot, Config},

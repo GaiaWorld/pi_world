@@ -37,7 +37,8 @@ impl Schedule {
             stage_sort: vec![
                 PreUpdate.intern(),
                 Update.intern(),
-                PostUpdate.intern()
+                PostUpdate.intern(),
+                Last.intern(),
             ],
 
             action: Vec::new(),
@@ -268,6 +269,9 @@ pub struct Update;
 
 #[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PostUpdate;
+
+#[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Last;
 
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MainSchedule;
