@@ -10,6 +10,7 @@ use crate::column::Column;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
+pub use pi_world_macros::Bundle;
 
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
 pub struct Inserter<'world, I: InsertComponents> {

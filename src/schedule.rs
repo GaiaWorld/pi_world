@@ -4,7 +4,6 @@ use fixedbitset::FixedBitSet;
 use pi_async_rt::rt::{AsyncRuntime, AsyncRuntimeExt};
 use pi_share::Share;
 use bevy_utils::intern::Interned;
-use pi_world_macros::{ScheduleLabel, StageLabel, SystemSet};
 /// Schedule包含一个主执行器，及多个阶段执行器
 ///
 use crate::{

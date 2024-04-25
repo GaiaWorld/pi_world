@@ -50,7 +50,7 @@ pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         query::{Query, QueryError},
-        insert::Insert,
+        insert::{Insert, Bundle},
         insert_batch::InsertBatchIter,
         alter::Alter,
         param_set::ParamSet,
@@ -64,6 +64,7 @@ pub mod prelude {
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
         schedule::Schedule,
+        schedule_config::{ScheduleLabel, StageLabel, SystemSet},
         exec_graph::ExecGraph,
         dot::{Dot, Config},
         safe_vec::SafeVec,

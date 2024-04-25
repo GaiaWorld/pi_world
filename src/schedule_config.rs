@@ -2,6 +2,7 @@ use bevy_utils::{define_label, intern::Interned};
 
 use crate::system::{BoxedSystem, IntoSystem};
 pub use bevy_utils::label::{DynEq, DynHash};
+pub use pi_world_macros::{ScheduleLabel, StageLabel, SystemSet};
 
 
 define_label!(

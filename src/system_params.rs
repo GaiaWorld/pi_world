@@ -9,6 +9,7 @@ use crate::{
 };
 
 use pi_proc_macros::all_tuples;
+pub use pi_world_macros::SystemParam;
 
 pub trait SystemParam: Sized + Send + Sync {
     /// Used to store data which persists across invocations of a system.
