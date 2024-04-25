@@ -138,7 +138,7 @@ impl ExecGraph {
     }
     /// 初始化方法，每个图只能被执行一次， 执行前必须将system添加完毕
     /// 将system, res, archetype, 添加成图节点，并维护边
-    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World) {
+    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, add_notify: bool) {
         let inner = self.0.as_ref();
         inner
             .to_len

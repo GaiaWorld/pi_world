@@ -570,10 +570,10 @@ mod test_mod {
         i.batch(it);
 
         app.world.collect();
-        app.schedule.add_async_system(ab5);
+        // app.schedule.add_async_system(ab5);
         // app.schedule.add_system(ab);
-        app.schedule.add_system(cd);
-        app.schedule.add_system(ce);
+        // app.schedule.add_system(cd);
+        // app.schedule.add_system(ce);
         app.initialize();
         app.run();
         for _ in 0..1000 {

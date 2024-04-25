@@ -219,6 +219,7 @@ pub enum BoxedSystem {
     Sync(Box<dyn RunSystem>),
     Async(Box<dyn AsyncRunSystem>),
 }
+
 impl BoxedSystem {
     pub fn name(&self) -> &Cow<'static, str> {
         match self {

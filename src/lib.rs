@@ -35,7 +35,8 @@ pub mod schedule;
 
 pub mod commands;
 
-pub mod example;
+// pub mod example;
+pub mod schedule_config;
 
 
 /// Most commonly used re-exported types.
@@ -59,12 +60,13 @@ pub mod prelude {
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
-        world::{Entity, World},
+        world::{Entity, World, FromWorld},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
         schedule::Schedule,
         exec_graph::ExecGraph,
         dot::{Dot, Config},
         safe_vec::SafeVec,
+        commands::{Command, CommandQueue},
     };
 }

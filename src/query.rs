@@ -158,8 +158,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
 }
 
-impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
-    for Query<'a, Q, F>
+impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam for Query<'a, Q, F>
 {
     type State = QueryState<Q, F>;
     type Item<'w> = Query<'w, Q, F>;

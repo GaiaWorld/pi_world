@@ -10,6 +10,7 @@ use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
 
+#[derive(Debug)]
 pub struct SingleRes<'w, T: 'static> {
     pub(crate) value: &'w T,
 }
@@ -68,6 +69,7 @@ impl<'w, T: Sync + Send + 'static> Deref for SingleRes<'w, T> {
     }
 }
 
+#[derive(Debug)]
 pub struct SingleResMut<'w, T: 'static> {
     pub(crate) value: &'w mut T,
 }
