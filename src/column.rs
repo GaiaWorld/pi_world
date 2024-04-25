@@ -17,6 +17,7 @@ pub struct Column {
     blob: Blob,
     pub(crate) added: ComponentDirty, // // Alter和Insert产生的添加脏，
     pub(crate) changed: ComponentDirty, // Query产生的修改脏，
+    pub(crate) removed: ComponentDirty, // Query产生的修改脏，
 }
 
 impl Column {
@@ -26,6 +27,7 @@ impl Column {
             blob: Blob::new(info),
             added: Default::default(),
             changed: Default::default(),
+            removed: Default::default(),
         }
     }
     #[inline(always)]
@@ -96,7 +98,7 @@ impl Column {
     }
     /// 整理方法，返回该列的脏列表是否清空
     pub(crate) fn collect_dirty(&mut self) -> bool {
-        self.added.collect() && self.changed.collect()
+        self.added.collect() && self.changed.collect() && self.removed.collect()
     }
 }
 

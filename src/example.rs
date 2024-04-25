@@ -105,6 +105,7 @@ pub fn changed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Changed<Age0>, Chang
 
     println!("changed_l: end");
 }
+
 pub fn p_set(
     mut set: ParamSet<(Query<(&mut Age0, &mut Age1)>, Query<(&mut Age1, &mut Age2)>)>,
     // r10: Res<Age10>,
@@ -446,6 +447,42 @@ mod test_mod {
         app.schedule.add_system(print_changed_entities);
         app.schedule.add_system(alter1);
         app.schedule.add_system(changed_l);
+        app.initialize();
+        app.run();
+        app.run();
+    }
+
+    #[test]
+    fn test_removed() {
+        pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
+            println!("insert1 is now");
+            let e = i0.insert((Age3(3), Age1(1), Age0(0)));
+            println!("insert1 is end, e:{:?}", e);
+        }
+        pub fn alter(
+            mut i0: Alter<&Age1, (), (), (Age3,)>,
+            q0: Query<(Entity, &mut Age0, &Age1), (With<Age3>,)>,
+        ) {
+            println!("alter1");
+            for (e, _, _) in q0.iter() {
+                let r = i0.alter(e, ());
+                dbg!(e, r);
+            }
+            println!("alter1: end");
+        }
+        pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>)>) {
+            println!("removed_l");
+            for (e, age0, _) in q0.iter() {
+                println!("e {:?}, age0: {:?}", e, age0);
+            }
+        
+            println!("removed_l: end");
+        }
+        let mut app = SingleThreadApp::new();
+        app.schedule.add_system(insert);
+        app.schedule.add_system(print_changed_entities);
+        app.schedule.add_system(alter);
+        app.schedule.add_system(removed_l);
         app.initialize();
         app.run();
         app.run();

@@ -17,38 +17,30 @@ use pi_share::ShareUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetype, ColumnIndex, Row};
+use crate::filter::ListenType;
 use crate::world::Entity;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DirtyIndex {
-    column_index: i32, // 对应列的位置
+    column_index: ColumnIndex, // 对应列的位置
     vec_index: u32,    // 在ComponentDirty的Added或Changed的Vec中的位置
+    ltype: ListenType,
 }
 impl DirtyIndex {
     #[inline]
-    pub fn new(is_changed: bool, column_index: ColumnIndex, vec_index: usize) -> Self {
-        let column_index = if is_changed {
-            column_index as i32
-        } else {
-            -(column_index as i32 + 1)
-        };
+    pub fn new(ltype: ListenType, column_index: ColumnIndex, vec_index: usize) -> Self {
         DirtyIndex {
             column_index,
             vec_index: vec_index as u32,
+            ltype,
         }
     }
     #[inline]
     pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, EntityDirty> {
-        let r = if self.column_index >= 0 {
-            &archetype
-                .table
-                .get_column_unchecked(self.column_index as u32)
-                .changed
-        } else {
-            &archetype
-                .table
-                .get_column_unchecked(-self.column_index as u32 - 1)
-                .added
+        let r = match self.ltype {
+            ListenType::Add => &archetype.table.get_column_unchecked(self.column_index).added,
+            ListenType::Change => &archetype.table.get_column_unchecked(self.column_index).changed,
+            ListenType::Remove => &archetype.table.get_column_unchecked(self.column_index).removed,
         };
         let end = r.vec.len();
         // 从上次读取到的位置开始读取
@@ -96,12 +88,12 @@ impl ComponentDirty {
         &self,
         index: ColumnIndex,
         owner: TypeId,
-        changed: bool,
+        ltype: ListenType,
         result: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         for (j, d) in self.listener_list().iter().enumerate() {
             if d.0 == owner {
-                result.push(DirtyIndex::new(changed, index, j))
+                result.push(DirtyIndex::new(ltype, index, j))
             }
         }
     }

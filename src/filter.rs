@@ -1,8 +1,8 @@
 //! () 为空过滤器
 //! 2种原型过滤器 Without<C> With<C>
 //! Or只支持多个With<C>，表示原型上只要有任何1个C就可以
-//! Added Changed为迭代器，多个迭代器是或关系， 原型上只要有1个可迭代的组件就可以
-//! Query<(&T, &mut C8>), (Without<C1>,With<C2>,With<C3>,Or<(With<C4>, With<C5>)>, Changed<C6>, Added<C7>)>
+//! Added Changed Removed 为迭代器，多个迭代器是或关系， 原型上只要有1个可迭代的组件就可以
+//! Query<(&T, &mut C8>), (Without<C1>,With<C2>,With<C3>,Or<(With<C4>, With<C5>)>, Changed<C6>, Added<C7>, Removed<C8>)>
 //!
 
 use pi_proc_macros::all_tuples;
@@ -14,6 +14,15 @@ use crate::archetype::Archetype;
 use crate::system::SystemMeta;
 use crate::world::World;
 
+/// Edge direction.
+#[derive(Default, Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub enum ListenType {
+    #[default]
+    Add = 0,
+    Change,
+    Remove 
+}
+
 pub trait FilterArchetype {
     fn filter_archetype(_archetype: &Archetype) -> bool {
         false
@@ -24,7 +33,7 @@ pub trait FilterComponents {
     /// initializes ReadWrite for this [`FilterComponents`] type.
     fn init_read_write(_world: &World, _meta: &mut SystemMeta) {}
     /// initializes listener for this [`FilterComponents`] type
-    fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {}
+    fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {}
     fn archetype_filter(_archetype: &Archetype) -> bool {
         false
     }
@@ -60,16 +69,24 @@ impl<T: 'static> FilterComponents for With<T> {
 pub struct Added<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Added<T> {
     const LISTENER_COUNT: usize = 1;
-    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
-        listeners.push((TypeId::of::<T>(), false));
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
+        listeners.push((TypeId::of::<T>(), ListenType::Add));
     }
 }
 
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
-    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
-        listeners.push((TypeId::of::<T>(), true));
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
+        listeners.push((TypeId::of::<T>(), ListenType::Change));
+    }
+}
+
+pub struct Removed<T: 'static>(PhantomData<T>);
+impl<T: 'static> FilterComponents for Removed<T> {
+    const LISTENER_COUNT: usize = 1;
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
+        listeners.push((TypeId::of::<T>(), ListenType::Remove));
     }
 }
 
@@ -83,7 +100,7 @@ macro_rules! impl_tuple_filter {
 	        fn init_read_write(_world: &World, _meta: &mut SystemMeta) {
                 ($($name::init_read_write(_world, _meta),)*);
             }
-            fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, bool); 1]>) {
+            fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
                 ($($name::init_listeners(_world, _listeners),)*);
             }
             fn archetype_filter(_archetype: &Archetype) -> bool {
