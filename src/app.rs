@@ -54,7 +54,7 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     }
 
     // 添加system
-    pub fn add_systems<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> usize {
+    pub fn add_system<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> usize {
         let stage_label = stage_label.intern();
         let system_config = system.into_configs();
                 
@@ -68,27 +68,37 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// 同步运行日程
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
-    pub fn run(&mut self, schedule_label: Option<impl ScheduleLabel>) {
+    pub fn run(&mut self) {
         self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
 
-        let schedule_label = match schedule_label {
-            Some(r) => r.intern(),
-            None => MainSchedule.intern(),
-        };
-        self.schedule.run(&mut self.world, &self.rt, &schedule_label);
+        self.schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+    }
+
+    /// 同步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
+    pub fn run_schedule(&mut self, schedule_label: impl ScheduleLabel) {
+        self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+
+        self.schedule.run(&mut self.world, &self.rt, &schedule_label.intern());
     }
 
     /// 异步运行日程
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
-    pub async fn async_run(&mut self, schedule_label: Option<impl ScheduleLabel>) {
+    pub async fn async_run(&mut self, schedule_label: impl ScheduleLabel) {
         self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
 
-        let schedule_label = match schedule_label {
-            Some(r) => r.intern(),
-            None => MainSchedule.intern(),
-        };
-        self.schedule.async_run(&mut self.world, &self.rt, &schedule_label).await;
+        self.schedule.async_run(&mut self.world, &self.rt, &schedule_label.intern()).await;
+    }
+
+    /// 异步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
+    pub async fn async_run_schedule(&mut self) {
+        self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+
+        self.schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
     }
 }
 

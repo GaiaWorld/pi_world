@@ -35,7 +35,7 @@ pub mod schedule;
 
 pub mod commands;
 
-// pub mod example;
+pub mod example;
 pub mod schedule_config;
 
 
