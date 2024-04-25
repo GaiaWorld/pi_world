@@ -144,6 +144,33 @@ impl SystemParam for &World {
     }
 }
 
+impl SystemParam for &mut World {
+    type State = ();
+
+    type Item<'world> = &'world mut World;
+
+    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        //TODO
+        ()
+    }
+
+    fn get_param<'world>(
+        world: &'world World,
+        _system_meta: &'world SystemMeta,
+        _state: &'world mut Self::State,
+    ) -> Self::Item<'world> {
+        unsafe { &mut *(world as *const World as usize as *mut World) }
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
+}
+
 macro_rules! impl_system_param_tuple {
     ($($param: ident),*) => {
         // SAFETY: implementors of each `SystemParam` in the tuple have validated their impls

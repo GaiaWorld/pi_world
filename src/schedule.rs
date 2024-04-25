@@ -196,7 +196,11 @@ impl Schedule {
             if let Some(stage) = g.get_mut(stage) {
                 Self::run_graph(world, rt, stage, &self.systems);
             }
-        } 
+        }
+
+        if schedule == &MainSchedule.intern() {
+            world.collect_by(&mut self.action, &mut self.set);
+        }
     }
     fn run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
         world: &mut World,
@@ -235,22 +239,24 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
-                Self::async_run_graph(world, rt, stage, &mut self.systems, &mut self.action, &mut self.set).await;
+                Self::async_run_graph(world, rt, stage, &mut self.systems).await;
             }
-        } 
+        }
+
+        if schedule == &MainSchedule.intern() {
+            world.collect_by(&mut self.action, &mut self.set);
+        }
     }
     async fn async_run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
         world: &mut World,
         rt: &A,
         g: &mut ExecGraph,
         systems: &Share<SafeVec<BoxedSystem>>,
-        action: &mut Vec<(Row, Row)>,
-        set: &mut FixedBitSet,
-    ) {
-        world.collect_by(action, set);
+    ) { 
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
         g.run(s, rt, w).await.unwrap();
+
         g.collect();
     }
 }
