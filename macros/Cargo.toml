@@ -1,0 +1,25 @@
+[package]
+name = "pi_world_macros"
+version = "0.1.0"
+authors = ["suncy <530739162@qq.com>"]
+edition = "2021"
+description = "ecs world macros"
+repository = "https://github.com/GaiaWorld/pi_world.git"
+license = "MIT OR Apache-2.0"
+keywords = ["pi", "world", "ecs", "macros"]
+readme = "README.md"
+categories = ["data-structures", "memory-management", "ecs"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# bevy_macro_utils = { path = "../../bevy_macro_utils", version = "0.13.0" }
+
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+rustc-hash = "1.0"
+# bevy_macro_utils = "0.13"
+lazy_static = "1.4"
+toml_edit = { version = "0.21", default-features = false, features = ["parse"] }
