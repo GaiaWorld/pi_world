@@ -197,13 +197,27 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                // fn new_archetype(state: &mut Self::State, archetype: &#path::archetype::Archetype, system_meta: &mut #path::system::SystemMeta) {
-                //     <#fields_alias::<'_, '_, #punctuated_generic_idents> as #path::prelude::SystemParam>::new_archetype(&mut state, archetype, system_meta)
-                // }
+                fn archetype_depend<'w>(
+                    world: & #path::world::World,
+                    system_meta: & #path::system::SystemMeta,
+                    state: &Self::State,
+                    archetype: & #path::archetype::Archetype,
+                    depend: & mut #path::archetype::ArchetypeDependResult,
+                ) {
+                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::archetype_depend(world, system_meta, &state.state, archetype, depend);
+                }
 
-                // fn apply(state: &mut Self::State, system_meta: &#path::prelude::SystemMeta, world: &mut #path::world::World) {
-                //     <#fields_alias::<'_, '_, #punctuated_generic_idents> as #path::prelude::SystemParam>::apply(&mut state, system_meta, world);
-                // }
+                fn res_depend<'w>(
+                    world: &'w #path::world::World,
+                    system_meta: &'w #path::system::SystemMeta,
+                    state: &'w Self::State,
+                    res_tid: &'w std::any::TypeId,
+                    res_name: &'w std::borrow::Cow<'static, str>,
+                    single: bool,
+                    result: &'w mut #path::archetype::Flags,
+                ) {
+                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
+                }
 
                 fn get_param<'w>(
                     world: &'w #path::world::World,
