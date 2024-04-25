@@ -1,6 +1,6 @@
 use core::fmt::*;
 use std::mem::{needs_drop, take, transmute, MaybeUninit};
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range};
 use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
@@ -74,6 +74,10 @@ impl<T> SafeVec<T> {
     #[inline(always)]
     pub fn iter(&self) -> SafeVecIter<'_, T> {
         SafeVecIter(self.vec.slice(0..self.len()))
+    }
+    #[inline(always)]
+    pub fn slice(&self, range: Range<usize>) -> SafeVecIter<'_, T> {
+        SafeVecIter(self.vec.slice(range))
     }
     #[inline(always)]
     pub fn collect(&mut self) {

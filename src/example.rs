@@ -461,7 +461,7 @@ mod test_mod {
         }
         pub fn alter(
             mut i0: Alter<&Age1, (), (), (Age3,)>,
-            q0: Query<(Entity, &mut Age0, &Age1), (With<Age3>,)>,
+            q0: Query<(Entity, &mut Age0, &Age1), ()>,
         ) {
             println!("alter1");
             for (e, _, _) in q0.iter() {
