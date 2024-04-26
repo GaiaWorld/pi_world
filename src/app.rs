@@ -7,7 +7,7 @@ use pi_async_rt::rt::{
     AsyncRuntime, AsyncRuntimeExt,
 };
 
-use crate::{schedule::Schedule, world::World};
+use crate::{schedule::{MainSchedule, Schedule, Startup}, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs, ScheduleLabel, StageLabel}, world::World};
 
 pub type SingleThreadApp = App<SingleTaskRuntime>;
 pub type MultiThreadApp = App<MultiTaskRuntime>;
@@ -15,6 +15,7 @@ pub type MultiThreadApp = App<MultiTaskRuntime>;
 pub struct App<A: AsyncRuntime + AsyncRuntimeExt> {
     pub world: World,
     pub schedule: Schedule,
+    pub startup_schedule: Schedule,
     pub rt: A,
 }
 impl App<SingleTaskRuntime> {
@@ -23,7 +24,8 @@ impl App<SingleTaskRuntime> {
         let rt = SingleTaskRunner::<(), SingleTaskPool<()>>::new(pool).into_local();
         App {
             world: World::new(),
-            schedule: Schedule::new(),
+            schedule: Schedule::new(true),
+            startup_schedule: Schedule::new(false),
             rt,
         }
     }
@@ -38,29 +40,65 @@ impl App<MultiTaskRuntime> {
         let rt = builer.build();
         App {
             world: World::new(),
-            schedule: Schedule::new(),
+            schedule: Schedule::new(true),
+            startup_schedule: Schedule::new(false),
             rt,
         }
     }
 }
 impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
-    pub fn initialize(&mut self) {
-        self.schedule.initialize(&mut self.world);
+
+    /// 配置系统集
+    pub fn configure_set(&mut self, _stage_label: impl StageLabel, config: impl IntoSystemSetConfigs) {
+        self.schedule.configure_set(config.into_configs());
     }
 
+    // 添加system
+    pub fn add_system<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> usize {
+        let stage_label = stage_label.intern();
+        let system_config = system.into_configs();
+                
+        if stage_label == Startup.intern() {
+            self.startup_schedule.add_system(stage_label, system_config)
+        } else {
+            self.schedule.add_system(stage_label, system_config)
+        }
+    }
+
+    /// 同步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
     pub fn run(&mut self) {
-        self.schedule.run(&mut self.world, &self.rt);
+        self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+
+        self.schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
     }
 
-    pub fn run_stage(&mut self, stage: &str) {
-        self.schedule.run_stage(&mut self.world, &self.rt, stage);
+    /// 同步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
+    pub fn run_schedule(&mut self, schedule_label: impl ScheduleLabel) {
+        self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+
+        self.schedule.run(&mut self.world, &self.rt, &schedule_label.intern());
     }
-    pub async fn async_run(&mut self) {
-        self.schedule.async_run(&mut self.world, &self.rt).await;
+
+    /// 异步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
+    pub async fn async_run(&mut self, schedule_label: impl ScheduleLabel) {
+        self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+
+        self.schedule.async_run(&mut self.world, &self.rt, &schedule_label.intern()).await;
     }
-    pub async fn async_run_stage(&mut self, stage: &str) {
-        self.schedule
-            .async_run_stage(&mut self.world, &self.rt, stage)
-            .await;
+
+    /// 异步运行日程
+    /// schedule_label为None时， 表示运行所有的system
+    /// 否则运行指定日程中的system
+    pub async fn async_run_schedule(&mut self) {
+        self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+
+        self.schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
     }
 }
+

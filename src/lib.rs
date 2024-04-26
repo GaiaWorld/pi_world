@@ -36,6 +36,7 @@ pub mod schedule;
 pub mod commands;
 
 pub mod example;
+pub mod schedule_config;
 
 
 /// Most commonly used re-exported types.
@@ -49,7 +50,7 @@ pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         query::{Query, QueryError},
-        insert::Insert,
+        insert::{Insert, Bundle},
         insert_batch::InsertBatchIter,
         alter::Alter,
         param_set::ParamSet,
@@ -59,12 +60,14 @@ pub mod prelude {
         fetch::{Has, Mut},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
-        world::{Entity, World},
+        world::{Entity, World, FromWorld},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
-        schedule::Schedule,
+        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
+        schedule_config::{ScheduleLabel, StageLabel, SystemSet},
         exec_graph::ExecGraph,
         dot::{Dot, Config},
         safe_vec::SafeVec,
+        commands::{Command, CommandQueue},
     };
 }

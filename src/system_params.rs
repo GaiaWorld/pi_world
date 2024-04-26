@@ -9,6 +9,7 @@ use crate::{
 };
 
 use pi_proc_macros::all_tuples;
+pub use pi_world_macros::SystemParam;
 
 pub trait SystemParam: Sized + Send + Sync {
     /// Used to store data which persists across invocations of a system.
@@ -132,6 +133,33 @@ impl SystemParam for &World {
         _state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         world
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
+}
+
+impl SystemParam for &mut World {
+    type State = ();
+
+    type Item<'world> = &'world mut World;
+
+    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        //TODO
+        ()
+    }
+
+    fn get_param<'world>(
+        world: &'world World,
+        _system_meta: &'world SystemMeta,
+        _state: &'world mut Self::State,
+    ) -> Self::Item<'world> {
+        unsafe { &mut *(world as *const World as usize as *mut World) }
     }
     #[inline]
     fn get_self<'world>(

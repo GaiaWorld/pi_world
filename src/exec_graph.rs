@@ -140,11 +140,10 @@ impl ExecGraph {
     /// 将system, res, archetype, 添加成图节点，并维护边
     pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, init_notify: bool) {
         let inner = self.0.as_ref();
-        inner
-            .to_len
-            .store(inner.nodes.len() as u32, Ordering::Relaxed);
-        // 首先初始化所有的system，有Insert的会产生对应的原型
-        for sys in systems.iter() {
+        let old_sys_len = inner.sys_len.load(Ordering::Relaxed);
+        let new_sys_len = systems.len();
+        // 首先初始化新增的system，有Insert的会产生对应的原型
+        for sys in systems.slice(old_sys_len as usize..new_sys_len) {
             sys.initialize(world);
         }
         // 遍历world上的单例资源，测试和system的读写关系
@@ -178,7 +177,7 @@ impl ExecGraph {
             }
         }
         assert_eq!(to_len, self.to_len());
-        if init_notify {
+        if init_notify && old_sys_len == 0 {
             // 监听原型创建， 添加原型节点和边
             let notify = Notify(self.clone(), systems, true, PhantomData);
             world.listener_mgr.register_event(Share::new(notify));
@@ -449,6 +448,7 @@ pub struct GraphInner {
     to_count: ShareU32,
     sender: Sender<()>,
     receiver: Receiver<()>,
+    sys_len: ShareU32,
 }
 
 impl GraphInner {
@@ -665,6 +665,7 @@ impl Default for GraphInner {
             to_count: ShareU32::new(0),
             sender,
             receiver,
+            sys_len: ShareU32::new(0),
         }
     }
 }

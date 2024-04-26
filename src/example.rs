@@ -164,9 +164,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row},
-        column::Column,
-        table::Table,
+        archetype::{ComponentInfo, Row}, column::Column, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
     use pi_append_vec::AppendVec;
     use pi_async_rt::{
@@ -174,6 +172,9 @@ mod test_mod {
     };
     use pi_null::Null;
     use test::Bencher;
+
+    #[derive(ScheduleLabel, Hash, Eq, PartialEq, Clone, Debug)]
+    pub struct AddSchedule;
 
     #[test]
     fn test_columns() {
@@ -216,8 +217,8 @@ mod test_mod {
         let i = app.world.make_inserter::<(Age1, Age0)>();
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
-        app.schedule.add_system(print_changed_entities);
-        app.initialize();
+        app.add_system(Update, print_changed_entities);
+        
         app.run();
         app.run();
         assert_eq!(app.world.get_component::<Age0>(e1).unwrap().0, 4);
@@ -233,9 +234,9 @@ mod test_mod {
     #[test]
     fn test_insert() {
         let mut app = App::new();
-        app.schedule.add_system(insert1);
-        app.schedule.add_system(print_changed_entities);
-        app.initialize();
+        app.add_system(Update, insert1);
+        app.add_system(Update, print_changed_entities);
+        
         app.run();
         app.run();
     }
@@ -371,11 +372,11 @@ mod test_mod {
     #[test]
     fn test_alter() {
         let mut app = SingleThreadApp::new();
-        app.schedule.add_system(insert1);
-        app.schedule.add_system(print_changed_entities);
-        app.schedule.add_system(alter1);
-        app.schedule.add_system(p_set);
-        app.initialize();
+        app.add_system(Update, insert1);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, alter1);
+        app.add_system(Update, p_set);
+        
         app.run();
         app.run();
         app.run();
@@ -432,22 +433,22 @@ mod test_mod {
     #[test]
     fn test_added() {
         let mut app = App::new();
-        app.schedule.add_system(insert1);
-        app.schedule.add_system(print_changed_entities);
-        app.schedule.add_system(added_l);
-        app.schedule.add_system_stages(alter1, &["add"]);
-        app.initialize();
-        app.run_stage("add");
-        app.run_stage("add");
+        app.add_system(Update, insert1);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, added_l);
+        app.add_system(Update, alter1.in_schedule(AddSchedule));
+        
+        app.run_schedule(AddSchedule);
+        app.run_schedule(AddSchedule);
     }
     #[test]
     fn test_changed() {
         let mut app = App::new();
-        app.schedule.add_system(insert1);
-        app.schedule.add_system(print_changed_entities);
-        app.schedule.add_system(alter1);
-        app.schedule.add_system(changed_l);
-        app.initialize();
+        app.add_system(Update, insert1);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, alter1);
+        app.add_system(Update, changed_l);
+        
         app.run();
         app.run();
     }
@@ -479,11 +480,11 @@ mod test_mod {
             println!("removed_l: end");
         }
         let mut app = SingleThreadApp::new();
-        app.schedule.add_system(insert);
-        app.schedule.add_system(print_changed_entities);
-        app.schedule.add_system(alter);
-        app.schedule.add_system(removed_l);
-        app.initialize();
+        app.add_system(Update, insert);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, alter);
+        app.add_system(Update, removed_l);
+        
         app.run();
         app.run();
     }
@@ -531,10 +532,10 @@ mod test_mod {
         i.batch(it);
 
         app.world.collect();
-        app.schedule.add_system(ab);
-        app.schedule.add_system(cd);
-        app.schedule.add_system(ce);
-        app.initialize();
+        app.add_system(Update, ab);
+        app.add_system(Update, cd);
+        app.add_system(Update, ce);
+        
         app.run();
         for _ in 0..1000 {
             app.run();
@@ -607,11 +608,11 @@ mod test_mod {
         i.batch(it);
 
         app.world.collect();
-        app.schedule.add_async_system(ab5);
-        // app.schedule.add_system(ab);
-        app.schedule.add_system(cd);
-        app.schedule.add_system(ce);
-        app.initialize();
+        // app.schedule.add_async_system(ab5);
+        // app.add_system(Update, ab);
+        // app.add_system(Update, cd);
+        // app.add_system(Update, ce);
+        
         app.run();
         for _ in 0..1000 {
             app.run();
@@ -645,10 +646,10 @@ mod test_mod {
         app.world.register_single_res(C(0.0));
         app.world.register_single_res(D(0.0));
         app.world.register_single_res(E(0.0));
-        app.schedule.add_system(ab);
-        app.schedule.add_system(cd);
-        app.schedule.add_system(ce);
-        app.initialize();
+        app.add_system(Update, ab);
+        app.add_system(Update, cd);
+        app.add_system(Update, ce);
+        
         app.run();
         app.run();
         assert_eq!(app.world.get_single_res::<B>().unwrap().0, 4.0);
@@ -686,10 +687,10 @@ mod test_mod {
         app.world.register_multi_res::<C>();
         app.world.register_multi_res::<D>();
         app.world.register_multi_res::<E>();
-        app.schedule.add_system(ab);
-        app.schedule.add_system(cd);
-        app.schedule.add_system(ce);
-        app.initialize();
+        app.add_system(Update, ab);
+        app.add_system(Update, cd);
+        app.add_system(Update, ce);
+        
         app.run();
         app.run();
         assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);

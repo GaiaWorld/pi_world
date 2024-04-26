@@ -27,6 +27,11 @@ pi-async-rt = "0.2"
 async-channel = "2.2"
 pi_proc_macros = "0.1"
 bevy_ptr = "0.13"
+bevy_utils = "0.13"
+pi_world_macros = {version = "0.1", path = "./macros"}
 
 [dev-dependencies]
 cgmath="0.18"
+
+[workspace]
+members = ["macros"]
