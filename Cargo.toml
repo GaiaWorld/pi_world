@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.1.19"
+version = "0.1.20"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -29,6 +29,8 @@ pi_proc_macros = "0.1"
 bevy_ptr = "0.13"
 bevy_utils = "0.13"
 pi_world_macros = {version = "0.1", path = "./macros"}
+log = "0.4"
+downcast-rs = "1.2"
 
 [dev-dependencies]
 cgmath="0.18"

@@ -24,7 +24,7 @@ use crate::alter::{AlterState, Alterer, DelComponents};
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
-use crate::insert::{InsertComponents, Inserter};
+use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::query::{QueryError, QueryState, Queryer};
@@ -83,13 +83,13 @@ impl World {
     /// 批量插入
     pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
     where
-        I: Iterator<Item = <Ins as InsertComponents>::Item>,
-        Ins: InsertComponents,
+        I: Iterator<Item = <Ins as Bundle>::Item>,
+        Ins: Bundle,
     {
         InsertBatchIter::new(self, iter.into_iter())
     }
     /// 创建一个插入器
-    pub fn make_inserter<I: InsertComponents>(&mut self) -> Inserter<I> {
+    pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = self.find_archtype(id, components);
@@ -114,7 +114,7 @@ impl World {
     pub fn make_alterer<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents + 'static,
+        A: Bundle + 'static,
         D: DelComponents + 'static,
     >(
         &mut self,

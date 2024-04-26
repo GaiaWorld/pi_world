@@ -15,7 +15,7 @@ pub use command_queue::CommandQueue;
 // pub use command_queue::CommandQueue;
 // // pub use parallel_scope::*;
 // use std::{marker::PhantomData, ops::{Deref, DerefMut}};
-// use crate::{insert::InsertComponents, prelude::World, system::SystemMeta, world::{Entity, FromWorld}};
+// use crate::{insert::Bundle, prelude::World, system::SystemMeta, world::{Entity, FromWorld}};
 // // use super::{Deferred, Resource, SystemBuffer, SystemMeta};
 
 // /// A [`World`] mutation.
@@ -219,7 +219,7 @@ pub trait Command: Send + 'static {
 //     //     }
 //     // }
 
-//     /// Pushes a [`Command`] to the queue for creating a new entity with the given [`InsertComponents`]'s components,
+//     /// Pushes a [`Command`] to the queue for creating a new entity with the given [`Bundle`]'s components,
 //     /// and returns its corresponding [`EntityCommands`].
 //     ///
 //     /// # Example
@@ -269,7 +269,7 @@ pub trait Command: Send + 'static {
 //     ///
 //     /// - [`spawn_empty`](Self::spawn_empty) to spawn an entity without any components.
 //     /// - [`spawn_batch`](Self::spawn_batch) to spawn entities with a bundle each.
-//     pub fn spawn<'a, T: InsertComponents + Send + Sync + 'static>(&'a mut self, bundle: T) -> EntityCommands<'w, 'a> {
+//     pub fn spawn<'a, T: Bundle + Send + Sync + 'static>(&'a mut self, bundle: T) -> EntityCommands<'w, 'a> {
 //         let mut e = self.spawn_empty();
 //         e.insert(bundle);
 //         e
@@ -367,9 +367,9 @@ pub trait Command: Send + 'static {
 //         })
 //     }
 
-//     /// Pushes a [`Command`] to the queue for creating entities with a particular [`InsertComponents`] type.
+//     /// Pushes a [`Command`] to the queue for creating entities with a particular [`Bundle`] type.
 //     ///
-//     /// `bundles_iter` is a type that can be converted into a [`InsertComponents`] iterator
+//     /// `bundles_iter` is a type that can be converted into a [`Bundle`] iterator
 //     /// (it can also be a collection).
 //     ///
 //     /// This method is equivalent to iterating `bundles_iter`
@@ -408,7 +408,7 @@ pub trait Command: Send + 'static {
 //     pub fn spawn_batch<I>(&mut self, bundles_iter: I)
 //     where
 //         I: IntoIterator + Send + Sync + 'static,
-//         I::Item: InsertComponents,
+//         I::Item: Bundle,
 //     {
 //         self.queue.push(SpawnBatch { bundles_iter });
 //     }
@@ -416,13 +416,13 @@ pub trait Command: Send + 'static {
 //     /// Pushes a [`Command`] to the queue for creating entities, if needed,
 //     /// and for adding a bundle to each entity.
 //     ///
-//     /// `bundles_iter` is a type that can be converted into an ([`Entity`], [`InsertComponents`]) iterator
+//     /// `bundles_iter` is a type that can be converted into an ([`Entity`], [`Bundle`]) iterator
 //     /// (it can also be a collection).
 //     ///
 //     /// When the command is applied,
-//     /// for each (`Entity`, `InsertComponents`) pair in the given `bundles_iter`,
+//     /// for each (`Entity`, `Bundle`) pair in the given `bundles_iter`,
 //     /// the `Entity` is spawned, if it does not exist already.
-//     /// Then, the `InsertComponents` is added to the entity.
+//     /// Then, the `Bundle` is added to the entity.
 //     ///
 //     /// This method is equivalent to iterating `bundles_iter`,
 //     /// calling [`get_or_spawn`](Self::get_or_spawn) for each bundle,
@@ -438,7 +438,7 @@ pub trait Command: Send + 'static {
 //     where
 //         I: IntoIterator + Send + Sync + 'static,
 //         I::IntoIter: Iterator<Item = (Entity, B)>,
-//         B: InsertComponents + 'static,
+//         B: Bundle + 'static,
 //     {
 //         self.queue.push(InsertOrSpawnBatch { bundles_iter });
 //     }
@@ -670,7 +670,7 @@ pub trait Command: Send + 'static {
 //         self.entity
 //     }
 
-//     /// Adds a [`InsertComponents`] of components to the entity.
+//     /// Adds a [`Bundle`] of components to the entity.
 //     ///
 //     /// This will overwrite any previous value(s) of the same component type.
 //     ///
@@ -719,7 +719,7 @@ pub trait Command: Send + 'static {
 //     /// }
 //     /// # bevy_ecs::system::assert_is_system(add_combat_stats_system);
 //     /// ```
-//     pub fn insert<T: InsertComponents + Send + 'static + Sync>(&mut self, bundle: T) -> &mut Self {
+//     pub fn insert<T: Bundle + Send + 'static + Sync>(&mut self, bundle: T) -> &mut Self {
 //         self.commands.add(Insert {
 //             entity: self.entity,
 //             bundle,
@@ -727,7 +727,7 @@ pub trait Command: Send + 'static {
 //         self
 //     }
 
-//     /// Removes a [`InsertComponents`] of components from the entity.
+//     /// Removes a [`Bundle`] of components from the entity.
 //     ///
 //     /// See [`EntityMut::remove`](crate::world::EntityMut::remove) for more
 //     /// details.
@@ -767,7 +767,7 @@ pub trait Command: Send + 'static {
 //     /// ```
 //     pub fn remove<T>(&mut self) -> &mut Self
 //     where
-//         T: InsertComponents + Send + Sync + 'static,
+//         T: Bundle + Send + Sync + 'static,
 //     {
 //         self.commands.add(Remove::<T>::new(self.entity));
 //         self
@@ -869,7 +869,7 @@ pub trait Command: Send + 'static {
 
 // impl<T> Command for Spawn<T>
 // where
-//     T: InsertComponents + std::marker::Send + 'static + Sync,
+//     T: Bundle + std::marker::Send + 'static + Sync,
 // {
 //     fn apply(self, world: &mut World) {
 //         // world.make_inserter::<T>().insert(self.bundle);
@@ -877,22 +877,22 @@ pub trait Command: Send + 'static {
 //     }
 // }
 
-// /// A [`Command`] that consumes an iterator of [`InsertComponents`]s to spawn a series of entities.
+// /// A [`Command`] that consumes an iterator of [`Bundle`]s to spawn a series of entities.
 // ///
 // /// This is more efficient than spawning the entities individually.
 // pub struct SpawnBatch<I>
 // where
 //     I: IntoIterator,
-//     I::Item: InsertComponents,
+//     I::Item: Bundle,
 // {
-//     /// The iterator that returns the [`InsertComponents`]s which will be added to each newly-spawned entity.
+//     /// The iterator that returns the [`Bundle`]s which will be added to each newly-spawned entity.
 //     pub bundles_iter: I,
 // }
 
 // impl<I> Command for SpawnBatch<I>
 // where
 //     I: IntoIterator + Send + Sync + 'static,
-//     I::Item: InsertComponents,
+//     I::Item: Bundle,
 // {
 //     fn apply(self, world: &mut World) {
 //         // world.spawn_batch(self.bundles_iter);
@@ -900,24 +900,24 @@ pub trait Command: Send + 'static {
 //     }
 // }
 
-// /// A [`Command`] that consumes an iterator to add a series of [`InsertComponents`]s to a set of entities.
+// /// A [`Command`] that consumes an iterator to add a series of [`Bundle`]s to a set of entities.
 // /// If any entities do not already exist in the world, they will be spawned.
 // ///
 // /// This is more efficient than inserting the bundles individually.
 // pub struct InsertOrSpawnBatch<I, B>
 // where
 //     I: IntoIterator + Send + Sync + 'static,
-//     B: InsertComponents,
+//     B: Bundle,
 //     I::IntoIter: Iterator<Item = (Entity, B)>,
 // {
-//     /// The iterator that returns each [entity ID](Entity) and corresponding [`InsertComponents`].
+//     /// The iterator that returns each [entity ID](Entity) and corresponding [`Bundle`].
 //     pub bundles_iter: I,
 // }
 
 // impl<I, B> Command for InsertOrSpawnBatch<I, B>
 // where
 //     I: IntoIterator + Send + Sync + 'static,
-//     B: InsertComponents + 'static,
+//     B: Bundle + 'static,
 //     I::IntoIter: Iterator<Item = (Entity, B)>,
 // {
 //     fn apply(self, world: &mut World) {
@@ -946,17 +946,17 @@ pub trait Command: Send + 'static {
 //     }
 // }
 
-// /// A [`Command`] that adds the components in a [`InsertComponents`] to an entity.
+// /// A [`Command`] that adds the components in a [`Bundle`] to an entity.
 // pub struct Insert<T> {
 //     /// The entity to which the components will be added.
 //     pub entity: Entity,
-//     /// The [`InsertComponents`] containing the components that will be added to the entity.
+//     /// The [`Bundle`] containing the components that will be added to the entity.
 //     pub bundle: T,
 // }
 
 // impl<T> Command for Insert<T>
 // where
-//     T: InsertComponents + 'static + std::marker::Send,
+//     T: Bundle + 'static + std::marker::Send,
 // {
 //     fn apply(self, world: &mut World) {
 //         // if let Some(mut entity) = world.get_entity_mut(self.entity) {
@@ -969,7 +969,7 @@ pub trait Command: Send + 'static {
 // }
 
 // /// A [`Command`] that removes components from an entity.
-// /// For a [`InsertComponents`] type `T`, this will remove any components in the bundle.
+// /// For a [`Bundle`] type `T`, this will remove any components in the bundle.
 // /// Any components in the bundle that aren't found on the entity will be ignored.
 // #[derive(Debug)]
 // pub struct Remove<T> {
@@ -980,7 +980,7 @@ pub trait Command: Send + 'static {
 
 // impl<T> Command for Remove<T>
 // where
-//     T: InsertComponents + std::marker::Send + 'static,
+//     T: Bundle + std::marker::Send + 'static,
 // {
 //     fn apply(self, world: &mut World) {
 //         // EntityWorldMut;

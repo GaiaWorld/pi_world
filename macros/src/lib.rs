@@ -274,11 +274,12 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
 
     let tuple_types: Vec<_> = field_types.iter().map(|x| quote! { #x }).collect();
     let struct_name = &ast.ident;
-
+    let generics = ast.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     
     TokenStream::from(quote! {
         const _: () = {
-            impl #world_path::insert::InsertComponents for #struct_name {
+            impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
                 type Item = Self;
                 type State = (#(#world_path::insert::TState<#tuple_types>,)*);
 
