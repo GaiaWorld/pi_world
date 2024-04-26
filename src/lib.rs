@@ -37,6 +37,8 @@ pub mod commands;
 
 pub mod example;
 pub mod schedule_config;
+mod plugin;
+mod plugin_group;
 
 
 /// Most commonly used re-exported types.
@@ -63,6 +65,7 @@ pub mod prelude {
         world::{Entity, World, FromWorld},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
+        plugin::{Plugin, Plugins},
         schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
         schedule_config::{ScheduleLabel, StageLabel, SystemSet},
         exec_graph::ExecGraph,
