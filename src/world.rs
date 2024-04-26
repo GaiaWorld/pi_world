@@ -54,6 +54,7 @@ pub struct ArchetypeOk<'a>(
 #[derive(Debug)]
 pub struct World {
     pub(crate) single_res_map: DashMap<TypeId, SingleResource>,
+    pub(crate) single_res_arr: SafeVec<SingleResource>,
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
@@ -70,6 +71,7 @@ impl World {
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         Self {
             single_res_map: DashMap::default(),
+            single_res_arr: SafeVec::default(),
             multi_res_map: DashMap::default(),
             entities: SlotMap::default(),
             archetype_map: DashMap::new(),
@@ -140,22 +142,45 @@ impl World {
     pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
-    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
-    pub fn register_single_res<T: 'static>(&mut self, value: T) {
+    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
+    pub fn register_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
+        let r = SingleResource::new(value);
         assert!(self
             .single_res_map
-            .insert(tid, SingleResource::new(value))
+            .insert(tid, r.clone())
             .is_none());
+        self.single_res_arr.insert(r)
+    }
+    /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    #[inline]
+    pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&T> {
+        unsafe { transmute(self.index_single_res_ptr::<T>(index)) }
+    }
+    /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    #[inline]
+    pub fn index_single_res_mut<T: 'static>(&mut self, index: usize) -> Option<&mut T> {
+        unsafe { transmute(self.index_single_res_ptr::<T>(index)) }
+    }
+    #[inline]
+    pub(crate) fn index_single_res_ptr<T: 'static>(&self, index: usize) -> *mut T {
+        self.single_res_arr
+            .get(index)
+            .map_or(null_mut(), |r| unsafe {
+                transmute(r.0.downcast_ref_unchecked::<T>())
+            })
     }
     /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    #[inline]
     pub fn get_single_res<T: 'static>(&self) -> Option<&T> {
         unsafe { transmute(self.get_single_res_ptr::<T>()) }
     }
     /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    #[inline]
     pub fn get_single_res_mut<T: 'static>(&mut self) -> Option<&mut T> {
         unsafe { transmute(self.get_single_res_ptr::<T>()) }
     }
+    #[inline]
     pub(crate) fn get_single_res_ptr<T: 'static>(&self) -> *mut T {
         let tid = TypeId::of::<T>();
         self.single_res_map
