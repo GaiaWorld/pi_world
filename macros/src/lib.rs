@@ -278,7 +278,7 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
     
     TokenStream::from(quote! {
         const _: () = {
-            impl #world_path::insert::InsertComponents for #struct_name {
+            impl #world_path::insert::Bundle for #struct_name {
                 type Item = Self;
                 type State = (#(#world_path::insert::TState<#tuple_types>,)*);
 

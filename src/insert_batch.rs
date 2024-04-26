@@ -2,27 +2,27 @@ use std::iter::FusedIterator;
 use std::mem::transmute;
 
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, ShareArchetype};
-use crate::insert::{Insert, InsertComponents};
+use crate::insert::{Insert, Bundle};
 use crate::world::{Entity, World};
 
 pub struct InsertBatchIter<'w, I, Ins>
 where
-    I: Iterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: Iterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
     world: &'w mut World,
     inner: I,
     state: (
         ArchetypeWorldIndex,
         ShareArchetype,
-        <Ins as InsertComponents>::State,
+        <Ins as Bundle>::State,
     ),
 }
 
 impl<'w, I, Ins> InsertBatchIter<'w, I, Ins>
 where
-    I: Iterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: Iterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
     #[inline]
     pub(crate) fn new(world: &'w mut World, iter: I) -> Self {
@@ -48,8 +48,8 @@ where
 
 impl<I, Ins> Drop for InsertBatchIter<'_, I, Ins>
 where
-    I: Iterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: Iterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
     fn drop(&mut self) {
         for _ in self {}
@@ -58,8 +58,8 @@ where
 
 impl<I, Ins> Iterator for InsertBatchIter<'_, I, Ins>
 where
-    I: Iterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: Iterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
     type Item = Entity;
 
@@ -76,8 +76,8 @@ where
 
 impl<I, Ins> ExactSizeIterator for InsertBatchIter<'_, I, Ins>
 where
-    I: ExactSizeIterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: ExactSizeIterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
     fn len(&self) -> usize {
         self.inner.len()
@@ -86,7 +86,7 @@ where
 
 impl<I, Ins> FusedIterator for InsertBatchIter<'_, I, Ins>
 where
-    I: FusedIterator<Item = <Ins as InsertComponents>::Item>,
-    Ins: InsertComponents,
+    I: FusedIterator<Item = <Ins as Bundle>::Item>,
+    Ins: Bundle,
 {
 }

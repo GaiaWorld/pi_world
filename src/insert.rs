@@ -13,12 +13,12 @@ use crate::world::*;
 pub use pi_world_macros::Bundle;
 
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
-pub struct Inserter<'world, I: InsertComponents> {
+pub struct Inserter<'world, I: Bundle> {
     world: &'world World,
     state: (ArchetypeWorldIndex, ShareArchetype, I::State),
 }
 
-impl<'world, I: InsertComponents> Inserter<'world, I> {
+impl<'world, I: Bundle> Inserter<'world, I> {
     #[inline(always)]
     pub fn new(
         world: &'world World,
@@ -27,11 +27,11 @@ impl<'world, I: InsertComponents> Inserter<'world, I> {
         Self { world, state }
     }
     #[inline(always)]
-    pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
+    pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
         Insert::<I>::new(self.world, &self.state).insert(components)
     }
     #[inline(always)]
-    pub fn batch(&self, iter: impl IntoIterator<Item = <I as InsertComponents>::Item>) {
+    pub fn batch(&self, iter: impl IntoIterator<Item = <I as Bundle>::Item>) {
         let iter = iter.into_iter();
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
@@ -47,12 +47,12 @@ impl<'world, I: InsertComponents> Inserter<'world, I> {
     }
 }
 
-pub struct Insert<'world, I: InsertComponents> {
+pub struct Insert<'world, I: Bundle> {
     pub(crate) world: &'world World,
     state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
 }
 
-impl<'world, I: InsertComponents> Insert<'world, I> {
+impl<'world, I: Bundle> Insert<'world, I> {
     #[inline(always)]
     pub(crate) fn new(
         world: &'world World,
@@ -61,7 +61,7 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
         Insert { world, state }
     }
     #[inline]
-    pub fn insert(&self, components: <I as InsertComponents>::Item) -> Entity {
+    pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
         let row = self.state.1.table.alloc();
         let e = self.world.insert(self.state.0, row);
         I::insert(&self.state.2, components, e, row);
@@ -70,7 +70,7 @@ impl<'world, I: InsertComponents> Insert<'world, I> {
     }
 }
 
-impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
+impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     type State = (ArchetypeWorldIndex, ShareArchetype, I::State);
     type Item<'w> = Insert<'w, I>;
 
@@ -114,7 +114,7 @@ impl<I: InsertComponents + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-pub trait InsertComponents{
+pub trait Bundle{
     type Item;
 
     type State: Send + Sync + Sized;
@@ -146,7 +146,7 @@ macro_rules! impl_tuple_insert {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
-        impl<$($name: 'static),*> InsertComponents for ($($name,)*) {
+        impl<$($name: 'static),*> Bundle for ($($name,)*) {
             type Item = ($($name,)*);
             type State = ($(TState<$name>,)*);
 
@@ -174,7 +174,7 @@ macro_rules! impl_tuple_insert {
 }
 all_tuples!(impl_tuple_insert, 0, 32, F, S);
 
-// impl<T: 'static> InsertComponents for T {
+// impl<T: 'static> Bundle for T {
 //     type Item = T;
 //     type State = TState<T>;
 //     fn components() -> Vec<ComponentInfo> {

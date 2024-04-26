@@ -29,7 +29,7 @@ use crate::archetype::*;
 use crate::column::Column;
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
-use crate::insert::InsertComponents;
+use crate::insert::Bundle;
 use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
@@ -40,7 +40,7 @@ pub struct Alterer<
     'world,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
-    A: InsertComponents + 'static = (),
+    A: Bundle + 'static = (),
     D: DelComponents + 'static = (),
 > {
     query: Queryer<'world, Q, F>,
@@ -51,7 +51,7 @@ impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents,
+        A: Bundle,
         D: DelComponents,
     > Alterer<'world, Q, F, A, D>
 {
@@ -131,7 +131,7 @@ impl<
     pub fn alter(
         &mut self,
         e: Entity,
-        components: <A as InsertComponents>::Item,
+        components: <A as Bundle>::Item,
     ) -> Result<bool, QueryError> {
         let addr = check(
             &self.query.world,
@@ -152,7 +152,7 @@ impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents + 'static,
+        A: Bundle + 'static,
         D: DelComponents + 'static,
     > Drop for Alterer<'world, Q, F, A, D>
 {
@@ -172,7 +172,7 @@ pub struct Alter<
     'world,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
-    A: InsertComponents + 'static = (),
+    A: Bundle + 'static = (),
     D: DelComponents + 'static = (),
 > {
     query: Query<'world, Q, F>,
@@ -184,7 +184,7 @@ unsafe impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents,
+        A: Bundle,
         D: DelComponents,
     > Send for Alter<'world, Q, F, A, D>
 {
@@ -193,7 +193,7 @@ unsafe impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents,
+        A: Bundle,
         D: DelComponents,
     > Sync for Alter<'world, Q, F, A, D>
 {
@@ -203,7 +203,7 @@ impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents,
+        A: Bundle,
         D: DelComponents,
     > Alter<'world, Q, F, A, D>
 {
@@ -268,7 +268,7 @@ impl<
     pub fn alter(
         &mut self,
         e: Entity,
-        components: <A as InsertComponents>::Item,
+        components: <A as Bundle>::Item,
     ) -> Result<bool, QueryError> {
         let addr = check(
             &self.query.world,
@@ -289,7 +289,7 @@ impl<
 impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync + 'static,
-        A: InsertComponents + 'static,
+        A: Bundle + 'static,
         D: DelComponents + Send + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
@@ -355,7 +355,7 @@ impl<
 impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync,
-        A: InsertComponents + 'static,
+        A: Bundle + 'static,
         D: DelComponents + Send + 'static,
     > ParamSetElement for Alter<'_, Q, F, A, D>
 {
@@ -371,7 +371,7 @@ impl<
         'world,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
-        A: InsertComponents + 'static,
+        A: Bundle + 'static,
         D: DelComponents + 'static,
     > Drop for Alter<'world, Q, F, A, D>
 {
@@ -411,18 +411,18 @@ impl ArchetypeMapping {
         }
     }
 }
-pub struct AlterState<A: InsertComponents> {
+pub struct AlterState<A: Bundle> {
     sort_add: Vec<ComponentInfo>,
     sort_del: Vec<TypeId>,
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
     state_vec: Vec<MaybeUninit<A::State>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     moved_cloumns: Vec<(ColumnIndex, ColumnIndex)>, // 源目标原型的组件列位置映射列表
-    added_cloumns: Vec<ColumnIndex>, // 目标原型的新增加的组件位置列表，主要是给InsertComponents用的
+    added_cloumns: Vec<ColumnIndex>, // 目标原型的新增加的组件位置列表，主要是给Bundle用的
     del_cloumns: Vec<ColumnIndex>,   // 源原型的被删除的组件列位置列表
     mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
     deletes: Vec<(ArchetypeLocalIndex, Row)>, // 本次删除的本地原型位置及条目
 }
-impl<A: InsertComponents> AlterState<A> {
+impl<A: Bundle> AlterState<A> {
     pub(crate) fn new(mut add: Vec<ComponentInfo>, mut del: Vec<TypeId>) -> Self {
         add.sort();
         del.sort();
@@ -466,7 +466,7 @@ impl<A: InsertComponents> AlterState<A> {
                 &self.sort_del,
             );
 
-            // 因为InsertComponents的state都是不需要释放的，所以mut替换时，是安全的
+            // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
             let s = unsafe { self.state_vec.get_unchecked_mut(ar_index) };
             *s = MaybeUninit::new(A::init_state(world, &mapping.dst));
         }
@@ -485,12 +485,12 @@ pub struct AlterIter<
     'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static,
-    A: InsertComponents,
+    A: Bundle,
 > {
     it: QueryIter<'w, Q, F>,
     state: &'w mut AlterState<A>,
 }
-impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter<'w, Q, F, A> {
+impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F, A> {
     #[inline(always)]
     pub fn entity(&self) -> Entity {
         self.it.entity()
@@ -506,7 +506,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter
         )
     }
     #[inline(always)]
-    pub fn alter(&mut self, components: <A as InsertComponents>::Item) -> Result<bool, QueryError> {
+    pub fn alter(&mut self, components: <A as Bundle>::Item) -> Result<bool, QueryError> {
         self.state.alter(
             &self.it.world,
             self.it.ar_index,
@@ -516,7 +516,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> AlterIter
         )
     }
 }
-impl<'w, Q: FetchComponents, F: FilterComponents, A: InsertComponents> Iterator
+impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> Iterator
     for AlterIter<'w, Q, F, A>
 {
     type Item = Q::Item<'w>;
