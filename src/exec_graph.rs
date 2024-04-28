@@ -138,11 +138,14 @@ impl ExecGraph {
     }
     /// 初始化方法，每个图只能被执行一次， 执行前必须将system添加完毕
     /// 将system, res, archetype, 添加成图节点，并维护边
-    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, add_notify: bool) {
+    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, init_notify: bool) {
         let inner = self.0.as_ref();
-        inner
-            .to_len
-            .store(inner.nodes.len() as u32, Ordering::Relaxed);
+        let old_sys_len = inner.sys_len.load(Ordering::Relaxed);
+        let new_sys_len = systems.len();
+        // 首先初始化新增的system，有Insert的会产生对应的原型
+        for sys in systems.slice(old_sys_len as usize..new_sys_len) {
+            sys.initialize(world);
+        }
         // 遍历world上的单例资源，测试和system的读写关系
         for r in world.single_res_map.iter() {
             self.add_res_node(&systems, r.key(), r.value().name(), true, world);
@@ -174,11 +177,13 @@ impl ExecGraph {
             }
         }
         assert_eq!(to_len, self.to_len());
-        // 监听原型创建， 添加原型节点和边
-        let notify = Notify(self.clone(), systems, true, PhantomData);
-        world.listener_mgr.register_event(Share::new(notify));
-        // 整理world的监听器，合并内存
-        world.listener_mgr.collect();
+        if init_notify && old_sys_len == 0 {
+            // 监听原型创建， 添加原型节点和边
+            let notify = Notify(self.clone(), systems, true, PhantomData);
+            world.listener_mgr.register_event(Share::new(notify));
+            // 整理world的监听器，合并内存
+            world.listener_mgr.collect();
+        }
         // println!(
         //     "graph initialized, froms: {:?},  to_len:{}",
         //     self.froms(),
@@ -223,7 +228,7 @@ impl ExecGraph {
                         continue;
                     }
                 }
-                _ => break,
+                _ => (),
             }
         }
     }
@@ -241,7 +246,7 @@ impl ExecGraph {
         let id_name = (*archetype.id(), archetype.name().clone());
         // println!("add_archetype_node, id_name: {:?}", &id_name);
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
-        let node_index = inner.find_node(id_name);
+        let node_index = inner.find_archetype_node(id_name);
         let mut depend = ArchetypeDependResult::new();
         // 检查每个system和该原型的依赖关系，建立图连接
         for (system_index, node) in inner.nodes.iter().enumerate() {
@@ -260,7 +265,7 @@ impl ExecGraph {
                         inner.adjust_edge(system_index, node_index);
                         for id_name in depend.alters.iter() {
                             // 获得该原型id到原型节点索引
-                            let alter_node_index = inner.find_node(id_name.clone());
+                            let alter_node_index = inner.find_archetype_node(id_name.clone());
                             if alter_node_index != node_index {
                                 // 过滤掉alter的原型和原原型一样
                                 inner.adjust_edge(system_index, alter_node_index);
@@ -278,7 +283,7 @@ impl ExecGraph {
                         continue;
                     }
                 }
-                _ => break,
+                _ => (),
             }
         }
     }
@@ -443,11 +448,16 @@ pub struct GraphInner {
     to_count: ShareU32,
     sender: Sender<()>,
     receiver: Receiver<()>,
+    sys_len: ShareU32,
 }
 
 impl GraphInner {
-    // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系， 图的to_len也加1
-    fn find_node(&self, id_name: (u128, Cow<'static, str>)) -> NodeIndex {
+    // 判断是否包含指定id为key的图节点
+    fn contains_key(&self, id: &u128) -> bool {
+        self.map.contains_key(id)
+    }
+    // 查找原型图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系， 图的to_len也加1
+    fn find_archetype_node(&self, id_name: (u128, Cow<'static, str>)) -> NodeIndex {
         match self.map.entry(id_name.0) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
@@ -655,6 +665,7 @@ impl Default for GraphInner {
             to_count: ShareU32::new(0),
             sender,
             receiver,
+            sys_len: ShareU32::new(0),
         }
     }
 }

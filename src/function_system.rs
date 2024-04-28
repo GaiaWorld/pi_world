@@ -126,7 +126,9 @@ impl<P: SystemParam> ParamSystem<P> {
     }
     #[inline]
     pub(crate) fn initialize(&mut self, world: &mut World) {
-        self.param_state = Some(P::init_state(world, &mut self.system_meta));
+        if self.param_state.is_none() {
+            self.param_state = Some(P::init_state(world, &mut self.system_meta));
+        }
     }
     /// system depend the archetype.
     pub(crate) fn archetype_depend(

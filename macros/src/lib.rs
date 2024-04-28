@@ -240,6 +240,15 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 }
             }
 
+            impl<#punctuated_generics> #path::param_set::ParamSetElement for
+                #struct_name <#(#shadowed_lifetimes,)* #punctuated_generic_idents> #where_clause
+            {
+                fn init_set_state<'w>(world: &'w #path::world::World, system_meta: &'w mut #path::system::SystemMeta) -> Self::State {
+                    #state_struct_name {
+                        state: <#fields_alias::<'_, #punctuated_generic_idents> as #path::param_set::ParamSetElement>::init_set_state(world, system_meta),
+                    }
+                }
+            }
             // Safety: Each field is `ReadOnlySystemParam`, so this can only read from the `World`
             // unsafe impl<'w, 's, #punctuated_generics> #path::system::ReadOnlySystemParam for #struct_name #ty_generics #read_only_where_clause {}
         };
