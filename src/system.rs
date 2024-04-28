@@ -49,7 +49,7 @@ pub struct SystemMeta {
 }
 
 impl SystemMeta {
-    pub(crate) fn new<T: 'static>() -> Self {
+    pub fn new<T: 'static>() -> Self {
         Self {
             type_id: TypeId::of::<T>(),
             name: std::any::type_name::<T>().into(),
