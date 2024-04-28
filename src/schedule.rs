@@ -24,7 +24,7 @@ pub struct Schedule {
 
     add_listener: bool,
 
-    dirty_mark: u32, // 奇数表示脏， 偶数表示不脏
+    dirty_mark: bool,
 
 }
 
@@ -50,7 +50,7 @@ impl Schedule {
                 schedules: vec![MainSchedule.intern()],
             },
             add_listener,
-            dirty_mark: 0,
+            dirty_mark: false,
         }
     }
 
@@ -123,7 +123,7 @@ impl Schedule {
         Self::add_system_inner(&self.mian_config, &stage_label, index, &name, &mut self.schedule_graph, &self.set_configs);
 
         // 设置脏
-        self.dirty_mark |= 1;
+        self.dirty_mark = true;
         index
     }
 
@@ -157,7 +157,7 @@ impl Schedule {
     }
 
     pub fn try_initialize(&mut self, world: &mut World) {
-        if self.dirty_mark & 1 == 0 { // 偶数表示不脏
+        if self.dirty_mark { // 偶数表示不脏
            return;
         }
         Share::get_mut(&mut self.systems).unwrap().collect();
@@ -166,18 +166,16 @@ impl Schedule {
             sys.initialize(world);
         }
         
-        // 如果被设置为需要添加监听器， 并且system是第一次脏， 则需要添加监听器
-        let add_listener = self.add_listener && self.dirty_mark == 1;
         // 初始化图
         for (_name, schedule) in self.schedule_graph.iter_mut() {
             // println!("stage:{:?} initialize", name);
             for (_, stage) in schedule.iter_mut() {
-                stage.initialize(self.systems.clone(), world, add_listener);
+                stage.initialize(self.systems.clone(), world, self.add_listener);
             }
         }
 
 
-        self.dirty_mark += 1;
+        self.dirty_mark = true;
     }
 
     pub fn run<A: AsyncRuntime + AsyncRuntimeExt>(
