@@ -7,6 +7,39 @@
 #[warn(async_fn_in_trait)]
 
 extern crate test;
+/// Most commonly used re-exported types.
+pub mod prelude {
+    #[cfg(target_arch = "wasm32")]
+    pub type App = crate::app::SingleThreadApp;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub type App = crate::app::MultiThreadApp;
+
+    #[doc(hidden)]
+    pub use crate::{
+        query::{Query, QueryError},
+        insert::{Insert, Bundle},
+        insert_batch::InsertBatchIter,
+        alter::Alter,
+        param_set::ParamSet,
+        single_res::{SingleRes, SingleResMut},
+        multi_res::{MultiRes, MultiResMut},
+        filter::{Added, Changed, Removed, With, Without, Or, FilterComponents},
+        fetch::{Has, Mut, OrDefault},
+        system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
+        system_params::{SystemParam, Local},
+        world::{Entity, World, FromWorld},
+        listener::Listener,
+        app::{SingleThreadApp, MultiThreadApp},
+        plugin::{Plugin, Plugins},
+        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
+        schedule_config::{ScheduleLabel, StageLabel, SystemSet, IntoSystemSetConfigs, IntoSystemConfigs},
+        exec_graph::ExecGraph,
+        dot::{Dot, Config},
+        safe_vec::SafeVec,
+        commands::{Command, CommandQueue},
+    };
+}
 
 pub mod column;
 pub mod table;
@@ -39,38 +72,3 @@ pub mod example;
 pub mod schedule_config;
 mod plugin;
 mod plugin_group;
-
-
-/// Most commonly used re-exported types.
-pub mod prelude {
-    #[cfg(target_arch = "wasm32")]
-    pub type App = crate::app::SingleThreadApp;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub type App = crate::app::MultiThreadApp;
-
-    #[doc(hidden)]
-    pub use crate::{
-        query::{Query, QueryError},
-        insert::{Insert, Bundle},
-        insert_batch::InsertBatchIter,
-        alter::Alter,
-        param_set::ParamSet,
-        single_res::{SingleRes, SingleResMut},
-        multi_res::{MultiRes, MultiResMut},
-        filter::{Added, Changed, Removed, With, Without, Or},
-        fetch::{Has, Mut},
-        system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
-        system_params::{SystemParam, Local},
-        world::{Entity, World, FromWorld},
-        listener::Listener,
-        app::{SingleThreadApp, MultiThreadApp},
-        plugin::{Plugin, Plugins},
-        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
-        schedule_config::{ScheduleLabel, StageLabel, SystemSet},
-        exec_graph::ExecGraph,
-        dot::{Dot, Config},
-        safe_vec::SafeVec,
-        commands::{Command, CommandQueue},
-    };
-}
