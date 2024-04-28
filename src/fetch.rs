@@ -369,6 +369,16 @@ impl<'a, T: ?Sized> Mut<'a, T> {
         self.dirty.record(self.e, self.row);
         self.value
     }
+
+    #[inline(always)]
+    pub fn bypass_change_detection(&mut self) -> &mut T {
+        self.value
+    }
+
+    #[inline(always)]
+    pub fn set_changed(&mut self) {
+        self.dirty.record(self.e, self.row);
+    }
 }
 impl<'a, T: ?Sized> Deref for Mut<'a, T> {
     type Target = T;
