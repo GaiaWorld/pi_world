@@ -161,7 +161,7 @@ impl Schedule {
     }
 
     pub fn try_initialize(&mut self, world: &mut World) {
-        if self.dirty_mark { // 偶数表示不脏
+        if !self.dirty_mark {
            return;
         }
         Share::get_mut(&mut self.systems).unwrap().collect();
@@ -179,7 +179,7 @@ impl Schedule {
         }
 
 
-        self.dirty_mark = true;
+        self.dirty_mark = false;
     }
 
     pub fn run<A: AsyncRuntime + AsyncRuntimeExt>(
