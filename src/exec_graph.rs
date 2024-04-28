@@ -151,7 +151,7 @@ impl ExecGraph {
         }
         // 遍历world上的单例资源，测试和system的读写关系
         for r in world.single_res_map.iter() {
-            self.add_res_node(&systems, range.clone(), r.key(), r.value().name(), true, world);
+            self.add_res_node(&systems, range.clone(), r.key(), r.value().0.name(), true, world);
         }
         // 遍历world上的多例资源，测试和system的读写关系
         for r in world.multi_res_map.iter() {
@@ -306,8 +306,10 @@ impl ExecGraph {
         world: &'static World,
     ) -> std::result::Result<(), RecvError> {
         let inner = self.0.as_ref();
-        assert!(inner.to_len.load(Ordering::Relaxed) > 0);
         let to_len = inner.to_len.load(Ordering::Relaxed);
+        if to_len == 0 {
+            return Ok(());
+        }
         inner.to_count.store(to_len, Ordering::Relaxed);
         // println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
 
