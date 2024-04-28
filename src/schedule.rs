@@ -136,14 +136,18 @@ impl Schedule {
         set_configs: &HashMap<Interned<dyn SystemSet>, BaseConfig>,
     ) {
         if config.schedules.len() > 0 {
+            // println!("add_system_inner:{:?}", &config.schedules);
+            // println!("add_system_inner11:{:?}", &schedule_graph.get(&MainSchedule.intern()).is_some());
             for schedule_label in config.schedules.iter() {
                 let schedule = schedule_graph.entry(*schedule_label);
                 let schedule = schedule.or_default();
-
+                
                 let stage = schedule.entry(stage_label.clone());
                 let stage = stage.or_default();
 
                 stage.add_system(index, name.clone());
+
+                // println!("add_system_inner:{:?}", (schedule_label, &schedule_graph.get(&MainSchedule.intern()).is_some()));
             }
         }
 
@@ -186,10 +190,16 @@ impl Schedule {
         rt: &A,
         schedule: &Interned<dyn ScheduleLabel>,
     ) {
+        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some(), self.schedule_graph.len()));
         self.try_initialize(world);
 
-        // println!("run_stage, stage:{:?}", stage);
-        let g = self.schedule_graph.get_mut(schedule).unwrap();
+        let g = match self.schedule_graph.get_mut(schedule) {
+            Some(r) => r,
+            None => return,
+        };
+
+        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some()));
+        // let g = self.schedule_graph.get_mut(schedule).unwrap();
 
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
