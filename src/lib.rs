@@ -25,7 +25,7 @@ pub mod prelude {
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
         filter::{Added, Changed, Removed, With, Without, Or, FilterComponents},
-        fetch::{Has, Mut, OrDefault},
+        fetch::{Has, Mut, OrDefault, Ref},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
         world::{Entity, World, FromWorld},
