@@ -152,6 +152,20 @@ impl World {
             .is_none());
         self.single_res_arr.insert(r)
     }
+
+    /// 注册单例资源， 如果已经注册，则忽略
+    #[inline]
+    pub fn init_single_res<T: 'static + FromWorld>(&mut self) {
+        let tid = TypeId::of::<T>();
+        if self
+            .single_res_map
+            .get(&tid).is_none() {
+
+            let s = SingleResource::new(T::from_world(self));
+            self.single_res_map.insert(tid, s.clone());
+            self.single_res_arr.insert(s);
+        }
+    }
     /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
     #[inline]
     pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&T> {
@@ -170,6 +184,7 @@ impl World {
                 transmute(r.0.downcast_ref_unchecked::<T>())
             })
     }
+
     /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
     #[inline]
     pub fn get_single_res<T: 'static>(&self) -> Option<&T> {
@@ -200,6 +215,7 @@ impl World {
             .insert(tid, MultiResource::new::<T>())
             .is_none());
     }
+
     /// system系统读取多例资源
     pub(crate) fn system_read_multi_res(&self, tid: &TypeId) -> Option<MultiResource> {
         self.multi_res_map.get(&tid).map(|r| r.clone())

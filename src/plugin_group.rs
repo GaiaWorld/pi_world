@@ -200,18 +200,18 @@ impl PluginGroupBuilder {
 }
 
 pub trait WorldPluginExtent {
-    fn add_plugins<M>(&mut self, plugins: impl Plugins<M>);
+    fn add_plugins<M>(&mut self, plugins: impl Plugins<M>) -> &mut Self;
 
-    fn add_boxed_plugin(&mut self, plugin: Box<dyn Plugin>);
+    fn add_boxed_plugin(&mut self, plugin: Box<dyn Plugin>) -> &mut Self;
 }
 
 impl WorldPluginExtent for App {
-    fn add_plugins<M>(&mut self, plugins: impl Plugins<M>) {
+    fn add_plugins<M>(&mut self, plugins: impl Plugins<M>) -> &mut Self {
         plugins.add_to_app(self);
-        // self
+        self
     }
 
-    fn add_boxed_plugin(&mut self, plugin: Box<dyn Plugin>) {
+    fn add_boxed_plugin(&mut self, plugin: Box<dyn Plugin>) -> &mut Self {
         // log::debug!("added plugin: {}", plugin.name());
         // if plugin.is_unique() && !self.plugin_name_added.insert(plugin.name().to_string()) {
         //     Err(AppError::DuplicatePlugin {
@@ -231,6 +231,7 @@ impl WorldPluginExtent for App {
         }
         // self.plugin_registry[plugin_position_in_registry] = plugin;
         // Ok(self)
+        self
     }
 }
 

@@ -49,20 +49,22 @@ impl App<MultiTaskRuntime> {
 impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
 
     /// 配置系统集
-    pub fn configure_set(&mut self, _stage_label: impl StageLabel, config: impl IntoSystemSetConfigs) {
+    pub fn configure_set(&mut self, _stage_label: impl StageLabel, config: impl IntoSystemSetConfigs) -> &mut Self {
         self.schedule.configure_set(config.into_configs());
+        self
     }
 
     // 添加system
-    pub fn add_system<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> usize {
+    pub fn add_system<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> &mut Self {
         let stage_label = stage_label.intern();
         let system_config = system.into_configs();
                 
         if stage_label == Startup.intern() {
-            self.startup_schedule.add_system(stage_label, system_config)
+            self.startup_schedule.add_system(stage_label, system_config);
         } else {
-            self.schedule.add_system(stage_label, system_config)
+            self.schedule.add_system(stage_label, system_config);
         }
+        self
     }
 
     /// 同步运行日程
