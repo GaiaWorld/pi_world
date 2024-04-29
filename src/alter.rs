@@ -141,7 +141,7 @@ impl<
         )?;
         self.state.alter(
             &self.query.world,
-            self.query.state.cache_mapping.1,
+            self.query.cache_mapping.get_mut().1,
             e,
             addr.row,
             components,
@@ -278,7 +278,7 @@ impl<
         )?;
         self.state.alter(
             &self.query.world,
-            self.query.state.cache_mapping.1,
+            self.query.cache_mapping.get_mut().1,
             e,
             addr.row,
             components,

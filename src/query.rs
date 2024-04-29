@@ -383,6 +383,7 @@ pub(crate) fn check<'w>(
             Some(v) => *v,
             None => return Err(QueryError::NoSuchArchetype),
         };
+        cache_mapping.0 = addr.index;
     }
     Ok(addr)
 }

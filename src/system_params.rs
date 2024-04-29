@@ -5,7 +5,7 @@ use std::{any::TypeId, borrow::Cow, mem::transmute, ops::{Deref, DerefMut}};
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     system::SystemMeta,
-    world::World,
+    world::{Tick, World},
 };
 
 use pi_proc_macros::all_tuples;
@@ -69,11 +69,13 @@ pub trait SystemParam: Sized + Send + Sync {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world>;
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self;
 }
 
@@ -131,6 +133,7 @@ impl SystemParam for &World {
         world: &'world World,
         _system_meta: &'world SystemMeta,
         _state: &'world mut Self::State,
+        _tick: Tick,
     ) -> Self::Item<'world> {
         world
     }

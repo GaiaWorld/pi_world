@@ -34,12 +34,14 @@ use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
 use pi_null::Null;
-use pi_share::Share;
+use pi_share::{Share, ShareUsize};
 use pi_slot::{Iter, SlotMap};
 
 new_key_type! {
     pub struct Entity;
 }
+/// This is used to power change detection.
+pub type Tick = usize;
 
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
@@ -63,6 +65,7 @@ pub struct World {
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
+    tick: ShareUsize,
 }
 impl World {
     pub fn new() -> Self {
@@ -80,7 +83,14 @@ impl World {
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
+            tick: ShareUsize::new(1),
         }
+    }
+    pub fn tick(&self) -> Tick {
+        self.tick.load(Ordering::Relaxed)
+    }
+    pub fn increment_tick(&self) -> Tick {
+        self.tick.fetch_add(1, Ordering::Relaxed)
     }
     /// 批量插入
     pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>

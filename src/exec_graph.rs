@@ -117,6 +117,7 @@ pub struct ExecGraph(Share<GraphInner>);
 impl ExecGraph {
     pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
         let inner = self.0.as_ref();
+        inner.to_len.fetch_add(1, Ordering::Relaxed);
         inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name)))
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
