@@ -263,7 +263,7 @@ impl<'a, T: 'static> Ref<'a, T> {
     }
 
     #[inline(always)]
-    pub fn is_changed(&self) {
+    pub fn is_changed(&self) -> bool {
         todo!()
     }
 }
