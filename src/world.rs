@@ -162,8 +162,9 @@ impl World {
             .get(&tid).is_none() {
 
             let s = SingleResource::new(T::from_world(self));
-            self.single_res_map.insert(tid, s.clone());
-            self.single_res_arr.insert(s);
+            let index = self.single_res_arr.insert(s.clone());
+            self.single_res_map.insert(tid, (s, index));
+            
         }
     }
 
