@@ -187,7 +187,7 @@ impl Archetype {
                 ListenType::Add =>  c.added.insert_listener(owner),
                 ListenType::ComponentChange => c.changed.insert_listener(owner),
                 ListenType::ComponentRemove => c.removed.insert_listener(owner),
-                ListenType::EntityDelete => c.removed.insert_listener(owner),
+                ListenType::EntityDestroy => c.removed.insert_listener(owner),
             }
         }
     }
@@ -208,7 +208,7 @@ impl Archetype {
                 ListenType::Add => &c.added,
                 ListenType::ComponentChange => &c.changed,
                 ListenType::ComponentRemove => &c.removed,
-                ListenType::EntityDelete => &c.removed,
+                ListenType::EntityDestroy => &c.removed,
             };
             d.find(index, owner, *ltype, vec);
         }

@@ -115,9 +115,10 @@ impl<
             state: &mut self.state,
         }
     }
+    /// 标记销毁实体
     #[inline]
-    pub fn delete(&mut self, e: Entity) -> Result<bool, QueryError> {
-        delete(
+    pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
+        destroy(
             &self.query.world,
             e,
             &self.state.vec,
@@ -252,9 +253,10 @@ impl<
             state: &mut self.state,
         }
     }
+    /// 标记销毁实体
     #[inline]
-    pub fn delete(&mut self, e: Entity) -> Result<bool, QueryError> {
-        delete(
+    pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
+        destroy(
             &self.query.world,
             e,
             &self.state.vec,
@@ -496,8 +498,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
     pub fn entity(&self) -> Entity {
         self.it.entity()
     }
+    /// 标记销毁当前迭代的实体
     #[inline(always)]
-    pub fn delete(&mut self) -> Result<bool, QueryError> {
+    pub fn destroy(&mut self) -> Result<bool, QueryError> {
         delete_row(
             &self.it.world,
             &self.it.ar,
@@ -530,9 +533,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> Iterator
     }
 }
 
-/// 标记删除
+/// 标记销毁实体
 #[inline(always)]
-fn delete<'w>(
+fn destroy<'w>(
     world: &'w World,
     entity: Entity,
     vec: &Vec<ArchetypeMapping>,

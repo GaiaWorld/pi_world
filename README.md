@@ -12,7 +12,6 @@
 ## 新实现Local的SystemParm
 
 
-去掉DelComponent， 改为Budle
 增加World的tick， 在Column上增加Option<SafeVec<Tick>>, Ref和Mut上增加Ticker.is_changed, world_tick, last_tick(system), Ticked Changed
 增加Deleted的entity，保留其Component，直到所以监听Deleted的system都执行完毕再删除Entity
 ListenType::Remove要修改在原型上加Removes
