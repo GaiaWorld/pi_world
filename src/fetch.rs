@@ -180,7 +180,7 @@ pub struct Ref<'w, T> (PhantomData<&'w T>);
 impl<T: 'static> FetchComponents for Ref<'_, T> {
     type Fetch<'w> = &'w Column;
     type Item<'w> = Ref<'w, T>;
-    type ReadOnly = &'static T;
+    type ReadOnly = Ref<'static, T>;
     type State = ColumnIndex;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
