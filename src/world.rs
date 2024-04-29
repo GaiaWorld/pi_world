@@ -53,7 +53,7 @@ pub struct ArchetypeOk<'a>(
 
 #[derive(Debug)]
 pub struct World {
-    pub(crate) single_res_map: DashMap<TypeId, SingleResource>,
+    pub(crate) single_res_map: DashMap<TypeId, (SingleResource, usize)>,
     pub(crate) single_res_arr: SafeVec<SingleResource>,
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
@@ -142,15 +142,15 @@ impl World {
     pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
-    /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
+    /// 注册指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
     pub fn register_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
         let r = SingleResource::new(value);
-        assert!(self
-            .single_res_map
-            .insert(tid, r.clone())
-            .is_none());
-        self.single_res_arr.insert(r)
+        let r = self.single_res_map.entry(tid) .or_insert_with(|| {
+            let index = self.single_res_arr.insert(r.clone());
+            (r, index)
+        });
+        r.value().1
     }
 
     /// 注册单例资源， 如果已经注册，则忽略
@@ -165,6 +165,13 @@ impl World {
             self.single_res_map.insert(tid, s.clone());
             self.single_res_arr.insert(s);
         }
+    }
+
+	/// 获得指定的单例资源的索引
+    #[inline]
+    pub fn get_single_res_index<T: 'static>(&self) -> Option<usize> {
+        let tid = TypeId::of::<T>();
+        self.single_res_map.get(&tid).map(|r| r.value().1)
     }
     /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
     #[inline]
@@ -201,11 +208,11 @@ impl World {
         self.single_res_map
             .get(&tid)
             .map_or(null_mut(), |r| unsafe {
-                transmute(r.value().0.downcast_ref_unchecked::<T>())
+                transmute(r.value().0.0.downcast_ref_unchecked::<T>())
             })
     }
     pub(crate) fn get_single_res_any(&self, tid: &TypeId) -> Option<SingleResource> {
-        self.single_res_map.get(tid).map(|r| r.value().clone())
+        self.single_res_map.get(tid).map(|r| r.value().0.clone())
     }
     /// 注册指定类型的多例资源，为了安全，必须保证不在ECS执行中调用
     pub fn register_multi_res<T: 'static>(&mut self) {

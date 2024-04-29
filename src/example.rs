@@ -469,9 +469,16 @@ mod test_mod {
                 let r = i0.alter(e, ());
                 dbg!(e, r);
             }
+            let mut it = i0.iter_mut();
+            while let Some(a0) = it.next() {
+                if a0.0 == 1 {
+                    // let e = it.entity(); 
+                    let _ = it.delete();
+                }
+            }
             println!("alter1: end");
         }
-        pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>)>) {
+        pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>,)>) {
             println!("removed_l");
             for (e, age0, _) in q0.iter() {
                 println!("e {:?}, age0: {:?}", e, age0);
