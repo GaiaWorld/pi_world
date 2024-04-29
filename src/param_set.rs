@@ -13,6 +13,8 @@ use crate::system_params::SystemParam;
 use crate::world::*;
 use pi_proc_macros::all_tuples;
 
+pub use pi_world_macros::ParamSetElement;
+
 pub trait ParamSetElement: SystemParam {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
 }
