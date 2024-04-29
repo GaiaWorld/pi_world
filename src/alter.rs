@@ -338,18 +338,20 @@ impl<
         world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(world, &mut state.1, &state.0);
-        Alter::new(Query::new(world, &mut state.0), &mut state.1)
+        Alter::new(Query::new(world, &mut state.0, tick), &mut state.1)
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 impl<

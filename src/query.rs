@@ -99,6 +99,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
 pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
     pub(crate) state: &'world mut QueryState<Q, F>,
+    tick: Tick,
     // 缓存上次的索引映射关系
     pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
@@ -106,11 +107,12 @@ unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Send for Query<'wor
 unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'world, Q, F> {}
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     #[inline]
-    pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>) -> Self {
+    pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
         let cache_mapping = UnsafeCell::new(state.cache_mapping);
         Query {
             world,
             state,
+            tick,
             cache_mapping,
         }
     }
@@ -199,16 +201,18 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
-        Query::new(world, state)
+        Query::new(world, state, tick)
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement

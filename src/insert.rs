@@ -16,6 +16,7 @@ pub use pi_world_macros::Bundle;
 pub struct Inserter<'world, I: Bundle> {
     world: &'world World,
     state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+    tick: Tick,
 }
 
 impl<'world, I: Bundle> Inserter<'world, I> {
@@ -23,12 +24,13 @@ impl<'world, I: Bundle> Inserter<'world, I> {
     pub fn new(
         world: &'world World,
         state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+        tick: Tick,
     ) -> Self {
-        Self { world, state }
+        Self { world, state, tick }
     }
     #[inline(always)]
     pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
-        Insert::<I>::new(self.world, &self.state).insert(components)
+        Insert::<I>::new(self.world, &self.state, self.tick).insert(components)
     }
     #[inline(always)]
     pub fn batch(&self, iter: impl IntoIterator<Item = <I as Bundle>::Item>) {
@@ -50,6 +52,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
 pub struct Insert<'world, I: Bundle> {
     pub(crate) world: &'world World,
     state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
+    tick: Tick,
 }
 
 impl<'world, I: Bundle> Insert<'world, I> {
@@ -57,8 +60,9 @@ impl<'world, I: Bundle> Insert<'world, I> {
     pub(crate) fn new(
         world: &'world World,
         state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
+        tick: Tick,
     ) -> Self {
-        Insert { world, state }
+        Insert { world, state, tick }
     }
     #[inline]
     pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
@@ -101,16 +105,18 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
-        Insert::new(world, state)
+        Insert::new(world, state, tick)
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 

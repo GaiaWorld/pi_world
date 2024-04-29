@@ -106,7 +106,7 @@ impl World {
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = self.find_archtype(id, components);
         let s = I::init_state(self, &ar);
-        Inserter::new(self, (ar_index, ar, s))
+        Inserter::new(self, (ar_index, ar, s), self.tick())
     }
 
     /// 是否存在实体
@@ -155,27 +155,26 @@ impl World {
     /// 注册指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
     pub fn register_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
-        let r = SingleResource::new(value);
         let r = self.single_res_map.entry(tid) .or_insert_with(|| {
+            let r = SingleResource::new(value);
             let index = self.single_res_arr.insert(r.clone());
             (r, index)
         });
         r.value().1
     }
 
-    /// 注册单例资源， 如果已经注册，则忽略
-    #[inline]
-    pub fn init_single_res<T: 'static + FromWorld>(&mut self) {
+    /// 注册单例资源， 如果已经注册，则忽略，为了安全，必须保证不在ECS执行中调用，返回索引
+    pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize{
         let tid = TypeId::of::<T>();
-        if self
-            .single_res_map
-            .get(&tid).is_none() {
-
-            let s = SingleResource::new(T::from_world(self));
-            let index = self.single_res_arr.insert(s.clone());
-            self.single_res_map.insert(tid, (s, index));
-            
+        if let Some(r) = self.single_res_map.get(&tid) {
+            return r.value().1
         }
+        let r = SingleResource::new(T::from_world(self));
+        let r = self.single_res_map.entry(tid) .or_insert_with(|| {
+            let index = self.single_res_arr.insert(r.clone());
+            (r, index)
+        });
+        r.value().1
     }
 
 	/// 获得指定的单例资源的索引

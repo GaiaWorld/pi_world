@@ -79,7 +79,7 @@ pub trait SystemParam: Sized + Send + Sync {
     ) -> Self;
 }
 
-pub struct Local<'a, T>(&'a mut T);
+pub struct Local<'a, T>(&'a mut T, Tick);
 
 impl<'a, T: Sized> Deref for Local<'a, T> {
     type Target = T;
@@ -107,16 +107,18 @@ impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
-        Local(state)
+        Local(state, tick)
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -142,8 +144,9 @@ impl SystemParam for &World {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -161,6 +164,7 @@ impl SystemParam for &mut World {
         world: &'world World,
         _system_meta: &'world SystemMeta,
         _state: &'world mut Self::State,
+        _tick: Tick,
     ) -> Self::Item<'world> {
         unsafe { &mut *(world as *const World as usize as *mut World) }
     }
@@ -169,8 +173,9 @@ impl SystemParam for &mut World {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -209,18 +214,20 @@ macro_rules! impl_system_param_tuple {
                 _world: &'world World,
                 _system_meta: &'world SystemMeta,
                 state: &'world mut Self::State,
+                _tick: Tick,
             ) -> Self::Item<'world> {
                 let ($($param,)*) = state;
-                ($($param::get_param(_world, _system_meta, $param),)*)
+                ($($param::get_param(_world, _system_meta, $param, _tick),)*)
             }
             #[inline]
             fn get_self<'world>(
                 _world: &'world World,
                 _system_meta: &'world SystemMeta,
                 state: &'world mut Self::State,
+                _tick: Tick,
             ) -> Self {
                 let ($($param,)*) = state;
-                ($($param::get_self(_world, _system_meta, $param),)*)
+                ($($param::get_self(_world, _system_meta, $param, _tick),)*)
             }
         }
     };
