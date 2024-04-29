@@ -176,7 +176,7 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     let struct_name = &ast.ident;
 
     let fields_alias =
-        ensure_no_collision(format_ident!("{}__StructFieldsAlias", struct_name), token_stream.clone());
+        ensure_no_collision(format_ident!("__{}StructFieldsAlias", struct_name), token_stream.clone());
 
     
     let state_struct_visibility = &ast.vis;
@@ -559,4 +559,55 @@ lazy_static! {
     // static ref BEVY_UTILS: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 }
 
+fn get_idents(fmt_string: fn(usize) -> String, count: usize) -> Vec<Ident> {
+    (0..count)
+        .map(|i| Ident::new(&fmt_string(i), proc_macro2::Span::call_site()))
+        .collect::<Vec<Ident>>()
+}
+
 // use bevy_utils::label::DynEq
+#[proc_macro]
+pub fn impl_param_set(_input: TokenStream) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    let max_params = 8;
+    let params = get_idents(|i| format!("P{i}"), max_params);
+    // let metas = get_idents(|i| format!("m{i}"), max_params);
+    let mut param_fn_muts = Vec::new();
+    for (i, param) in params.iter().enumerate() {
+        let fn_name = Ident::new(&format!("p{i}"), proc_macro2::Span::call_site());
+        let index = Index::from(i);
+        let ordinal = match i {
+            1 => "1st".to_owned(),
+            2 => "2nd".to_owned(),
+            3 => "3rd".to_owned(),
+            x => format!("{x}th"),
+        };
+        let comment =
+            format!("Gets exclusive access to the {ordinal} parameter in this [`ParamSet`].");
+        param_fn_muts.push(quote! {
+            #[doc = #comment]
+            /// No other parameters may be accessed while this one is active.
+            pub fn #fn_name(&mut self) -> &mut SystemParamItem<'w, #param>{
+                // SAFETY: systems run without conflicts with other systems.
+                // Conflicting params in ParamSet are not accessible at the same time
+                // ParamSets are guaranteed to not conflict with other SystemParams
+                &mut self.0.#index
+            }
+        });
+    }
+
+    for param_count in 1..=max_params {
+        let param = &params[0..param_count];
+        // let meta = &metas[0..param_count];
+        let param_fn_mut = &param_fn_muts[0..param_count];
+        tokens.extend(TokenStream::from(quote! {
+
+            impl<'w,  #(#param: ParamSetElement + 'static,)*> ParamSet<'w, (#(#param,)*)>
+            {
+                #(#param_fn_mut)*
+            }
+        }));
+    }
+
+    tokens
+}

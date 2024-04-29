@@ -22,7 +22,6 @@ use std::mem::{transmute, MaybeUninit};
 use std::ops::Range;
 
 use pi_null::Null;
-use pi_proc_macros::all_tuples;
 use pi_share::Share;
 
 use crate::archetype::*;
@@ -41,7 +40,7 @@ pub struct Alterer<
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
-    D: DelComponents + 'static = (),
+    D: Bundle + 'static = (),
 > {
     query: Queryer<'world, Q, F>,
     state: AlterState<A>,
@@ -52,7 +51,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle,
-        D: DelComponents,
+        D: Bundle,
     > Alterer<'world, Q, F, A, D>
 {
     // 将新多出来的原型，创建原型空映射
@@ -153,7 +152,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
-        D: DelComponents + 'static,
+        D: Bundle + 'static,
     > Drop for Alterer<'world, Q, F, A, D>
 {
     fn drop(&mut self) {
@@ -173,7 +172,7 @@ pub struct Alter<
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
-    D: DelComponents + 'static = (),
+    D: Bundle + 'static = (),
 > {
     query: Query<'world, Q, F>,
     state: &'world mut AlterState<A>,
@@ -185,7 +184,7 @@ unsafe impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle,
-        D: DelComponents,
+        D: Bundle,
     > Send for Alter<'world, Q, F, A, D>
 {
 }
@@ -194,7 +193,7 @@ unsafe impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle,
-        D: DelComponents,
+        D: Bundle,
     > Sync for Alter<'world, Q, F, A, D>
 {
 }
@@ -204,7 +203,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle,
-        D: DelComponents,
+        D: Bundle,
     > Alter<'world, Q, F, A, D>
 {
     #[inline]
@@ -290,7 +289,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync + 'static,
         A: Bundle + 'static,
-        D: DelComponents + Send + 'static,
+        D: Bundle + Send + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
     type State = (QueryState<Q, F>, AlterState<A>);
@@ -356,7 +355,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + Send + Sync,
         A: Bundle + 'static,
-        D: DelComponents + Send + 'static,
+        D: Bundle + Send + 'static,
     > ParamSetElement for Alter<'_, Q, F, A, D>
 {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
@@ -372,7 +371,7 @@ impl<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
-        D: DelComponents + 'static,
+        D: Bundle + 'static,
     > Drop for Alter<'world, Q, F, A, D>
 {
     fn drop(&mut self) {
@@ -413,7 +412,7 @@ impl ArchetypeMapping {
 }
 pub struct AlterState<A: Bundle> {
     sort_add: Vec<ComponentInfo>,
-    sort_del: Vec<TypeId>,
+    sort_del: Vec<ComponentInfo>,
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
     state_vec: Vec<MaybeUninit<A::State>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     moved_cloumns: Vec<(ColumnIndex, ColumnIndex)>, // 源目标原型的组件列位置映射列表
@@ -423,7 +422,7 @@ pub struct AlterState<A: Bundle> {
     deletes: Vec<(ArchetypeLocalIndex, Row)>, // 本次删除的本地原型位置及条目
 }
 impl<A: Bundle> AlterState<A> {
-    pub(crate) fn new(mut add: Vec<ComponentInfo>, mut del: Vec<TypeId>) -> Self {
+    pub(crate) fn new(mut add: Vec<ComponentInfo>, mut del: Vec<ComponentInfo>) -> Self {
         add.sort();
         del.sort();
         Self {
@@ -569,7 +568,7 @@ pub(crate) fn mapping_init<'a>(
     add_cloumns: &'a mut Vec<ColumnIndex>,
     del_cloumns: &'a mut Vec<ColumnIndex>,
     sort_add: &Vec<ComponentInfo>,
-    sort_del: &Vec<TypeId>,
+    sort_del: &Vec<ComponentInfo>,
 ) {
     let add_len = sort_add.len();
     let del_len = sort_del.len();
@@ -586,14 +585,14 @@ pub(crate) fn mapping_init<'a>(
     if !Share::ptr_eq(&mapping.src, &mapping.dst) {
         // 获得相同组件的列位置映射
         for t in moving {
-            let src_column = mapping.src.get_column_index(&t);
-            let dst_column = mapping.dst.get_column_index(&t);
+            let src_column = mapping.src.get_column_index(&t.type_id);
+            let dst_column = mapping.dst.get_column_index(&t.type_id);
             move_cloumns.push((src_column, dst_column));
         }
     } else {
         // 同原型内移动
         for t in moving {
-            let column_index = mapping.src.get_column_index(&t);
+            let column_index = mapping.src.get_column_index(&t.type_id);
             move_cloumns.push((column_index, column_index));
         }
     }
@@ -743,20 +742,5 @@ fn update_table_world(world: &World, am: &mut ArchetypeMapping) {
         world.replace(*e, am.dst_index, *dst_row);
     }
 }
-pub trait DelComponents {
-    fn components() -> Vec<TypeId>;
-}
 
-macro_rules! impl_tuple_del_components {
-    ($($name: ident),*) => {
-        #[allow(non_snake_case)]
-        #[allow(clippy::unused_unit)]
-        impl<$($name: 'static),*> DelComponents for ($($name,)*) {
 
-            fn components() -> Vec<TypeId> {
-                vec![$(TypeId::of::<$name>(),)*]
-            }
-        }
-    };
-}
-all_tuples!(impl_tuple_del_components, 0, 16, F);

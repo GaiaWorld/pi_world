@@ -4,9 +4,11 @@ use std::mem::transmute;
 
 use pi_proc_macros::all_tuples;
 use pi_slot::SlotMap;
+// use pi_world_macros::ParamSetElement;
 
 use crate::archetype::*;
 use crate::column::Column;
+use crate::param_set::ParamSetElement;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -78,7 +80,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
-        let (ar_index, ar) = world.find_archtype(id, I::components());
+        let (ar_index, ar) = world.find_archtype(id, components);
         let s = I::init_state(world, &ar);
         (ar_index, ar, s)
     }
@@ -111,6 +113,25 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         state: &'world mut Self::State,
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state)) }
+    }
+}
+
+impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
+    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State{
+        let components = I::components();
+        let id = ComponentInfo::calc_id(&components);
+
+        for component in &components{
+            system_meta.cur_param
+            .writes
+            .insert(component.type_id, component.type_name.clone());
+        }
+     
+        let (ar_index, ar) = world.find_archtype(id, components);
+        let s = I::init_state(world, &ar);
+        system_meta.param_set_check();
+
+        (ar_index, ar, s)
     }
 }
 

@@ -20,7 +20,7 @@ use std::mem::{transmute, ManuallyDrop};
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
-use crate::alter::{AlterState, Alterer, DelComponents};
+use crate::alter::{AlterState, Alterer};
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
@@ -117,7 +117,7 @@ impl World {
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
-        D: DelComponents + 'static,
+        D: Bundle + 'static,
     >(
         &mut self,
     ) -> Alterer<Q, F, A, D> {

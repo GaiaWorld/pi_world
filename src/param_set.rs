@@ -8,29 +8,35 @@ use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 
+use crate::function_system::SystemParamItem;
+use crate::prelude::Query;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
 use pi_proc_macros::all_tuples;
+use pi_world_macros::impl_param_set;
 
 pub trait ParamSetElement: SystemParam {
     fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
 }
 
 pub struct ParamSet<'w, T: 'static + ParamSetElement>(<T as SystemParam>::Item<'w>);
-impl<'w, T: ParamSetElement + 'static> Deref for ParamSet<'w, T> {
-    type Target = <T as SystemParam>::Item<'w>;
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl<'w, T: ParamSetElement + 'static> DerefMut for ParamSet<'w, T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+// impl<'w, T: ParamSetElement + 'static> Deref for ParamSet<'w, T> {
+//     type Target = <T as SystemParam>::Item<'w>;
+//     #[inline]
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// 
+// impl<'w, T: ParamSetElement + 'static> DerefMut for ParamSet<'w, T> {
+//     #[inline]
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
+
+impl_param_set!();
+
 
 impl<T: 'static + ParamSetElement> SystemParam for ParamSet<'_, T> {
     type State = <T as SystemParam>::State;
