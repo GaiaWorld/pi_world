@@ -154,18 +154,18 @@ impl Archetype {
     pub fn alter(
         &self,
         sort_add: &Vec<ComponentInfo>,
-        sort_del: &Vec<TypeId>,
-    ) -> (Vec<ComponentInfo>, Vec<TypeId>) {
+        sort_del: &Vec<ComponentInfo>,
+    ) -> (Vec<ComponentInfo>, Vec<ComponentInfo>) {
         let mut add = sort_add.clone();
         // 记录移动的组件
         let mut moving = Vec::new();
         for c in self.table.columns.iter() {
             // 如果组件是要删除或要添加的组件，则不添加，只有移动的才添加
-            if sort_del.binary_search(&c.info().type_id).is_err()
+            if sort_del.binary_search(&c.info()).is_err()
                 && sort_add.binary_search(&c.info()).is_err()
             {
                 add.push(c.info().clone());
-                moving.push(c.info().type_id);
+                moving.push(c.info().clone());
             }
         }
         (add, moving)

@@ -113,11 +113,11 @@ pub fn p_set(
     // r11: Res<Age11>,
 ) {
     println!("p_set");
-    for (age0, age1) in set.0.iter_mut() {
+    for (age0, age1) in set.p0().iter_mut() {
         // dbg!(age0, age1);
     }
     println!("p_set1");
-    set.1.iter_mut().for_each(|(age1, age2)| {
+    set.p0().iter_mut().for_each(|(age1, age2)| {
         // dbg!(age1, age2);
     });
     println!("p_set: end");
