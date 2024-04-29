@@ -7,6 +7,7 @@ use pi_slot::SlotMap;
 
 use crate::archetype::*;
 use crate::column::Column;
+use crate::param_set::ParamSetElement;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -47,6 +48,12 @@ impl<'world, I: Bundle> Inserter<'world, I> {
         for item in iter {
             self.insert(item);
         }
+    }
+}
+
+impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I> {
+    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+        todo!()
     }
 }
 

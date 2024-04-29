@@ -230,8 +230,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     world: &'w #path::world::World,
                     system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
+                    tick: #path::world::Tick,
                 ) -> Self::Item<'w> {
-                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, system_meta, &mut state.state);
+                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, system_meta, &mut state.state, tick);
                     #struct_name {
                         #(#fields: #field_locals,)*
                     }
@@ -242,8 +243,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     world: &'w #path::world::World,
                     system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
+                    tick: #path::world::Tick,
                 ) -> Self {
-                    unsafe { std::mem::transmute(Self::get_param(world, system_meta, state)) }
+                    unsafe { std::mem::transmute(Self::get_param(world, system_meta, state, tick)) }
                 }
             }
             // Safety: Each field is `ReadOnlySystemParam`, so this can only read from the `World`
