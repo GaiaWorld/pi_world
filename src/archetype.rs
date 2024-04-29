@@ -28,10 +28,11 @@ use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
 use crate::column::Column;
-use crate::dirty::DirtyIndex;
+use crate::dirty::{ComponentDirty, DirtyIndex};
 use crate::filter::ListenType;
+use crate::safe_vec::SafeVec;
 use crate::table::Table;
-use crate::world::World;
+use crate::world::{World, Entity};
 
 pub type ShareArchetype = Share<Archetype>;
 
@@ -88,6 +89,8 @@ pub struct Archetype {
     name: Cow<'static, str>,
     pub(crate) table: Table,
     map: PhfMap<TypeId, ColumnIndex>,
+    pub(crate) removes: SafeVec<(TypeId, ComponentDirty)>, // 其他原型通过移除Component转到该原型
+    pub(crate) deletes: ComponentDirty, // 该原型的实体被标记删除的脏列表
     pub(crate) index: ShareU32, // ，在全局原型列表中的位置，也表示是否已就绪，脏列表是否已经被全部的system添加好了
 }
 
@@ -137,6 +140,8 @@ impl Archetype {
             name: s.into(),
             table: Table::new(components),
             map: PhfMap::new(vec1),
+            removes: SafeVec::default(),
+            deletes: ComponentDirty::default(),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -180,8 +185,9 @@ impl Archetype {
             let c = self.table.get_column_unchecked(index);
             match ltype {
                 ListenType::Add =>  c.added.insert_listener(owner),
-                ListenType::Change => c.changed.insert_listener(owner),
-                ListenType::Remove => c.removed.insert_listener(owner),
+                ListenType::ComponentChange => c.changed.insert_listener(owner),
+                ListenType::ComponentRemove => c.removed.insert_listener(owner),
+                ListenType::EntityDelete => c.removed.insert_listener(owner),
             }
         }
     }
@@ -200,8 +206,9 @@ impl Archetype {
             let c = self.table.get_column_unchecked(index);
             let d = match ltype {
                 ListenType::Add => &c.added,
-                ListenType::Change => &c.changed,
-                ListenType::Remove => &c.removed,
+                ListenType::ComponentChange => &c.changed,
+                ListenType::ComponentRemove => &c.removed,
+                ListenType::EntityDelete => &c.removed,
             };
             d.find(index, owner, *ltype, vec);
         }

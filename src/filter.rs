@@ -19,8 +19,9 @@ use crate::world::World;
 pub enum ListenType {
     #[default]
     Add = 0,
-    Change,
-    Remove 
+    ComponentChange, // 组件改变，包括新增
+    ComponentRemove, // 组件删除
+    EntityDelete, // 实体删除
 }
 
 pub trait FilterArchetype {
@@ -78,7 +79,7 @@ pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<T>(), ListenType::Change));
+        listeners.push((TypeId::of::<T>(), ListenType::ComponentChange));
     }
 }
 
@@ -86,7 +87,7 @@ pub struct Removed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Removed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<T>(), ListenType::Remove));
+        listeners.push((TypeId::of::<T>(), ListenType::ComponentRemove));
     }
 }
 

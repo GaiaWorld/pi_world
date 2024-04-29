@@ -28,7 +28,7 @@ pub mod prelude {
         fetch::{Has, Mut, OrDefault, Ticker},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
-        world::{Entity, World, FromWorld},
+        world::{Entity, World, FromWorld, Tick},
         listener::Listener,
         app::{SingleThreadApp, MultiThreadApp},
         plugin::{Plugin, Plugins},

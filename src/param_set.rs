@@ -74,16 +74,18 @@ impl<T: 'static + ParamSetElement> SystemParam for ParamSet<'_, T> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
-        ParamSet(<T as SystemParam>::get_param(world, system_meta, state))
+        ParamSet(<T as SystemParam>::get_param(world, system_meta, state, tick))
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 

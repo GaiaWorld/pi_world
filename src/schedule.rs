@@ -198,7 +198,8 @@ impl Schedule {
 
         // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some()));
         // let g = self.schedule_graph.get_mut(schedule).unwrap();
-
+        // 每次运行，增加1次tick
+        world.increment_tick();
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {

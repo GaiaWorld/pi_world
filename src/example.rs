@@ -47,7 +47,7 @@ pub fn print_changed_entities(
     //q2: Query<(Entity, Option<&mut Age2>)>,
     // q3: Query<(Entity, &mut Age3)>,
 ) {
-    println!("print_changed_entities {:?}", q0.iter().size_hint());
+    println!("print_changed_entities it:{:?}", q0.iter().size_hint());
     // let q = q0.iter();
     // let s = q.size_hint();
     let q = q0.iter_mut();
@@ -60,6 +60,7 @@ pub fn print_changed_entities(
     {
         // let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         age0.0 += 1 + age1.0;
+        println!("print_changed_entities {:?}", e);
         //+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         // age1.0 +=1+age5.0[0];
     }
@@ -464,18 +465,18 @@ mod test_mod {
             mut i0: Alter<&Age1, (), (), (Age3,)>,
             q0: Query<(Entity, &mut Age0, &Age1), ()>,
         ) {
-            println!("alter1");
+            println!("alter1 it:{:?}", q0.iter().size_hint());
             for (e, _, _) in q0.iter() {
                 let r = i0.alter(e, ());
                 dbg!(e, r);
             }
-            let mut it = i0.iter_mut();
-            while let Some(a0) = it.next() {
-                if a0.0 == 1 {
-                    // let e = it.entity(); 
-                    let _ = it.delete();
-                }
-            }
+            // let mut it = i0.iter_mut();
+            // while let Some(a0) = it.next() {
+            //     if a0.0 == 1 {
+            //         // let e = it.entity(); 
+            //         let _ = it.delete();
+            //     }
+            // }
             println!("alter1: end");
         }
         pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>,)>) {
