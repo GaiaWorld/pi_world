@@ -41,7 +41,7 @@ impl DirtyIndex {
             ListenType::Add => &archetype.table.get_column_unchecked(self.column_index).added,
             ListenType::ComponentChange => &archetype.table.get_column_unchecked(self.column_index).changed,
             ListenType::ComponentRemove => &archetype.table.get_column_unchecked(self.column_index).removed,
-            ListenType::EntityDelete => &archetype.table.get_column_unchecked(self.column_index).removed,
+            ListenType::EntityDestroy => &archetype.table.get_column_unchecked(self.column_index).removed,
         };
         let end = r.vec.len();
         // 从上次读取到的位置开始读取

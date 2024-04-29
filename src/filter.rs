@@ -21,7 +21,7 @@ pub enum ListenType {
     Add = 0,
     ComponentChange, // 组件改变，包括新增
     ComponentRemove, // 组件删除
-    EntityDelete, // 实体删除
+    EntityDestroy, // 实体销毁
 }
 
 pub trait FilterArchetype {
@@ -90,7 +90,13 @@ impl<T: 'static> FilterComponents for Removed<T> {
         listeners.push((TypeId::of::<T>(), ListenType::ComponentRemove));
     }
 }
-
+pub struct Destroyed;
+impl FilterComponents for Destroyed {
+    const LISTENER_COUNT: usize = 1;
+    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
+        listeners.push((TypeId::of::<()>(), ListenType::EntityDestroy));
+    }
+}
 macro_rules! impl_tuple_filter {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
