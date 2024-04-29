@@ -364,7 +364,7 @@ pub fn derive_param_set_element(input: TokenStream) -> TokenStream {
     let struct_name = &ast.ident;
     // let r = struct_name.to_string();
     let fields_alias =
-        ensure_no_collision(format_ident!("{}__StructFieldsAlias", struct_name), token_stream.clone());
+        ensure_no_collision(format_ident!("__{}StructFieldsAlias", struct_name), token_stream.clone());
    
     // let state_struct_visibility = &ast.vis;
     let state_struct_name = ensure_no_collision(format_ident!("{}FetchState", struct_name), token_stream);
