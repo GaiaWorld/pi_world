@@ -94,6 +94,11 @@ impl<'a, T: Sized> DerefMut for Local<'a, T> {
         self.0
     }
 }
+impl <'a, T: Sized> Local<'a, T> {
+    pub fn tick(&self) -> Tick {
+        self.1
+    }
+}
 impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
     type State = T;
 
