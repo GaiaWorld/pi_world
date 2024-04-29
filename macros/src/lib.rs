@@ -51,10 +51,6 @@ pub fn derive_resource(_input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {})
 }
 
-#[proc_macro_derive(Component, attributes(component))]
-pub fn derive_component(_input: TokenStream) -> TokenStream {
-    TokenStream::from(quote! {})
-}
 /// Implement `SystemParam` to use a struct as a parameter in a system
 #[proc_macro_derive(SystemParam, attributes(system_param))]
 pub fn derive_system_param(input: TokenStream) -> TokenStream {
@@ -234,8 +230,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     world: &'w #path::world::World,
                     system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
+                    tick: #path::world::Tick,
                 ) -> Self::Item<'w> {
-                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, system_meta, &mut state.state);
+                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, system_meta, &mut state.state, tick);
                     #struct_name {
                         #(#fields: #field_locals,)*
                     }
@@ -246,8 +243,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     world: &'w #path::world::World,
                     system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
+                    tick: #path::world::Tick,
                 ) -> Self {
-                    unsafe { std::mem::transmute(Self::get_param(world, system_meta, state)) }
+                    unsafe { std::mem::transmute(Self::get_param(world, system_meta, state, tick)) }
                 }
             }
             // Safety: Each field is `ReadOnlySystemParam`, so this can only read from the `World`
@@ -443,6 +441,44 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
                         _state.#indexs.write(_e, _row, components.#idens);
                     )*
 
+                }
+            }
+        };
+    })
+}
+
+#[proc_macro_derive(Component)]
+pub fn derive_component(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    let world_path = ecs_path();
+ 
+    // let tuple_types: Vec<_> = field_types.iter().map(|x| quote! { #x }).collect();
+    let struct_name = &ast.ident;
+    let generics = ast.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    
+    TokenStream::from(quote! {
+        const _: () = {
+            impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
+                type Item = Self;
+                type State = #world_path::insert::TState<Self>;
+
+                fn components() -> Vec<#world_path::archetype::ComponentInfo> {
+                    vec![
+                        #world_path::archetype::ComponentInfo::of::<Self>()
+                    ]
+                }
+                fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
+                    #world_path::insert::TState::new(_archetype.get_column(&std::any::TypeId::of::<Self>()).unwrap())
+                }
+
+                fn insert(
+                    state: &Self::State,
+                    components: Self::Item,
+                    e: #world_path::world::Entity,
+                    row: #world_path::archetype::Row,
+                ) {
+                    state.write(e, row, components);
                 }
             }
         };

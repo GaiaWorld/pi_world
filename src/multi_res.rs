@@ -17,6 +17,7 @@ use crate::world::*;
 
 pub struct MultiRes<'w, T: 'static> {
     pub(crate) vec: &'w Vec<Share<dyn Any>>,
+    tick: Tick,
     _p: PhantomData<T>,
 }
 unsafe impl<T> Send for MultiRes<'_, T> {}
@@ -69,9 +70,11 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         MultiRes {
             vec: state.vec(),
+            tick,
             _p: PhantomData,
         }
     }
@@ -80,13 +83,15 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
 pub struct MultiResMut<'w, T: Default + 'static> {
     pub(crate) value: &'w mut T,
+    tick: Tick,
 }
 unsafe impl<T: Default> Send for MultiResMut<'_, T> {}
 unsafe impl<T: Default> Sync for MultiResMut<'_, T> {}
@@ -120,9 +125,11 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         MultiResMut {
             value: unsafe { &mut *state.downcast::<T>() },
+            tick,
         }
     }
     #[inline]
@@ -130,8 +137,9 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 impl<'w, T: Default + Sync + Send + 'static> Deref for MultiResMut<'w, T> {
@@ -177,10 +185,12 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         match state {
             Some(s) => Some(MultiRes {
                 vec: s.vec(),
+                tick,
                 _p: PhantomData,
             }),
             None => None,
@@ -191,8 +201,9 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -225,10 +236,12 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         match state {
             Some(s) => Some(MultiResMut {
                 value: unsafe { &mut *s.downcast::<T>() },
+                tick,
             }),
             None => None,
         }
@@ -238,7 +251,8 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }

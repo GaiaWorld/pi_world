@@ -13,6 +13,7 @@
 
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::ops::Range;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hint::spin_loop;
 use std::marker::PhantomData;
@@ -116,7 +117,8 @@ pub struct ExecGraph(Share<GraphInner>);
 impl ExecGraph {
     pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
         let inner = self.0.as_ref();
-        inner.nodes.insert(Node::new_system(sys_index, sys_name))
+        inner.to_len.fetch_add(1, Ordering::Relaxed);
+        inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name)))
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -136,27 +138,29 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         inner.to_len.load(Ordering::Relaxed)
     }
-    /// 初始化方法，每个图只能被执行一次， 执行前必须将system添加完毕
+    /// 初始化方法，每个图可被执行多次， 已经初始化的system和world上的资源和原型不会再次生成图节点
     /// 将system, res, archetype, 添加成图节点，并维护边
     pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, init_notify: bool) {
         let inner = self.0.as_ref();
         let old_sys_len = inner.sys_len.load(Ordering::Relaxed);
         let new_sys_len = systems.len();
-        // 首先初始化新增的system，有Insert的会产生对应的原型
-        for sys in systems.slice(old_sys_len as usize..new_sys_len) {
+        inner.sys_len.store(new_sys_len as u32, Ordering::Relaxed);
+        let range = old_sys_len as usize..new_sys_len;
+        // 首先初始化新增的system，有Insert的会产生对应的原型，如果有监听器，则会立即调用add_archetype_node
+        for sys in systems.slice(range.clone()) {
             sys.initialize(world);
         }
         // 遍历world上的单例资源，测试和system的读写关系
         for r in world.single_res_map.iter() {
-            self.add_res_node(&systems, r.key(), r.value().name(), true, world);
+            self.add_res_node(&systems, range.clone(), r.key(), r.value().0.name(), true, world);
         }
         // 遍历world上的多例资源，测试和system的读写关系
         for r in world.multi_res_map.iter() {
-            self.add_res_node(&systems, r.key(), r.value().name(), false, world);
+            self.add_res_node(&systems, range.clone(), r.key(), r.value().name(), false, world);
         }
         // 遍历已有的原型，添加原型节点，添加原型和system的依赖关系产生的边
         for r in world.archetype_arr.iter() {
-            self.add_archetype_node(&systems, r, world);
+            self.add_archetype_node(&systems, range.clone(), r, world);
         }
         dbg!(
             "res & archtypes initialized",
@@ -177,6 +181,7 @@ impl ExecGraph {
             }
         }
         assert_eq!(to_len, self.to_len());
+        // 如果需要初始化监听，并且图还没有添加过监听器，则添加监听器
         if init_notify && old_sys_len == 0 {
             // 监听原型创建， 添加原型节点和边
             let notify = Notify(self.clone(), systems, true, PhantomData);
@@ -195,6 +200,7 @@ impl ExecGraph {
     fn add_res_node(
         &self,
         systems: &Share<SafeVec<BoxedSystem>>,
+        mut sys_range: Range<usize>,
         tid: &TypeId,
         name: &Cow<'static, str>,
         single: bool,
@@ -202,14 +208,18 @@ impl ExecGraph {
     ) {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
-        inner.to_len.fetch_add(1, Ordering::Relaxed);
-        let node_index = NodeIndex::new(inner.nodes.insert(Node::new_res(name.clone())));
-
+        let id = unsafe { transmute(*tid) };
+        // 如果图已经存在该节点，则返回，否则插入
+        let (node_index, is_new) = inner.find_node(id, NodeType::Res(name.clone()));
+        if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
+            sys_range.start = 0;
+        }
         // 检查每个system和该Res的依赖关系，建立图连接
+        // 因为没有维护system_index到图节点id的对应关系，所以需要遍历全部的图节点
         for (system_index, node) in inner.nodes.iter().enumerate() {
             let system_index = NodeIndex::new(system_index);
             match &node.label {
-                NodeType::System(sys_index, _) => {
+                NodeType::System(sys_index, _) if sys_range.start <= *sys_index && *sys_index < sys_range.end => {
                     let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
                     let mut result = Flags::empty();
                     sys.res_depend(world, tid, name, single, &mut result);
@@ -221,7 +231,7 @@ impl ExecGraph {
                         // 有写，则该system为该Res的from，并根据system的次序调整写的次序
                         inner.adjust_edge(system_index, node_index);
                     } else if result == Flags::SHARE_WRITE {
-                        // 有写，则该system为该Res的from
+                        // 共享写，则该system为该Res的from
                         inner.add_edge(system_index, node_index);
                     } else {
                         // 如果没有关联，则跳过
@@ -238,15 +248,17 @@ impl ExecGraph {
     fn add_archetype_node(
         &self,
         systems: &Share<SafeVec<BoxedSystem>>,
+        mut sys_range: Range<usize>,
         archetype: &Archetype,
         world: &World,
     ) {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
-        let id_name = (*archetype.id(), archetype.name().clone());
-        // println!("add_archetype_node, id_name: {:?}", &id_name);
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
-        let node_index = inner.find_archetype_node(id_name);
+        let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()));
+        if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
+            sys_range.start = 0;
+        }
         let mut depend = ArchetypeDependResult::new();
         // 检查每个system和该原型的依赖关系，建立图连接
         for (system_index, node) in inner.nodes.iter().enumerate() {
@@ -263,9 +275,9 @@ impl ExecGraph {
                     if !depend.alters.is_empty() {
                         // 表结构改变，则该system为该原型的from
                         inner.adjust_edge(system_index, node_index);
-                        for id_name in depend.alters.iter() {
+                        for (id, name) in depend.alters.iter() {
                             // 获得该原型id到原型节点索引
-                            let alter_node_index = inner.find_archetype_node(id_name.clone());
+                            let (alter_node_index, _) = inner.find_node(*id, NodeType::Archetype(name.clone()));
                             if alter_node_index != node_index {
                                 // 过滤掉alter的原型和原原型一样
                                 inner.adjust_edge(system_index, alter_node_index);
@@ -295,8 +307,10 @@ impl ExecGraph {
         world: &'static World,
     ) -> std::result::Result<(), RecvError> {
         let inner = self.0.as_ref();
-        assert!(inner.to_len.load(Ordering::Relaxed) > 0);
         let to_len = inner.to_len.load(Ordering::Relaxed);
+        if to_len == 0 {
+            return Ok(());
+        }
         inner.to_count.store(to_len, Ordering::Relaxed);
         // println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
 
@@ -452,19 +466,16 @@ pub struct GraphInner {
 }
 
 impl GraphInner {
-    // 判断是否包含指定id为key的图节点
-    fn contains_key(&self, id: &u128) -> bool {
-        self.map.contains_key(id)
-    }
-    // 查找原型图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系， 图的to_len也加1
-    fn find_archetype_node(&self, id_name: (u128, Cow<'static, str>)) -> NodeIndex {
-        match self.map.entry(id_name.0) {
-            Entry::Occupied(entry) => entry.get().clone(),
+
+    // 查找图节点， 如果不存在将该label放入图的节点中，保存id到图节点索引的对应关系， 图的to_len也加1
+    fn find_node(&self, id: u128, label: NodeType) -> (NodeIndex, bool) {
+        match self.map.entry(id) {
+            Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
                 self.to_len.fetch_add(1, Ordering::Relaxed);
-                let node_index = NodeIndex::new(self.nodes.insert(Node::new_archetype(id_name)));
+                let node_index = NodeIndex::new(self.nodes.insert(Node::new(label)));
                 entry.insert(node_index);
-                node_index
+                (node_index, true)
             }
         }
     }
@@ -701,7 +712,7 @@ impl<'a> Iterator for NeighborIter<'a> {
 pub enum NodeType {
     None,
     System(usize, Cow<'static, str>),
-    Archetype((u128, Cow<'static, str>)),
+    Archetype(Cow<'static, str>),
     Res(Cow<'static, str>),
 }
 impl NodeType {
@@ -710,7 +721,7 @@ impl NodeType {
         match &self {
             NodeType::None => &Cow::Borrowed("None"),
             NodeType::System(_, sys_name) => &sys_name,
-            NodeType::Archetype(s) => &s.1,
+            NodeType::Archetype(s) => &s,
             NodeType::Res(s) => &s,
         }
     }
@@ -720,7 +731,7 @@ impl Debug for NodeType {
         match &self {
             NodeType::None => write!(f, "None"),
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
-            NodeType::Archetype(s) => write!(f, "Archetype({:?})", s.1),
+            NodeType::Archetype(s) => write!(f, "Archetype({:?})", s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
         }
     }
@@ -743,29 +754,11 @@ pub struct Node {
 }
 impl Node {
     #[inline(always)]
-    fn new_system(sys_index: usize, sys_name: Cow<'static, str>) -> Self {
+    fn new(label: NodeType) -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
             status: ShareU32::new(NODE_STATUS_OVER),
-            label: NodeType::System(sys_index, sys_name),
-            from_count: ShareU32::new(0),
-        }
-    }
-    #[inline(always)]
-    fn new_archetype(id_name: (u128, Cow<'static, str>)) -> Self {
-        Self {
-            edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
-            status: ShareU32::new(NODE_STATUS_OVER),
-            label: NodeType::Archetype(id_name),
-            from_count: ShareU32::new(0),
-        }
-    }
-    #[inline(always)]
-    fn new_res(name: Cow<'static, str>) -> Self {
-        Self {
-            edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
-            status: ShareU32::new(NODE_STATUS_OVER),
-            label: NodeType::Res(name),
+            label,
             from_count: ShareU32::new(0),
         }
     }
@@ -899,7 +892,7 @@ impl<'a> Listener for Notify<'a> {
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&self.1, &ar.0, &ar.1);
+        self.0.add_archetype_node(&self.1, (0..self.1.len()), &ar.0, &ar.1);
         if self.2 {
             dbg!(Dot::with_config(&self.0, Config::empty()));
         }

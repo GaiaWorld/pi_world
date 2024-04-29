@@ -3,6 +3,7 @@ use std::mem::transmute;
 
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, ShareArchetype};
 use crate::insert::{Insert, Bundle};
+use crate::prelude::Tick;
 use crate::world::{Entity, World};
 
 pub struct InsertBatchIter<'w, I, Ins>
@@ -17,6 +18,7 @@ where
         ShareArchetype,
         <Ins as Bundle>::State,
     ),
+    tick: Tick,
 }
 
 impl<'w, I, Ins> InsertBatchIter<'w, I, Ins>
@@ -37,11 +39,12 @@ where
         let ptr = ShareArchetype::as_ptr(&ar);
         let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
         ar_mut.table.reserve(length);
-
+        let tick = world.tick();
         Self {
             world,
             inner: iter,
             state: (ar_index, ar, s),
+            tick,
         }
     }
 }
@@ -65,7 +68,7 @@ where
 
     fn next(&mut self) -> Option<Entity> {
         let item = self.inner.next()?;
-        let i = Insert::<Ins>::new(&self.world, &mut self.state);
+        let i = Insert::<Ins>::new(&self.world, &mut self.state, self.tick);
         Some(i.insert(item))
     }
 

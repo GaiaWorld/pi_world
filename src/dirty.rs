@@ -39,8 +39,9 @@ impl DirtyIndex {
     pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, EntityDirty> {
         let r = match self.ltype {
             ListenType::Add => &archetype.table.get_column_unchecked(self.column_index).added,
-            ListenType::Change => &archetype.table.get_column_unchecked(self.column_index).changed,
-            ListenType::Remove => &archetype.table.get_column_unchecked(self.column_index).removed,
+            ListenType::ComponentChange => &archetype.table.get_column_unchecked(self.column_index).changed,
+            ListenType::ComponentRemove => &archetype.table.get_column_unchecked(self.column_index).removed,
+            ListenType::EntityDelete => &archetype.table.get_column_unchecked(self.column_index).removed,
         };
         let end = r.vec.len();
         // 从上次读取到的位置开始读取

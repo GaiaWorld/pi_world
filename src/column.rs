@@ -10,11 +10,13 @@ use pi_arr::{Arr, Location, BUCKETS};
 
 use crate::{
     archetype::{ComponentInfo, Row},
-    dirty::ComponentDirty,
+    dirty::ComponentDirty, safe_vec::SafeVec,
+    world::Tick,
 };
 
 pub struct Column {
     blob: Blob,
+    ticks: Option<SafeVec<Tick>>,
     pub(crate) added: ComponentDirty, // // Alter和Insert产生的添加脏，
     pub(crate) changed: ComponentDirty, // Query产生的修改脏，
     pub(crate) removed: ComponentDirty, // Query产生的修改脏，
@@ -25,6 +27,7 @@ impl Column {
     pub fn new(info: ComponentInfo) -> Self {
         Self {
             blob: Blob::new(info),
+            ticks: None,
             added: Default::default(),
             changed: Default::default(),
             removed: Default::default(),

@@ -92,7 +92,7 @@ mod sealed {
 
     impl<P: Plugin> Plugins<PluginMarker> for P {
         fn add_to_app(self, app: &mut App) {
-            app.add_boxed_plugin(Box::new(self))
+            app.add_boxed_plugin(Box::new(self));
 
         }
     }

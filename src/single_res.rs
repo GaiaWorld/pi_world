@@ -13,6 +13,7 @@ use crate::world::*;
 #[derive(Debug)]
 pub struct SingleRes<'w, T: 'static> {
     pub(crate) value: &'w T,
+    pub(crate) tick: Tick,
 }
 unsafe impl<T> Send for SingleRes<'_, T> {}
 unsafe impl<T> Sync for SingleRes<'_, T> {}
@@ -46,9 +47,11 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         SingleRes {
             value: unsafe { &*state.downcast::<T>() },
+            tick,
         }
     }
     #[inline]
@@ -56,8 +59,9 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -72,6 +76,7 @@ impl<'w, T: Sync + Send + 'static> Deref for SingleRes<'w, T> {
 #[derive(Debug)]
 pub struct SingleResMut<'w, T: 'static> {
     pub(crate) value: &'w mut T,
+    pub(crate) tick: Tick,
 }
 unsafe impl<T> Send for SingleResMut<'_, T> {}
 unsafe impl<T> Sync for SingleResMut<'_, T> {}
@@ -105,9 +110,11 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         SingleResMut {
             value: unsafe { &mut *state.downcast::<T>() },
+            tick,
         }
     }
     #[inline]
@@ -115,8 +122,9 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 impl<'w, T: Sync + Send + 'static> Deref for SingleResMut<'w, T> {
@@ -162,10 +170,12 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         match state {
             Some(s) => Some(SingleRes {
                 value: unsafe { &*s.downcast::<T>() },
+                tick,
             }),
             None => None,
         }
@@ -175,8 +185,9 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
@@ -209,10 +220,12 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self::Item<'world> {
         match state {
             Some(s) => Some(SingleResMut {
                 value: unsafe { &mut *s.downcast::<T>() },
+                tick,
             }),
             None => None,
         }
@@ -222,7 +235,8 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         world: &'world World,
         system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
+        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state)) }
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
