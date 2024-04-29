@@ -18,14 +18,14 @@ pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         query::{Query, QueryError},
-        insert::{Insert, Bundle},
+        insert::{Insert, Bundle, Component},
         insert_batch::InsertBatchIter,
         alter::Alter,
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
         filter::{Added, Changed, Removed, With, Without, Or, FilterComponents},
-        fetch::{Has, Mut, OrDefault, Ref},
+        fetch::{Has, Mut, OrDefault, Ticker},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
         world::{Entity, World, FromWorld},

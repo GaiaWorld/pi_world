@@ -11,6 +11,7 @@ use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
 pub use pi_world_macros::Bundle;
+pub use pi_world_macros::Component;
 
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
 pub struct Inserter<'world, I: Bundle> {
@@ -114,7 +115,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-pub trait Bundle{
+pub trait Bundle {
     type Item;
 
     type State: Send + Sync + Sized;

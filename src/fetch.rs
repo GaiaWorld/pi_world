@@ -175,12 +175,12 @@ impl<T: 'static> FetchComponents for &mut T {
     }
 }
 
-pub struct Ref<'w, T> (PhantomData<&'w T>);
+pub struct Ticker<T> (PhantomData<T>);
 
-impl<T: 'static> FetchComponents for Ref<'_, T> {
+impl<T: 'static> FetchComponents for Ticker<&'_ T> {
     type Fetch<'w> = &'w Column;
-    type Item<'w> = Ref<'w, T>;
-    type ReadOnly = Ref<'static, T>;
+    type Item<'w> = Ticker<&'w T>;
+    type ReadOnly = Ticker<&'static T>;
     type State = ColumnIndex;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
@@ -216,10 +216,49 @@ impl<T: 'static> FetchComponents for Ref<'_, T> {
     }
 }
 
-impl<T: 'static> FetchComponents for Option<Ref<'_, T>> {
+impl<T: 'static> FetchComponents for Ticker<&'_ mut T> {
+    type Fetch<'w> = &'w Column;
+    type Item<'w> = Ticker<&'w mut T>;
+    type ReadOnly = Ticker<&'static T>;
+    type State = ColumnIndex;
+
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .writes
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::WITHOUT
+            } else {
+                Flags::WRITE
+            },
+        ))
+    }
+    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index(&TypeId::of::<T>())
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
+        &archetype.table.get_column_unchecked(*state)
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        todo!()
+    }
+}
+
+impl<T: 'static> FetchComponents for Option<Ticker<&'_ T>> {
     type Fetch<'w> = Option<&'w Column>;
-    type Item<'w> = Option<Ref<'w, T>>;
-    type ReadOnly = Option<Ref<'static, T>>;
+    type Item<'w> = Option<Ticker<&'w T>>;
+    type ReadOnly = Option<Ticker<&'static T>>;
     type State = ColumnIndex;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
@@ -256,9 +295,49 @@ impl<T: 'static> FetchComponents for Option<Ref<'_, T>> {
     }
 }
 
-impl<'a, T: 'static> Ref<'a, T> {
+impl<T: 'static> FetchComponents for Option<Ticker<&'_ mut T>> {
+    type Fetch<'w> = Option<&'w Column>;
+    type Item<'w> = Option<Ticker<&'w mut T>>;
+    type ReadOnly = Option<Ticker<&'static T>>;
+    type State = ColumnIndex;
+
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .reads
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::empty()
+            } else {
+                Flags::READ
+            },
+        ))
+    }
+    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index(&TypeId::of::<T>())
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+    ) -> Self::Fetch<'w> {
+        (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
+    }
+
     #[inline(always)]
-    pub fn into_inner(self) -> &'a T {
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        // fetch.and_then(|c| Some(c.get(row)))
+        todo!()
+    }
+}
+
+impl<T> Ticker<T> {
+    #[inline(always)]
+    pub fn into_inner(self) -> T {
         todo!()
     }
 
@@ -267,10 +346,24 @@ impl<'a, T: 'static> Ref<'a, T> {
         todo!()
     }
 }
-impl<'a, T: 'static> Deref for Ref<'a, T> {
+impl<'a, T: 'static> Deref for Ticker<&'_ T> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
+        todo!()
+    }
+}
+
+impl<'a, T: 'static> Deref for Ticker<&'_ mut T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        todo!()
+    }
+}
+
+impl<'a, T: 'static> DerefMut for Ticker<&'_ mut T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         todo!()
     }
 }
