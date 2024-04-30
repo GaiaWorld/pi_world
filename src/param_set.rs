@@ -107,4 +107,4 @@ macro_rules! impl_param_set_tuple_fetch {
         }
     };
 }
-all_tuples!(impl_param_set_tuple_fetch, 1, 15, F);
+all_tuples!(impl_param_set_tuple_fetch, 1, 16, F);

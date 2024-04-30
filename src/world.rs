@@ -55,8 +55,8 @@ pub struct ArchetypeOk<'a>(
 
 #[derive(Debug)]
 pub struct World {
-    pub(crate) single_res_map: DashMap<TypeId, (SingleResource, usize)>,
-    pub(crate) single_res_arr: SafeVec<SingleResource>,
+    pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>,
+    pub(crate) single_res_arr: SafeVec<Option<SingleResource>>,
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
@@ -152,37 +152,53 @@ impl World {
     pub fn entities_iter<'a>(&'a self) -> Iter<'a, Entity, EntityAddr> {
         self.entities.iter()
     }
-    /// 注册指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
-    pub fn register_single_res<T: 'static>(&mut self, value: T) -> usize {
+    /// 插入指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
+    pub fn insert_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
         let r = self.single_res_map.entry(tid) .or_insert_with(|| {
             let r = SingleResource::new(value);
-            let index = self.single_res_arr.insert(r.clone());
-            (r, index)
+            let name = std::any::type_name::<T>().into();
+            let index = self.single_res_arr.insert(Some(r.clone()));
+            (Some(r), index, name)
+        });
+        r.value().1
+    }
+
+    // 如果不存在单例类型， 则注册指定的单例资源（不插入具体值，只添加类型），为了安全，必须保证不在ECS执行中调用，返回索引
+    pub fn or_register_single_res<T: 'static>(&mut self) -> usize {
+        let tid = TypeId::of::<T>();
+        let r = self.single_res_map.entry(tid).or_insert_with(|| {
+            let name = std::any::type_name::<T>().into();
+            let index = self.single_res_arr.insert(None);
+            (None, index, name)
         });
         r.value().1
     }
 
     /// 注册单例资源， 如果已经注册，则忽略，为了安全，必须保证不在ECS执行中调用，返回索引
-    pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize{
+    pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize {
         let tid = TypeId::of::<T>();
+        let mut index = 0;
+        let mut is_add = true;
         if let Some(r) = self.single_res_map.get(&tid) {
-            return r.value().1
+            index = r.value().1;
+            if r.value().0.is_some() {
+                is_add = false;
+            }
         }
-        let r = SingleResource::new(T::from_world(self));
-        let r = self.single_res_map.entry(tid) .or_insert_with(|| {
-            let index = self.single_res_arr.insert(r.clone());
-            (r, index)
-        });
-        r.value().1
+        if is_add {
+            let r = SingleResource::new(T::from_world(self));
+            let name = std::any::type_name::<T>().into();
+            let r = self.single_res_map.entry(tid).or_insert_with(|| {
+                let index = self.single_res_arr.insert(Some(r.clone()));
+                (Some(r), index, name)
+            });
+            index = r.value().1;
+        }
+        
+        index
     }
 
-	/// 获得指定的单例资源的索引
-    #[inline]
-    pub fn get_single_res_index<T: 'static>(&self) -> Option<usize> {
-        let tid = TypeId::of::<T>();
-        self.single_res_map.get(&tid).map(|r| r.value().1)
-    }
     /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
     #[inline]
     pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&T> {
@@ -198,7 +214,10 @@ impl World {
         self.single_res_arr
             .get(index)
             .map_or(null_mut(), |r| unsafe {
-                transmute(r.0.downcast_ref_unchecked::<T>())
+                match r {
+                    Some(r) => transmute(r.0.downcast_ref_unchecked::<T>()),
+                    None => null_mut(),
+                }
             })
     }
 
@@ -218,11 +237,14 @@ impl World {
         self.single_res_map
             .get(&tid)
             .map_or(null_mut(), |r| unsafe {
-                transmute(r.value().0.0.downcast_ref_unchecked::<T>())
+                match &r.value().0 {
+                    Some(r) => transmute(r.0.downcast_ref_unchecked::<T>()),
+                    None => null_mut(),
+                }
             })
     }
     pub(crate) fn get_single_res_any(&self, tid: &TypeId) -> Option<SingleResource> {
-        self.single_res_map.get(tid).map(|r| r.value().0.clone())
+        self.single_res_map.get(tid).map_or(None, |r| r.value().0.clone())
     }
     /// 注册指定类型的多例资源，为了安全，必须保证不在ECS执行中调用
     pub fn register_multi_res<T: 'static>(&mut self) {
@@ -418,14 +440,14 @@ impl<T: Default> FromWorld for T {
 }
 
 #[derive(Debug, Clone)]
-pub struct SingleResource(Share<dyn Any>, Cow<'static, str>);
+pub struct SingleResource(Share<dyn Any>);
 impl SingleResource {
     fn new<T: 'static>(value: T) -> Self {
-        Self(Share::new(value), std::any::type_name::<T>().into())
+        Self(Share::new(value))
     }
-    pub fn name(&self) -> &Cow<'static, str> {
-        &self.1
-    }
+    // pub fn name(&self) -> &Cow<'static, str> {
+    //     &self.1
+    // }
     pub(crate) fn downcast<T: 'static>(&self) -> *mut T {
         unsafe { transmute(self.0.downcast_ref_unchecked::<T>()) }
     }
@@ -452,7 +474,7 @@ impl MultiResource {
         let r = Share::new(value);
         let vec = unsafe { &mut *self.0.get() };
         vec.push(r.clone());
-        SingleResource(r, self.1.clone())
+        SingleResource(r)
     }
     pub fn len(&self) -> usize {
         let vec = unsafe { &*self.0.get() };

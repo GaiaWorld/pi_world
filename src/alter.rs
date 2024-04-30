@@ -91,9 +91,9 @@ impl<
     }
     #[inline]
     pub fn get_mut(
-        &'world mut self,
+        &mut self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
     #[inline]
@@ -220,18 +220,18 @@ impl<
         self.query.contains(entity)
     }
     #[inline]
-    pub fn get(
-        &'world self,
+    pub fn get<'a>(
+        &'a self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'a>, QueryError>
     {
         self.query.get(e)
     }
     #[inline]
-    pub fn get_mut(
-        &'world mut self,
+    pub fn get_mut<'a>(
+        &'a mut self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+    ) -> Result<<Q as FetchComponents>::Item<'a>, QueryError> {
         self.query.get_mut(e)
     }
     #[inline]

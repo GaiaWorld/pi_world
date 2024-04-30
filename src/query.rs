@@ -67,9 +67,9 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
     #[inline]
     pub fn get(
-        &'world self,
+        &self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError>
     {
         self.state
             .as_readonly()
@@ -77,9 +77,9 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
     #[inline]
     pub fn get_mut(
-        &'world mut self,
+        &mut self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state.get(self.world, self.tick, e, self.cache_mapping.get_mut())
     }
     #[inline]
@@ -259,7 +259,6 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
             return;
         }
         unsafe {
-            ar.0.add_ticks(&self.0);
             ar.0.add_dirty_listeners(TypeId::of::<QueryState<Q, F>>(), &self.1)
         };
     }

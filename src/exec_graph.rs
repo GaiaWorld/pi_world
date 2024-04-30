@@ -152,7 +152,7 @@ impl ExecGraph {
         }
         // 遍历world上的单例资源，测试和system的读写关系
         for r in world.single_res_map.iter() {
-            self.add_res_node(&systems, range.clone(), r.key(), r.value().0.name(), true, world);
+            self.add_res_node(&systems, range.clone(), r.key(), &r.value().2, true, world);
         }
         // 遍历world上的多例资源，测试和system的读写关系
         for r in world.multi_res_map.iter() {

@@ -649,11 +649,11 @@ mod test_mod {
             
         }
         let mut app = MultiThreadApp::new();
-        app.world.register_single_res(A(0.0));
-        app.world.register_single_res(B(0.0));
-        app.world.register_single_res(C(0.0));
-        app.world.register_single_res(D(0.0));
-        app.world.register_single_res(E(0.0));
+        app.world.insert_single_res(A(0.0));
+        app.world.insert_single_res(B(0.0));
+        app.world.insert_single_res(C(0.0));
+        app.world.insert_single_res(D(0.0));
+        app.world.insert_single_res(E(0.0));
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -690,7 +690,7 @@ mod test_mod {
             c.0 += b.iter().count() as f32 + 1.0;
         }
         let mut app = MultiThreadApp::new();
-        app.world.register_single_res(A(1.0));
+        app.world.insert_single_res(A(1.0));
         app.world.register_multi_res::<B>();
         app.world.register_multi_res::<C>();
         app.world.register_multi_res::<D>();
