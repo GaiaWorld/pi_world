@@ -91,9 +91,9 @@ impl<
     }
     #[inline]
     pub fn get_mut(
-        &'world mut self,
+        &mut self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'world>, QueryError> {
+    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
     #[inline]

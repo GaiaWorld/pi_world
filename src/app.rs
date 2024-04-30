@@ -7,7 +7,7 @@ use pi_async_rt::rt::{
     AsyncRuntime, AsyncRuntimeExt,
 };
 
-use crate::{schedule::{MainSchedule, Schedule, Startup}, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs, ScheduleLabel, StageLabel}, world::World};
+use crate::{schedule::{MainSchedule, Schedule}, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs, ScheduleLabel, StageLabel}, world::World};
 
 pub type SingleThreadApp = App<SingleTaskRuntime>;
 pub type MultiThreadApp = App<MultiTaskRuntime>;
@@ -59,11 +59,16 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
         let stage_label = stage_label.intern();
         let system_config = system.into_configs();
                 
-        if stage_label == Startup.intern() {
-            self.startup_schedule.add_system(stage_label, system_config);
-        } else {
-            self.schedule.add_system(stage_label, system_config);
-        }
+        self.schedule.add_system(stage_label, system_config);
+        self
+    }
+
+    // 添加system
+    pub fn add_startup_system<M>(&mut self, stage_label: impl StageLabel, system: impl IntoSystemConfigs<M>) -> &mut Self {
+        let stage_label = stage_label.intern();
+        let system_config = system.into_configs();
+                
+        self.startup_schedule.add_system(stage_label, system_config);
         self
     }
 

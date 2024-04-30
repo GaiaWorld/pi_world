@@ -33,7 +33,7 @@ pub mod prelude {
         app::{SingleThreadApp, MultiThreadApp},
         plugin::{Plugin, Plugins},
         plugin_group::WorldPluginExtent,
-        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last},
+        schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last, First},
         schedule_config::{ScheduleLabel, StageLabel, SystemSet, IntoSystemSetConfigs, IntoSystemConfigs},
         exec_graph::ExecGraph,
         dot::{Dot, Config},

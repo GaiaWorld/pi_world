@@ -35,6 +35,7 @@ impl Schedule {
             // graph: ExecGraph::default(),
             schedule_graph: Default::default(),
             stage_sort: vec![
+                First.intern(),
                 PreUpdate.intern(),
                 Update.intern(),
                 PostUpdate.intern(),
@@ -271,10 +272,12 @@ impl Schedule {
 }
 
 /// 只运行一次的system
-#[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Startup;
 
 
+#[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct First;
 
 #[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PreUpdate;
