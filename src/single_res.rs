@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use crate::archetype::Flags;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
-use crate::world::*;
+use crate::world::{self, *};
 
 #[derive(Debug)]
 pub struct SingleRes<'w, T: 'static> {
@@ -142,14 +142,14 @@ impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
 }
 
 impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
-    type State = Option<SingleResource>;
+    type State = usize;
     type Item<'w> = Option<SingleRes<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_read(tid, name);
-        world.get_single_res_any(&tid)
+        world.or_register_single_res::<T>()
     }
     fn res_depend(
         _world: &World,
@@ -167,14 +167,14 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
 
     #[inline]
     fn get_param<'world>(
-        _world: &'world World,
+        world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        match state {
-            Some(s) => Some(SingleRes {
-                value: unsafe { &*s.downcast::<T>() },
+        match unsafe { &mut *(world as *const World as usize as *mut World)}.index_single_res::<T>(*state) {
+            Some(r) => Some(SingleRes {
+                value: r,
                 tick,
             }),
             None => None,
@@ -192,14 +192,14 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
 }
 
 impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
-    type State = Option<SingleResource>;
+    type State = usize;
     type Item<'w> = Option<SingleResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_write(tid, name);
-        world.get_single_res_any(&tid)
+        world.or_register_single_res::<T>()
     }
     fn res_depend(
         _world: &World,
@@ -217,14 +217,14 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
 
     #[inline]
     fn get_param<'world>(
-        _world: &'world World,
+        world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        match state {
-            Some(s) => Some(SingleResMut {
-                value: unsafe { &mut *s.downcast::<T>() },
+        match unsafe { &mut *(world as *const World as usize as *mut World)}.index_single_res_mut::<T>(*state) {
+            Some(r) => Some(SingleResMut {
+                value: r,
                 tick,
             }),
             None => None,
