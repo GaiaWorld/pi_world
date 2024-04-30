@@ -4,7 +4,7 @@
 ///
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
-use std::mem::replace;
+use std::mem::{replace, transmute};
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
@@ -46,6 +46,10 @@ impl Table {
     #[inline(always)]
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
         unsafe { self.columns.get_unchecked(index as usize) }
+    }
+    #[inline(always)]
+    pub(crate) unsafe fn get_column_mut_unchecked(&self, index: ColumnIndex) -> *mut Column {
+        transmute(self.columns.get_unchecked(index as usize))
     }
     /// 扩容
     pub fn reserve(&mut self, additional: usize) {

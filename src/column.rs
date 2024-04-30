@@ -6,20 +6,19 @@ use std::{
     ptr::null_mut,
 };
 
+use pi_append_vec::AppendVec;
 use pi_arr::{Arr, Location, BUCKETS};
 
 use crate::{
-    archetype::{ComponentInfo, Row},
-    dirty::ComponentDirty, safe_vec::SafeVec,
-    world::Tick,
+    archetype::{ComponentInfo, Row}, dirty::ComponentDirty, prelude::Entity, world::Tick
 };
 
 pub struct Column {
     blob: Blob,
-    ticks: Option<SafeVec<Tick>>,
+    ticks: AppendVec<Tick>,
+    pub(crate) is_tick: bool, // 是否记录tick
     pub(crate) added: ComponentDirty, // // Alter和Insert产生的添加脏，
     pub(crate) changed: ComponentDirty, // Query产生的修改脏，
-    pub(crate) removed: ComponentDirty, // Query产生的修改脏，
 }
 
 impl Column {
@@ -27,15 +26,34 @@ impl Column {
     pub fn new(info: ComponentInfo) -> Self {
         Self {
             blob: Blob::new(info),
-            ticks: None,
+            ticks: Default::default(),
+            is_tick: false,
             added: Default::default(),
             changed: Default::default(),
-            removed: Default::default(),
         }
     }
     #[inline(always)]
     pub fn info(&self) -> &ComponentInfo {
         &self.blob.info
+    }
+    #[inline(always)]
+    pub fn get_tick_unchecked(&self, row: Row) -> Tick {
+        *self.ticks.get(row as usize).unwrap()
+    }
+    #[inline(always)]
+    pub fn get_tick(&self, row: Row) -> Option<Tick> {
+        self.ticks.get(row as usize).map(|t| *t)
+    }
+    #[inline]
+    pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
+        if !self.is_tick {
+            return;
+        }
+        let old = self.ticks.load_alloc(row as usize);
+        if *old < tick {
+            *old = tick;
+        }
+        self.changed.record(e, row);
     }
 
     #[inline(always)]
@@ -85,15 +103,25 @@ impl Column {
     /// 扩容
     pub fn reserve(&mut self, len: usize, additional: usize) {
         self.blob.reserve(len, additional);
+        if self.is_tick {
+            self.ticks.reserve(additional);
+        }
         self.added.reserve(additional);
     }
     /// 整理合并空位
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
-        for (src, dst) in action.iter() {
-            unsafe {
-                let src_data: *mut u8 = transmute(self.blob.get(*src));
-                let dst_data: *mut u8 = transmute(self.blob.get(*dst));
-                src_data.copy_to_nonoverlapping(dst_data, self.info().mem_size);
+        if self.is_tick {
+            for (src, dst) in action.iter() {
+                self.collect_key(src, dst);
+                unsafe {
+                    let tick = self.ticks.get_unchecked(*src as usize);
+                    *self.ticks.get_unchecked_mut(*dst as usize) = *tick;
+                }
+            }
+            self.ticks.collect();
+        }else{
+            for (src, dst) in action.iter() {
+                self.collect_key(src, dst);
             }
         }
         // 整理合并内存
@@ -101,7 +129,15 @@ impl Column {
     }
     /// 整理方法，返回该列的脏列表是否清空
     pub(crate) fn collect_dirty(&mut self) -> bool {
-        self.added.collect() && self.changed.collect() && self.removed.collect()
+        self.added.collect() && self.changed.collect()
+    }
+    /// 整理合并指定的键
+    fn collect_key(&mut self, src: &Row, dst: &Row) {
+        unsafe {
+            let src_data: *mut u8 = transmute(self.blob.get(*src));
+            let dst_data: *mut u8 = transmute(self.blob.get(*dst));
+            src_data.copy_to_nonoverlapping(dst_data, self.info().mem_size);
+        }
     }
 }
 

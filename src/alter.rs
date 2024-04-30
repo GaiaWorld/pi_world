@@ -62,7 +62,7 @@ impl<
     ) {
         // 将新多出来的原型，创建原型空映射
         for i in state.vec.len()..query_state.vec.len() {
-            let ar = unsafe { query_state.vec.get_unchecked(i).0.clone() };
+            let ar = unsafe { query_state.vec.get_unchecked(i).ar.clone() };
             state.push_archetype(ar, world);
         }
     }
@@ -709,18 +709,19 @@ fn delete_columns(am: &mut ArchetypeMapping, del_columns: &Vec<ColumnIndex>) {
     for i in am.del_indexs.clone().into_iter() {
         let column_index = unsafe { del_columns.get_unchecked(i) };
         let column = am.src.table.get_column_unchecked(*column_index);
-        if column.removed.listener_len() > 0 {
-            if column.needs_drop() {
-                for (src_row, _dst_row, e) in am.moves.iter() {
-                    column.drop_row_unchecked(*src_row);
-                    column.removed.record_unchecked(*e, *src_row);
-                }
-            } else {
-                for (src_row, _dst_row, e) in am.moves.iter() {
-                    column.removed.record_unchecked(*e, *src_row);
-                }
-            }
-        } else if column.needs_drop() {
+        // if column.removed.listener_len() > 0 {
+        //     if column.needs_drop() {
+        //         for (src_row, _dst_row, e) in am.moves.iter() {
+        //             column.drop_row_unchecked(*src_row);
+        //             column.removed.record_unchecked(*e, *src_row);
+        //         }
+        //     } else {
+        //         for (src_row, _dst_row, e) in am.moves.iter() {
+        //             column.removed.record_unchecked(*e, *src_row);
+        //         }
+        //     }
+        // } else 
+        if column.needs_drop() {
             for (src_row, _dst_row, _) in am.moves.iter() {
                 column.drop_row_unchecked(*src_row)
             }

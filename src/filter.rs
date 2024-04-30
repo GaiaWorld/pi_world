@@ -19,9 +19,9 @@ use crate::world::World;
 pub enum ListenType {
     #[default]
     Add = 0,
-    ComponentChange, // 组件改变，包括新增
-    ComponentRemove, // 组件删除
-    EntityDestroy, // 实体销毁
+    ComponentChange, // 组件改变，包括新增，用列表来记录变化
+    ComponentRemove, // 组件删除，用列表来记录变化
+    EntityDestroy, // 实体销毁，用列表来记录变化
 }
 
 pub trait FilterArchetype {

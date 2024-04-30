@@ -17,6 +17,7 @@
 use core::fmt::*;
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::cell::SyncUnsafeCell;
 use std::mem::{needs_drop, size_of, transmute};
 use std::sync::atomic::Ordering;
 
@@ -30,7 +31,6 @@ use smallvec::SmallVec;
 use crate::column::Column;
 use crate::dirty::{ComponentDirty, DirtyIndex};
 use crate::filter::ListenType;
-use crate::safe_vec::SafeVec;
 use crate::table::Table;
 use crate::world::{World, Entity};
 
@@ -89,8 +89,8 @@ pub struct Archetype {
     name: Cow<'static, str>,
     pub(crate) table: Table,
     map: PhfMap<TypeId, ColumnIndex>,
-    pub(crate) removes: SafeVec<(TypeId, ComponentDirty)>, // 其他原型通过移除Component转到该原型
-    pub(crate) deletes: ComponentDirty, // 该原型的实体被标记删除的脏列表
+    pub(crate) removes: SyncUnsafeCell<Vec<(TypeId, ComponentDirty)>>, // 其他原型通过移除Component转到该原型
+    pub(crate) destroys: ComponentDirty, // 该原型的实体被标记销毁的脏列表
     pub(crate) index: ShareU32, // ，在全局原型列表中的位置，也表示是否已就绪，脏列表是否已经被全部的system添加好了
 }
 
@@ -140,8 +140,8 @@ impl Archetype {
             name: s.into(),
             table: Table::new(components),
             map: PhfMap::new(vec1),
-            removes: SafeVec::default(),
-            deletes: ComponentDirty::default(),
+            removes: Default::default(),
+            destroys: ComponentDirty::default(),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -170,6 +170,14 @@ impl Archetype {
         }
         (add, moving)
     }
+    // 根据tick列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
+    pub(crate) unsafe fn add_ticks(&self, ticks: &Vec<TypeId>) {
+        for tid in ticks.iter() {
+            if let Some((c, _)) = self.get_column_mut(tid) {
+                c.is_tick = true;
+            }
+        }
+    }
     // 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
     pub(crate) unsafe fn add_dirty_listeners(
         &self,
@@ -178,16 +186,14 @@ impl Archetype {
     ) {
         //println!("add_dirty_listeners");
         for (tid, ltype) in listeners.iter() {
-            let index = self.get_column_index(tid);
-            if index.is_null() {
-                continue;
-            }
-            let c = self.table.get_column_unchecked(index);
-            match ltype {
-                ListenType::Add =>  c.added.insert_listener(owner),
-                ListenType::ComponentChange => c.changed.insert_listener(owner),
-                ListenType::ComponentRemove => c.removed.insert_listener(owner),
-                ListenType::EntityDestroy => c.removed.insert_listener(owner),
+            if let Some((c, _)) = self.get_column_mut(tid) {
+                c.is_tick = true;
+                match ltype {
+                    ListenType::Add =>  c.added.insert_listener(owner),
+                    ListenType::ComponentChange => c.changed.insert_listener(owner),
+                    ListenType::ComponentRemove => c.changed.insert_listener(owner),
+                    ListenType::EntityDestroy => c.changed.insert_listener(owner),
+                }
             }
         }
     }
@@ -207,8 +213,8 @@ impl Archetype {
             let d = match ltype {
                 ListenType::Add => &c.added,
                 ListenType::ComponentChange => &c.changed,
-                ListenType::ComponentRemove => &c.removed,
-                ListenType::EntityDestroy => &c.removed,
+                ListenType::ComponentRemove => &c.changed,
+                ListenType::EntityDestroy => &c.changed,
             };
             d.find(index, owner, *ltype, vec);
         }
@@ -245,7 +251,7 @@ impl Archetype {
             if t.is_null() {
                 return u32::null();
             }
-            let ti = unsafe { self.table.columns.get_unchecked(*t as usize) };
+            let ti = self.table.get_column_unchecked(*t);
             if &ti.info().type_id == type_id {
                 return *t;
             }
@@ -253,23 +259,32 @@ impl Archetype {
         u32::null()
     }
     #[inline(always)]
-    pub fn get_column(&self, type_id: &TypeId) -> Option<&Column> {
+    pub fn get_column(&self, type_id: &TypeId) -> Option<(&Column, ColumnIndex)> {
         if let Some(t) = self.map.get(&type_id) {
             if t.is_null() {
                 return None;
             }
-            let t = unsafe { self.table.columns.get_unchecked(*t as usize) };
-            if &t.info().type_id == type_id {
-                return Some(t);
+            let c = self.table.get_column_unchecked(*t);
+            if &c.info().type_id == type_id {
+                return Some((c, *t));
             }
         }
         None
     }
     #[inline(always)]
-    pub unsafe fn get_column_unchecked(&self, type_id: &TypeId) -> &Column {
-        self.table
-            .columns
-            .get_unchecked(*self.map.get_unchecked(&type_id) as usize)
+    unsafe fn get_column_mut(&self, type_id: &TypeId) -> Option<(&mut Column, ColumnIndex)> {
+        if let Some(t) = self.map.get(&type_id) {
+            if t.is_null() {
+                return None;
+            }
+            let c = self.table.get_column_unchecked(*t);
+            if &c.info().type_id == type_id {
+                return unsafe {
+                    transmute(Some((c, *t)))
+                }
+            }
+        }
+        None
     }
     /// Returns the number of elements in the archetype.
     #[inline(always)]

@@ -9,10 +9,9 @@ use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, Flags, Row,
 };
 use crate::column::Column;
-use crate::dirty::ComponentDirty;
 use crate::system::SystemMeta;
 use crate::table::Table;
-use crate::world::{Entity, SingleResource, World};
+use crate::world::{Entity, SingleResource, World, Tick};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -26,6 +25,11 @@ pub trait FetchComponents {
     /// so it is best to move as much data / computation here as possible to reduce the cost of
     /// constructing [`Self::Fetch`](crate::query::FetchComponents::Fetch).
     type State: Send + Sync + Sized;
+
+    const TICK_COUNT: usize;
+
+    /// initializes tick for this [`FetchComponents`] type
+    fn init_ticks(_world: &World, _ticks: &mut Vec<TypeId>) {}
 
     /// initializes ReadWrite for this [`FetchComponents`] type.
     fn init_read_write(_world: &World, _meta: &mut SystemMeta) {}
@@ -52,6 +56,8 @@ pub trait FetchComponents {
         world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w>;
 
     /// Fetch [`Self::Item`](`FetchComponents::Item`) for either the given `entity` in the current [`Table`],
@@ -75,6 +81,7 @@ impl FetchComponents for Entity {
     type Item<'w> = Entity;
     type ReadOnly = Entity;
     type State = ();
+    const TICK_COUNT: usize = 0;
 
     fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {}
 
@@ -82,6 +89,8 @@ impl FetchComponents for Entity {
         _world: &'w World,
         archetype: &'w Archetype,
         _state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w> {
         &archetype.table
     }
@@ -97,6 +106,7 @@ impl<T: 'static> FetchComponents for &T {
     type Item<'w> = &'w T;
     type ReadOnly = &'static T;
     type State = ColumnIndex;
+    const TICK_COUNT: usize = 0;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         meta.cur_param
@@ -121,6 +131,8 @@ impl<T: 'static> FetchComponents for &T {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w> {
         &archetype.table.get_column_unchecked(*state)
     }
@@ -132,10 +144,11 @@ impl<T: 'static> FetchComponents for &T {
 }
 
 impl<T: 'static> FetchComponents for &mut T {
-    type Fetch<'w> = &'w Column;
+    type Fetch<'w> = ColumnTick<'w>;
     type Item<'w> = Mut<'w, T>;
     type ReadOnly = &'static T;
     type State = ColumnIndex;
+    const TICK_COUNT: usize = 0;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         meta.cur_param
@@ -160,29 +173,170 @@ impl<T: 'static> FetchComponents for &mut T {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w> {
-        &archetype.table.get_column_unchecked(*state)
+        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
     }
 
     #[inline(always)]
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
-        Mut {
-            value: fetch.get_mut(row),
-            dirty: &fetch.changed,
-            e,
-            row,
+        Mut::new(fetch, e, row)
+    }
+}
+
+impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
+    type Fetch<'w> = ColumnTick<'w>;
+    type Item<'w> = Ticker<'w, &'w T>;
+    type ReadOnly = Ticker<'static, &'static T>;
+    type State = ColumnIndex;
+    const TICK_COUNT: usize = 1;
+
+    /// initializes tick for this [`FetchComponents`] type
+    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
+        ticks.push(TypeId::of::<T>());
+    }
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .reads
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::WITHOUT
+            } else {
+                Flags::READ
+            },
+        ))
+    }
+    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index(&TypeId::of::<T>())
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        Ticker::new(fetch, e, row)
+    }
+}
+
+impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
+    type Fetch<'w> = ColumnTick<'w>;
+    type Item<'w> = Ticker<'w, &'w mut T>;
+    type ReadOnly = Ticker<'static, &'static T>;
+    type State = ColumnIndex;
+    const TICK_COUNT: usize = 1;
+
+    /// initializes tick for this [`FetchComponents`] type
+    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
+        ticks.push(TypeId::of::<T>());
+    }
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .writes
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::WITHOUT
+            } else {
+                Flags::WRITE
+            },
+        ))
+    }
+    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index(&TypeId::of::<T>())
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        Ticker::new(fetch, e, row)
+    }
+}
+
+impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
+    type Fetch<'w> = Option<ColumnTick<'w>>;
+    type Item<'w> = Option<Ticker<'w, &'w T>>;
+    type ReadOnly = Option<Ticker<'static, &'static T>>;
+    type State = ColumnIndex;
+    const TICK_COUNT: usize = 1;
+
+    /// initializes tick for this [`FetchComponents`] type
+    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
+        ticks.push(TypeId::of::<T>());
+    }
+    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
+        meta.cur_param
+            .reads
+            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
+    }
+    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.merge(ArchetypeDepend::Flag(
+            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+                Flags::empty()
+            } else {
+                Flags::READ
+            },
+        ))
+    }
+    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index(&TypeId::of::<T>())
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        match fetch {
+            Some(f) => Some(Ticker::new(f, e, row)),
+            None => None,
         }
     }
 }
 
-pub struct Ticker<T> (PhantomData<T>);
-
-impl<T: 'static> FetchComponents for Ticker<&'_ T> {
-    type Fetch<'w> = &'w Column;
-    type Item<'w> = Ticker<&'w T>;
-    type ReadOnly = Ticker<&'static T>;
+impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
+    type Fetch<'w> = Option<ColumnTick<'w>>;
+    type Item<'w> = Option<Ticker<'w, &'w mut T>>;
+    type ReadOnly = Option<Ticker<'static, &'static T>>;
     type State = ColumnIndex;
+    const TICK_COUNT: usize = 1;
 
+    /// initializes tick for this [`FetchComponents`] type
+    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
+        ticks.push(TypeId::of::<T>());
+    }
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         meta.cur_param
             .writes
@@ -191,7 +345,7 @@ impl<T: 'static> FetchComponents for Ticker<&'_ T> {
     fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
         result.merge(ArchetypeDepend::Flag(
             if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::WITHOUT
+                Flags::empty()
             } else {
                 Flags::WRITE
             },
@@ -206,168 +360,20 @@ impl<T: 'static> FetchComponents for Ticker<&'_ T> {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w> {
-        &archetype.table.get_column_unchecked(*state)
+        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
     }
 
     #[inline(always)]
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
-        todo!()
+        match fetch {
+            Some(f) => Some(Ticker::new(f, e, row)),
+            None => None,
+        }
     }
 }
-
-impl<T: 'static> FetchComponents for Ticker<&'_ mut T> {
-    type Fetch<'w> = &'w Column;
-    type Item<'w> = Ticker<&'w mut T>;
-    type ReadOnly = Ticker<&'static T>;
-    type State = ColumnIndex;
-
-    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
-        meta.cur_param
-            .writes
-            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
-    }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::WITHOUT
-            } else {
-                Flags::WRITE
-            },
-        ))
-    }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
-    }
-
-    #[inline]
-    fn init_fetch<'w>(
-        _world: &'w World,
-        archetype: &'w Archetype,
-        state: &'w Self::State,
-    ) -> Self::Fetch<'w> {
-        &archetype.table.get_column_unchecked(*state)
-    }
-
-    #[inline(always)]
-    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
-        todo!()
-    }
-}
-
-impl<T: 'static> FetchComponents for Option<Ticker<&'_ T>> {
-    type Fetch<'w> = Option<&'w Column>;
-    type Item<'w> = Option<Ticker<&'w T>>;
-    type ReadOnly = Option<Ticker<&'static T>>;
-    type State = ColumnIndex;
-
-    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
-        meta.cur_param
-            .reads
-            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
-    }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::READ
-            },
-        ))
-    }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
-    }
-
-    #[inline]
-    fn init_fetch<'w>(
-        _world: &'w World,
-        archetype: &'w Archetype,
-        state: &'w Self::State,
-    ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
-    }
-
-    #[inline(always)]
-    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        // fetch.and_then(|c| Some(c.get(row)))
-        todo!()
-    }
-}
-
-impl<T: 'static> FetchComponents for Option<Ticker<&'_ mut T>> {
-    type Fetch<'w> = Option<&'w Column>;
-    type Item<'w> = Option<Ticker<&'w mut T>>;
-    type ReadOnly = Option<Ticker<&'static T>>;
-    type State = ColumnIndex;
-
-    fn init_read_write(_world: &World, meta: &mut SystemMeta) {
-        meta.cur_param
-            .reads
-            .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
-    }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::READ
-            },
-        ))
-    }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
-    }
-
-    #[inline]
-    fn init_fetch<'w>(
-        _world: &'w World,
-        archetype: &'w Archetype,
-        state: &'w Self::State,
-    ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
-    }
-
-    #[inline(always)]
-    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        // fetch.and_then(|c| Some(c.get(row)))
-        todo!()
-    }
-}
-
-impl<T> Ticker<T> {
-    #[inline(always)]
-    pub fn into_inner(self) -> T {
-        todo!()
-    }
-
-    #[inline(always)]
-    pub fn is_changed(&self) -> bool {
-        todo!()
-    }
-}
-impl<'a, T: 'static> Deref for Ticker<&'_ T> {
-    type Target = T;
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        todo!()
-    }
-}
-
-impl<'a, T: 'static> Deref for Ticker<&'_ mut T> {
-    type Target = T;
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        todo!()
-    }
-}
-
-impl<'a, T: 'static> DerefMut for Ticker<&'_ mut T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        todo!()
-    }
-}
-
 
 
 impl<T: 'static> FetchComponents for Option<&T> {
@@ -375,6 +381,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
     type Item<'w> = Option<&'w T>;
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
+    const TICK_COUNT: usize = 0;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         meta.cur_param
@@ -399,6 +406,8 @@ impl<T: 'static> FetchComponents for Option<&T> {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
     }
@@ -410,10 +419,11 @@ impl<T: 'static> FetchComponents for Option<&T> {
 }
 
 impl<T: 'static> FetchComponents for Option<&mut T> {
-    type Fetch<'w> = Option<&'w Column>;
+    type Fetch<'w> = Option<ColumnTick<'w>>;
     type Item<'w> = Option<Mut<'w, T>>;
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
+    const TICK_COUNT: usize = 0;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         meta.cur_param
@@ -438,20 +448,18 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
+        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
     }
 
     #[inline(always)]
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
-        fetch.and_then(|c| {
-            Some(Mut {
-                value: c.get_mut(row),
-                dirty: &c.changed,
-                e,
-                row,
-            })
-        })
+        match fetch {
+            Some(f) => Some(Mut::new(f, e, row)),
+            None => None,
+        }
     }
 }
 /// 不存在T时，使用默认值。
@@ -463,6 +471,7 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
     type Item<'w> = &'w T;
     type ReadOnly = OrDefault<T>;
     type State = Result<ColumnIndex, SingleResource>;
+    const TICK_COUNT: usize = 0;
 
     fn init_read_write(_world: &World, meta: &mut SystemMeta) {
         let name: Cow<'static, str> = std::any::type_name::<T>().into();
@@ -503,6 +512,8 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
         _world: &'w World,
         archetype: &'w Archetype,
         state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w> {
         match state {
             Ok(s) => Ok(&archetype.table.get_column_unchecked(*s)),
@@ -525,6 +536,7 @@ impl<T: 'static> FetchComponents for Has<T> {
     type Item<'w> = bool;
     type ReadOnly = Has<T>;
     type State = bool;
+    const TICK_COUNT: usize = 0;
 
     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column(&TypeId::of::<T>()).is_some()
@@ -535,6 +547,8 @@ impl<T: 'static> FetchComponents for Has<T> {
         _world: &'w World,
         _archetype: &'w Archetype,
         state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w> {
         *state
     }
@@ -544,54 +558,122 @@ impl<T: 'static> FetchComponents for Has<T> {
         *fetch
     }
 }
+#[derive(Debug, Clone)]
+pub struct ColumnTick<'a> {
+    pub(crate) column: &'a Column,
+    pub(crate) tick: Tick,
+    pub(crate) last_run: Tick,
+}
+impl<'a> ColumnTick<'a> {
+    
+    fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
+        Self {
+            column,
+            tick,
+            last_run,
+        }
+    }
+    
+}
+
+#[derive(Debug)]
+pub struct Ticker<'a, T> {
+    pub(crate) c: ColumnTick<'a>,
+    pub(crate) e: Entity,
+    pub(crate) row: Row,
+    _p: PhantomData<T>,
+}
+
+impl<'a, T> Ticker<'a, T> {
+    #[inline(always)]
+    pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
+        Self {
+            c: c.clone(),
+            e,
+            row,
+            _p: PhantomData,
+        }
+    }
+    #[inline(always)]
+    pub fn tick(&self) -> Tick {
+        self.c.column.get_tick_unchecked(self.row)
+    }
+    #[inline(always)]
+    pub fn is_changed(&self) -> bool {
+        self.c.column.get_tick_unchecked(self.row) > self.c.last_run
+    }
+}
+impl<'a, T: 'static> Deref for Ticker<'a, &'_ T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.c.column.get::<T>(self.row)
+    }
+}
+
+impl<'a, T: 'static> Deref for Ticker<'a, &'_ mut T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.c.column.get::<T>(self.row)
+    }
+}
+
+impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.c.column.change_record(self.e, self.row, self.c.tick);
+        self.c.column.get_mut::<T>(self.row)
+    }
+}
 
 /// Unique mutable borrow of an entity's component
 #[derive(Debug)]
-pub struct Mut<'a, T: ?Sized> {
-    pub(crate) value: &'a mut T,
-    pub(crate) dirty: &'a ComponentDirty,
+pub struct Mut<'a, T: 'static> {
+    pub(crate) column: &'a Column,
     pub(crate) e: Entity,
     pub(crate) row: Row,
+    pub(crate) tick: Tick,
+    _p: PhantomData<T>,
 }
-impl<'a, T: ?Sized> Mut<'a, T> {
+impl<'a, T: Sized> Mut<'a, T> {
     #[inline(always)]
-    pub fn entity(&self) -> Entity {
-        self.e
+    pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
+        Self {
+            column: c.column,
+            e,
+            row,
+            tick: c.tick,
+            _p: PhantomData,
+        }
     }
-
     #[inline(always)]
     pub fn into_inner(self) -> &'a mut T {
-        self.dirty.record(self.e, self.row);
-        self.value
+        self.column.change_record(self.e, self.row, self.tick);
+        self.column.get_mut::<T>(self.row)
     }
 
     #[inline(always)]
     pub fn bypass_change_detection(&mut self) -> &mut T {
-        self.value
+        self.column.get_mut::<T>(self.row)
     }
-
     #[inline(always)]
     pub fn set_changed(&mut self) {
-        self.dirty.record(self.e, self.row);
+        self.column.change_record(self.e, self.row, self.tick);
     }
 
-    #[inline(always)]
-    pub fn is_changed(&self) -> bool {
-        todo!()
-    }
 }
-impl<'a, T: ?Sized> Deref for Mut<'a, T> {
+impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        &self.value
+        self.column.get::<T>(self.row)
     }
 }
-impl<'a, T: ?Sized> DerefMut for Mut<'a, T> {
+impl<'a, T: 'static> DerefMut for Mut<'a, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.dirty.record(self.e, self.row);
-        self.value
+        self.column.change_record(self.e, self.row, self.tick);
+        self.column.get_mut::<T>(self.row)
     }
 }
 
@@ -605,7 +687,11 @@ macro_rules! impl_tuple_fetch {
             type Item<'w> = ($($name::Item<'w>,)*);
             type ReadOnly = ($($name::ReadOnly,)*);
             type State = ($($name::State,)*);
+            const TICK_COUNT: usize = $($name::TICK_COUNT + )* 0;
 
+            fn init_ticks(_world: &World, _ticks: &mut Vec<TypeId>) {
+                ($($name::init_ticks(_world, _ticks),)*);
+            }
             fn init_read_write(_world: &World, _meta: &mut SystemMeta) {
                 ($($name::init_read_write(_world, _meta),)*);
             }
@@ -624,9 +710,15 @@ macro_rules! impl_tuple_fetch {
 
             #[inline(always)]
             #[allow(clippy::unused_unit)]
-            fn init_fetch<'w>(_world: &'w World, _archetype: &'w Archetype, _state: &'w Self::State) -> Self::Fetch<'w> {
+            fn init_fetch<'w>(
+                _world: &'w World,
+                _archetype: &'w Archetype,
+                _state: &'w Self::State,
+                _tick: Tick,
+                _last_run: Tick,
+                ) -> Self::Fetch<'w> {
                 let ($($state,)*) = _state;
-                ($($name::init_fetch(_world, _archetype, $state),)*)
+                ($($name::init_fetch(_world, _archetype, $state, _tick, _last_run),)*)
             }
 
             #[inline(always)]

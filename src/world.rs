@@ -302,7 +302,7 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
-        if let Some(c) = ar.get_column(tid) {
+        if let Some((c, _)) = ar.get_column(tid) {
             Ok(c.get_row(addr.row))
         } else {
             Err(QueryError::MissingComponent)

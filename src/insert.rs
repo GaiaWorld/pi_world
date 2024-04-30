@@ -69,6 +69,10 @@ impl<'world, I: Bundle> Insert<'world, I> {
         Insert { world, state, tick }
     }
     #[inline]
+    pub fn tick(&self) -> Tick {
+        self.tick
+    }
+    #[inline]
     pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
         let row = self.state.1.table.alloc();
         let e = self.world.insert(self.state.0, row);
@@ -184,7 +188,7 @@ macro_rules! impl_tuple_insert {
                 vec![$(ComponentInfo::of::<$name>(),)*]
             }
             fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
-                ($(TState::new(_archetype.get_column(&TypeId::of::<$name>()).unwrap()),)*)
+                ($(TState::new(_archetype.get_column(&TypeId::of::<$name>()).unwrap().0),)*)
             }
 
             fn insert(
