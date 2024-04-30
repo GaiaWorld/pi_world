@@ -17,3 +17,5 @@
 ListenType::Remove要修改在原型上加Removes
 单例上加tick
 Query可以优化iter，iter_tick, iter_dirty, iter_dirtys
+
+world上加方法，直接给实体插入和删除组件， 而不是通过alter
