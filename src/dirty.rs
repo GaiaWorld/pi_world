@@ -71,8 +71,8 @@ impl Null for EntityDirty {
 
 #[derive(Debug, Default)]
 pub struct ComponentDirty {
-    listeners: Vec<(TypeId, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
-    vec: AppendVec<EntityDirty>,                      // 记录的脏Row，可以重复
+    listeners: Vec<(TypeId, ShareUsize)>,           // 每个监听器的TypeId和当前读取的长度
+    vec: AppendVec<EntityDirty>,                    // 记录的脏Row，可以重复
 }
 unsafe impl Sync for ComponentDirty {}
 unsafe impl Send for ComponentDirty {}

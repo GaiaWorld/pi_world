@@ -32,7 +32,7 @@ use crate::column::Column;
 use crate::dirty::{ComponentDirty, DirtyIndex};
 use crate::filter::ListenType;
 use crate::table::Table;
-use crate::world::{World, Entity};
+use crate::world::World;
 
 pub type ShareArchetype = Share<Archetype>;
 
@@ -184,7 +184,6 @@ impl Archetype {
         owner: TypeId,
         listeners: &SmallVec<[(TypeId, ListenType); 1]>,
     ) {
-        //println!("add_dirty_listeners");
         for (tid, ltype) in listeners.iter() {
             if let Some((c, _)) = self.get_column_mut(tid) {
                 c.is_tick = true;

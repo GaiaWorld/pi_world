@@ -1,7 +1,8 @@
-//! () 为空过滤器
+//! () 为空过滤器，表示不做过滤
+//! Empty表示取World的空原型
 //! 2种原型过滤器 Without<C> With<C>
 //! Or只支持多个With<C>，表示原型上只要有任何1个C就可以
-//! Added Changed Removed 为迭代器，多个迭代器是或关系， 原型上只要有1个可迭代的组件就可以
+//! Added Changed Removed Destroyed为迭代器，多个迭代器是或关系， 原型上只要有1个可迭代的组件就可以
 //! Query<(&T, &mut C8>), (Without<C1>,With<C2>,With<C3>,Or<(With<C4>, With<C5>)>, Changed<C6>, Added<C7>, Removed<C8>)>
 //!
 
@@ -37,6 +38,15 @@ pub trait FilterComponents {
     fn init_listeners(_world: &World, _listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {}
     fn archetype_filter(_archetype: &Archetype) -> bool {
         false
+    }
+}
+
+/// Empty表示取World的空原型
+pub struct Empty;
+impl FilterComponents for Empty {
+    const LISTENER_COUNT: usize = 0;
+    fn archetype_filter(archetype: &Archetype) -> bool {
+        archetype.id() != &0
     }
 }
 

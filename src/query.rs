@@ -259,6 +259,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
             return;
         }
         unsafe {
+            ar.0.add_ticks(&self.0);
             ar.0.add_dirty_listeners(TypeId::of::<QueryState<Q, F>>(), &self.1)
         };
     }
