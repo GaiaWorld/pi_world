@@ -91,7 +91,7 @@ pub fn alter1(
     }
     println!("alter1: end");
 }
-pub fn added_l(q0: Query<(Entity, &mut Age1, &mut Age0), (Added<Age1>, Added<Age2>)>) {
+pub fn added_l(q0: Query<(Entity, &mut Age1, &mut Age0), (Changed<Age1>, Changed<Age2>)>) {
     println!("add_l");
     for (e, age1, _) in q0.iter() {
         println!("e {:?}, age1: {:?}", e, age1);
@@ -706,4 +706,55 @@ mod test_mod {
         assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 8.0);
         assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
     }
+
+    #[test]
+    fn test_ticker() {
+        pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
+            println!("insert1 is now");
+            let e = i0.insert((Age3(3), Age1(1), Age0(0)));
+            println!("insert1 is end, e:{:?}", e);
+        }
+        pub fn print_changed_entities(
+            mut q0: Query<(
+                Entity,
+                Ticker<&mut Age0>,
+                Ticker<&mut Age1>,
+            )>,
+        ) {
+            println!("print_changed_entities it:{:?}", q0.iter().size_hint());
+            let q = q0.iter_mut();
+            for (e, mut age0, age1,) in q {
+                age0.0 += 1 + age1.0;
+                println!("print_changed_entities {:?}", e);
+            }
+            println!("print_changed_entities over");
+        }
+        pub fn print_changed2(
+            q0: Query<(
+                Ticker<&Age0>,
+                Ticker<&Age1>,
+            )>,
+        ) {
+            println!("print_changed2 tick:{:?}, last_run:{:?} it:{:?}", q0.tick(), q0.last_run(), q0.iter().size_hint());
+            let q = q0.iter();
+            for (
+                age0,
+                age1,
+            ) in q
+            {
+                assert!(age0.is_changed());
+                println!("tick: {:?}, {}", age1.tick(), age1.is_changed());
+            }
+            println!("print_changed2 over");
+        }
+ 
+        let mut app = SingleThreadApp::new();
+        app.add_system(Update, insert);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, print_changed2);
+        
+        app.run();
+        app.run();
+    }
+
 }

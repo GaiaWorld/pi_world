@@ -17,7 +17,6 @@
 use core::fmt::*;
 use std::any::TypeId;
 use std::borrow::Cow;
-use std::cell::SyncUnsafeCell;
 use std::mem::{needs_drop, size_of, transmute};
 use std::sync::atomic::Ordering;
 
@@ -29,8 +28,6 @@ use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
 use crate::column::Column;
-use crate::dirty::{ComponentDirty, DirtyIndex};
-use crate::filter::ListenType;
 use crate::table::Table;
 use crate::world::World;
 
@@ -71,9 +68,7 @@ impl ArchetypeDependResult {
     pub fn merge(&mut self, depend: ArchetypeDepend) {
         match depend {
             ArchetypeDepend::Flag(f) => self.flag |= f,
-            ArchetypeDepend::Alter(t) if !self.flag.contains(Flags::WITHOUT) => {
-                self.alters.push(t)
-            }
+            ArchetypeDepend::Alter(t) if !self.flag.contains(Flags::WITHOUT) => self.alters.push(t),
             _ => (),
         }
     }
@@ -89,8 +84,6 @@ pub struct Archetype {
     name: Cow<'static, str>,
     pub(crate) table: Table,
     map: PhfMap<TypeId, ColumnIndex>,
-    pub(crate) removes: SyncUnsafeCell<Vec<(TypeId, ComponentDirty)>>, // 其他原型通过移除Component转到该原型
-    pub(crate) destroys: ComponentDirty, // 该原型的实体被标记销毁的脏列表
     pub(crate) index: ShareU32, // ，在全局原型列表中的位置，也表示是否已就绪，脏列表是否已经被全部的system添加好了
 }
 
@@ -140,8 +133,6 @@ impl Archetype {
             name: s.into(),
             table: Table::new(components),
             map: PhfMap::new(vec1),
-            removes: Default::default(),
-            destroys: ComponentDirty::default(),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -169,54 +160,6 @@ impl Archetype {
             }
         }
         (add, moving)
-    }
-    // 根据tick列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-    pub(crate) unsafe fn add_ticks(&self, ticks: &Vec<TypeId>) {
-        for tid in ticks.iter() {
-            if let Some((c, _)) = self.get_column_mut(tid) {
-                c.is_tick = true;
-            }
-        }
-    }
-    // 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-    pub(crate) unsafe fn add_dirty_listeners(
-        &self,
-        owner: TypeId,
-        listeners: &SmallVec<[(TypeId, ListenType); 1]>,
-    ) {
-        for (tid, ltype) in listeners.iter() {
-            if let Some((c, _)) = self.get_column_mut(tid) {
-                c.is_tick = true;
-                match ltype {
-                    ListenType::Add =>  c.added.insert_listener(owner),
-                    ListenType::ComponentChange => c.changed.insert_listener(owner),
-                    ListenType::ComponentRemove => c.changed.insert_listener(owner),
-                    ListenType::EntityDestroy => c.changed.insert_listener(owner),
-                }
-            }
-        }
-    }
-    // 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
-    pub fn find_dirty_listeners(
-        &self,
-        owner: TypeId,
-        listens: &SmallVec<[(TypeId, ListenType); 1]>,
-        vec: &mut SmallVec<[DirtyIndex; 1]>,
-    ) {
-        for (tid, ltype) in listens.iter() {
-            let index = self.get_column_index(tid);
-            if index.is_null() {
-                continue;
-            }
-            let c = self.table.get_column_unchecked(index);
-            let d = match ltype {
-                ListenType::Add => &c.added,
-                ListenType::ComponentChange => &c.changed,
-                ListenType::ComponentRemove => &c.changed,
-                ListenType::EntityDestroy => &c.changed,
-            };
-            d.find(index, owner, *ltype, vec);
-        }
     }
 
     /// Returns the id of the archetype.
@@ -271,16 +214,17 @@ impl Archetype {
         None
     }
     #[inline(always)]
-    unsafe fn get_column_mut(&self, type_id: &TypeId) -> Option<(&mut Column, ColumnIndex)> {
+    pub(crate) unsafe fn get_column_mut(
+        &self,
+        type_id: &TypeId,
+    ) -> Option<(&mut Column, ColumnIndex)> {
         if let Some(t) = self.map.get(&type_id) {
             if t.is_null() {
                 return None;
             }
             let c = self.table.get_column_unchecked(*t);
             if &c.info().type_id == type_id {
-                return unsafe {
-                    transmute(Some((c, *t)))
-                }
+                return unsafe { transmute(Some((c, *t))) };
             }
         }
         None

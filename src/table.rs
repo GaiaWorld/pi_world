@@ -4,7 +4,9 @@
 ///
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
+use std::any::TypeId;
 use std::mem::{replace, transmute};
+use std::cell::SyncUnsafeCell;
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
@@ -14,11 +16,14 @@ use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
 use crate::world::{Entity, World};
+use crate::dirty::Dirty;
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
     pub(crate) columns: Vec<Column>,       // 每个组件
     removes: AppendVec<Row>,               // 整理前被移除的实例
+    pub(crate) column_removes: SyncUnsafeCell<Vec<(TypeId, Dirty)>>, // 其他原型通过移除Component转到该原型
+    pub(crate) destroys: Dirty, // 该原型的实体被标记销毁的脏列表
 }
 impl Table {
     pub fn new(infos: Vec<ComponentInfo>) -> Self {
@@ -26,6 +31,8 @@ impl Table {
             entities: AppendVec::default(),
             columns: infos.into_iter().map(|info| Column::new(info)).collect(),
             removes: AppendVec::default(),
+            column_removes: Default::default(),
+            destroys: Dirty::default(),
         }
     }
     /// 长度

@@ -892,7 +892,7 @@ impl<'a> Listener for Notify<'a> {
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&self.1, (0..self.1.len()), &ar.0, &ar.1);
+        self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
         if self.2 {
             dbg!(Dot::with_config(&self.0, Config::empty()));
         }

@@ -23,7 +23,7 @@ use crate::world::Entity;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DirtyIndex {
     column_index: ColumnIndex, // 对应列的位置
-    vec_index: u32,    // 在ComponentDirty的Added或Changed的Vec中的位置
+    vec_index: u32,    // 在Dirty的Vec中的位置
     ltype: ListenType,
 }
 impl DirtyIndex {
@@ -38,10 +38,9 @@ impl DirtyIndex {
     #[inline]
     pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, EntityDirty> {
         let r = match self.ltype {
-            ListenType::Add => &archetype.table.get_column_unchecked(self.column_index).added,
-            ListenType::ComponentChange => &archetype.table.get_column_unchecked(self.column_index).changed,
-            ListenType::ComponentRemove => &archetype.table.get_column_unchecked(self.column_index).changed,
-            ListenType::EntityDestroy => &archetype.table.get_column_unchecked(self.column_index).changed,
+            ListenType::Changed => &archetype.table.get_column_unchecked(self.column_index).dirty,
+            ListenType::Removed => &archetype.table.get_column_unchecked(self.column_index).dirty,
+            ListenType::Destroyed => &archetype.table.get_column_unchecked(self.column_index).dirty,
         };
         let end = r.vec.len();
         // 从上次读取到的位置开始读取
@@ -70,13 +69,13 @@ impl Null for EntityDirty {
 }
 
 #[derive(Debug, Default)]
-pub struct ComponentDirty {
+pub struct Dirty {
     listeners: Vec<(TypeId, ShareUsize)>,           // 每个监听器的TypeId和当前读取的长度
     vec: AppendVec<EntityDirty>,                    // 记录的脏Row，可以重复
 }
-unsafe impl Sync for ComponentDirty {}
-unsafe impl Send for ComponentDirty {}
-impl ComponentDirty {
+unsafe impl Sync for Dirty {}
+unsafe impl Send for Dirty {}
+impl Dirty {
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: TypeId) {
         self.listeners.push((owner, ShareUsize::new(0)));

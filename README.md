@@ -11,11 +11,15 @@
 ## 已经支持异步system
 ## 新实现Local的SystemParm
 
+# v0.2
+## 增加World的tick
+## 单例上加tick
+## 多例上加tick
+## 支持了Insert空原型，及alter从空原型变为有组件原型
+## 增加Ticker， 支持查询组件is_changed
+## 合并Added和Changed，常用的单组件改变查询的情况下，性能有提升
+## 如果一个原型的Component被Ticker查询或有Changed过滤，则会在Column上增加Tick记录, 
+## 增加Destroyed的entity，保留其Component，直到所以监听Destroyed的system都执行完毕再删除Entity
 
-增加World的tick， 在Column上增加Option<SafeVec<Tick>>, Ref和Mut上增加Ticker.is_changed, world_tick, last_tick(system), Ticked Changed
-增加Deleted的entity，保留其Component，直到所以监听Deleted的system都执行完毕再删除Entity
 ListenType::Remove要修改在原型上加Removes
-单例上加tick
-Query可以优化iter，iter_tick, iter_dirty, iter_dirtys
-
-world上加方法，直接给实体插入和删除组件， 而不是通过alter
+Query可以优化iter, iter_dirty, iter_dirtys

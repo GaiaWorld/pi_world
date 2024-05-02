@@ -145,6 +145,7 @@ impl<
             e,
             addr.row,
             components,
+            self.query.tick,
         )
     }
 }
@@ -165,6 +166,7 @@ impl<
             &self.state.moved_cloumns,
             &self.state.added_cloumns,
             &self.state.del_cloumns,
+            self.query.tick,
         );
     }
 }
@@ -283,6 +285,7 @@ impl<
             e,
             addr.row,
             components,
+            self.query.tick,
         )
     }
 }
@@ -387,6 +390,7 @@ impl<
             &self.state.moved_cloumns,
             &self.state.added_cloumns,
             &self.state.del_cloumns,
+            self.query.tick,
         );
     }
 }
@@ -455,6 +459,7 @@ impl<A: Bundle> AlterState<A> {
         e: Entity,
         row: Row,
         components: A::Item,
+        tick: Tick,
     ) -> Result<bool, QueryError> {
         let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index) };
         if mapping.dst.table.columns.len() == 0 {
@@ -479,6 +484,7 @@ impl<A: Bundle> AlterState<A> {
             components,
             e,
             dst_row,
+            tick,
         );
         Ok(true)
     }
@@ -517,6 +523,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
             self.it.e,
             self.it.row,
             components,
+            self.it.tick,
         )
     }
 }
@@ -666,13 +673,14 @@ pub(crate) fn clear(
     moved_columns: &Vec<(ColumnIndex, ColumnIndex)>,
     added_columns: &Vec<ColumnIndex>,
     del_columns: &Vec<ColumnIndex>,
+    tick: Tick,
 ) {
     // 处理标记移除的条目， 将要删除的组件释放，将相同的组件拷贝
     for ar_index in mapping_dirtys.iter() {
         let am = unsafe { vec.get_unchecked_mut(*ar_index) };
         move_columns(am, moved_columns);
-        delete_columns(am, del_columns);
-        add_columns(am, added_columns);
+        delete_columns(am, del_columns, tick);
+        add_columns(am, added_columns, tick);
         update_table_world(world, am);
         am.moves.clear();
     }
@@ -705,7 +713,7 @@ fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(Row, Row, 
     }
 }
 // 将需要删除的全部源组件删除
-fn delete_columns(am: &mut ArchetypeMapping, del_columns: &Vec<ColumnIndex>) {
+fn delete_columns(am: &mut ArchetypeMapping, del_columns: &Vec<ColumnIndex>, tick: Tick) {
     for i in am.del_indexs.clone().into_iter() {
         let column_index = unsafe { del_columns.get_unchecked(i) };
         let column = am.src.table.get_column_unchecked(*column_index);
@@ -729,15 +737,15 @@ fn delete_columns(am: &mut ArchetypeMapping, del_columns: &Vec<ColumnIndex>) {
     }
 }
 // 通知新增的源组件
-fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>) {
+fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: Tick) {
     for i in am.add_indexs.clone().into_iter() {
         let column_index = unsafe { add_columns.get_unchecked(i) };
         let column = am.dst.table.get_column_unchecked(*column_index);
-        if column.added.listener_len() == 0 {
+        if column.dirty.listener_len() == 0 {
             continue;
         }
         for (_, dst_row, e) in am.moves.iter() {
-            column.added.record_unchecked(*e, *dst_row);
+            column.add_record_unchecked(*e, *dst_row, tick);
         }
     }
 }

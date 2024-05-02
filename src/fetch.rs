@@ -11,7 +11,7 @@ use crate::archetype::{
 use crate::column::Column;
 use crate::system::SystemMeta;
 use crate::table::Table;
-use crate::world::{Entity, SingleResource, World, Tick};
+use crate::world::{Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -176,7 +176,11 @@ impl<T: 'static> FetchComponents for &mut T {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
+        ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        )
     }
 
     #[inline(always)]
@@ -222,7 +226,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
+        ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        )
     }
 
     #[inline(always)]
@@ -268,7 +276,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run)
+        ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        )
     }
 
     #[inline(always)]
@@ -314,7 +326,11 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
+        (!state.is_null()).then_some(ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        ))
     }
 
     #[inline(always)]
@@ -363,7 +379,11 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
+        (!state.is_null()).then_some(ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        ))
     }
 
     #[inline(always)]
@@ -374,7 +394,6 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         }
     }
 }
-
 
 impl<T: 'static> FetchComponents for Option<&T> {
     type Fetch<'w> = Option<&'w Column>;
@@ -451,7 +470,11 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(&archetype.table.get_column_unchecked(*state), tick, last_run))
+        (!state.is_null()).then_some(ColumnTick::new(
+            &archetype.table.get_column_unchecked(*state),
+            tick,
+            last_run,
+        ))
     }
 
     #[inline(always)]
@@ -565,7 +588,6 @@ pub struct ColumnTick<'a> {
     pub(crate) last_run: Tick,
 }
 impl<'a> ColumnTick<'a> {
-    
     fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
         Self {
             column,
@@ -573,7 +595,6 @@ impl<'a> ColumnTick<'a> {
             last_run,
         }
     }
-    
 }
 
 #[derive(Debug)]
@@ -593,6 +614,10 @@ impl<'a, T> Ticker<'a, T> {
             row,
             _p: PhantomData,
         }
+    }
+    #[inline(always)]
+    pub fn entity(&self) -> Entity {
+        self.e
     }
     #[inline(always)]
     pub fn tick(&self) -> Tick {
@@ -660,7 +685,6 @@ impl<'a, T: Sized> Mut<'a, T> {
     pub fn set_changed(&mut self) {
         self.column.change_record(self.e, self.row, self.tick);
     }
-
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;

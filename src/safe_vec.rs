@@ -13,6 +13,14 @@ pub struct SafeVec<T> {
     len: ShareUsize,
 }
 impl<T> SafeVec<T> {
+    #[inline(always)]
+    pub fn with_capacity(capacity: usize) -> Self {
+        let vec = AppendVec::with_capacity(capacity);
+        Self {
+            vec,
+            len: ShareUsize::new(0),
+        }
+    }
     /// 长度
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -43,6 +51,10 @@ impl<T> SafeVec<T> {
     #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         &mut *self.vec.get_unchecked_mut(index).as_mut_ptr()
+    }
+    #[inline(always)]
+    pub fn load(&self, index: usize) -> Option<&mut T> {
+        self.vec.load(index).map(|r| unsafe { &mut *r.as_mut_ptr() })
     }
     #[inline(always)]
     pub unsafe fn load_unchecked_mut(&self, index: usize) -> &mut T {

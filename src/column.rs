@@ -10,15 +10,17 @@ use pi_append_vec::AppendVec;
 use pi_arr::{Arr, Location, BUCKETS};
 
 use crate::{
-    archetype::{ComponentInfo, Row}, dirty::ComponentDirty, prelude::Entity, world::Tick
+    archetype::{ComponentInfo, Row},
+    dirty::Dirty,
+    prelude::Entity,
+    world::Tick,
 };
 
 pub struct Column {
     blob: Blob,
     ticks: AppendVec<Tick>,
-    pub(crate) is_tick: bool, // 是否记录tick
-    pub(crate) added: ComponentDirty, // // Alter和Insert产生的添加脏，
-    pub(crate) changed: ComponentDirty, // Query产生的修改脏，
+    pub(crate) is_tick: bool,           // 是否记录tick
+    pub(crate) dirty: Dirty, // Alter和Insert产生的添加脏和Query产生的修改脏，
 }
 
 impl Column {
@@ -28,8 +30,7 @@ impl Column {
             blob: Blob::new(info),
             ticks: Default::default(),
             is_tick: false,
-            added: Default::default(),
-            changed: Default::default(),
+            dirty: Default::default(),
         }
     }
     #[inline(always)]
@@ -38,7 +39,8 @@ impl Column {
     }
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
-        *self.ticks.get(row as usize).unwrap()
+        // todo!()
+        self.ticks.get_i(row as usize).map_or(Tick::default(), |t| *t)
     }
     #[inline(always)]
     pub fn get_tick(&self, row: Row) -> Option<Tick> {
@@ -53,9 +55,13 @@ impl Column {
         if *old < tick {
             *old = tick;
         }
-        self.changed.record(e, row);
+        self.dirty.record(e, row);
     }
-
+    #[inline]
+    pub fn add_record_unchecked(&self, e: Entity, row: Row, tick: Tick) {
+        *self.ticks.load_alloc(row as usize) = tick;
+        self.dirty.record_unchecked(e, row);
+    }
     #[inline(always)]
     pub fn get<T>(&self, row: Row) -> &T {
         unsafe { transmute(self.blob.get(row)) }
@@ -106,7 +112,7 @@ impl Column {
         if self.is_tick {
             self.ticks.reserve(additional);
         }
-        self.added.reserve(additional);
+        self.dirty.reserve(additional);
     }
     /// 整理合并空位
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
@@ -119,7 +125,7 @@ impl Column {
                 }
             }
             self.ticks.collect();
-        }else{
+        } else {
             for (src, dst) in action.iter() {
                 self.collect_key(src, dst);
             }
@@ -129,7 +135,7 @@ impl Column {
     }
     /// 整理方法，返回该列的脏列表是否清空
     pub(crate) fn collect_dirty(&mut self) -> bool {
-        self.added.collect() && self.changed.collect()
+        self.dirty.collect()
     }
     /// 整理合并指定的键
     fn collect_key(&mut self, src: &Row, dst: &Row) {
@@ -145,8 +151,7 @@ impl Debug for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Column")
             .field("info", &self.info())
-            .field("added", &self.added)
-            .field("changed", &self.changed)
+            .field("changed", &self.dirty)
             .finish()
     }
 }
@@ -176,8 +181,8 @@ impl Blob {
         }
         let mut loc = Location::of(row - self.vec_capacity);
         loc.entry *= self.info.mem_size;
-            // todo get_unchecked()
-            transmute(self.arr.get(&loc).unwrap())
+        // todo get_unchecked()
+        transmute(self.arr.get(&loc).unwrap())
     }
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {

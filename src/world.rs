@@ -17,6 +17,7 @@ use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
 use std::mem::{transmute, ManuallyDrop};
+use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
@@ -34,14 +35,40 @@ use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
 use pi_null::Null;
-use pi_share::{Share, ShareUsize};
+use pi_share::{Share, ShareU32};
 use pi_slot::{Iter, SlotMap};
 
 new_key_type! {
     pub struct Entity;
 }
 /// This is used to power change detection.
-pub type Tick = usize;
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Tick(u32);
+impl Deref for Tick {
+    type Target = u32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl Null for Tick {
+    fn null() -> Self {
+        Self(0)
+    }
+    fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+}
+impl From<u32> for Tick {
+    fn from(v: u32) -> Self {
+        Self(v)
+    }
+}
+impl From<Tick> for u32 {
+    fn from(value: Tick) -> Self {
+        value.0
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
@@ -51,7 +78,6 @@ pub struct ArchetypeOk<'a>(
     pub ArchetypeWorldIndex,
     pub &'a World,
 );
-
 
 #[derive(Debug)]
 pub struct World {
@@ -65,32 +91,38 @@ pub struct World {
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
-    tick: ShareUsize,
+    // 世界当前的tick
+    tick: ShareU32,
 }
 impl World {
     pub fn new() -> Self {
         let listener_mgr = ListenerMgr::default();
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
+        let empty_archetype = ShareArchetype::new(Archetype::new(vec![]));
+        let archetype_arr = SafeVec::with_capacity(1);
+        archetype_arr.insert(empty_archetype.clone());
         Self {
             single_res_map: DashMap::default(),
             single_res_arr: SafeVec::default(),
             multi_res_map: DashMap::default(),
             entities: SlotMap::default(),
             archetype_map: DashMap::new(),
-            archetype_arr: SafeVec::default(),
-            empty_archetype: ShareArchetype::new(Archetype::new(vec![])),
+            archetype_arr,
+            empty_archetype,
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
-            tick: ShareUsize::new(1),
+            tick: ShareU32::new(1),
         }
     }
+    // 获得世界当前的tick
     pub fn tick(&self) -> Tick {
-        self.tick.load(Ordering::Relaxed)
+        self.tick.load(Ordering::Relaxed).into()
     }
+    // 递增世界当前的tick，一般是每执行图执行时递增
     pub fn increment_tick(&self) -> Tick {
-        self.tick.fetch_add(1, Ordering::Relaxed)
+        self.tick.fetch_add(1, Ordering::Relaxed).into()
     }
     /// 批量插入
     pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
@@ -155,7 +187,7 @@ impl World {
     /// 插入指定的单例资源，为了安全，必须保证不在ECS执行中调用，返回索引
     pub fn insert_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
-        let r = self.single_res_map.entry(tid) .or_insert_with(|| {
+        let r = self.single_res_map.entry(tid).or_insert_with(|| {
             let r = SingleResource::new(value);
             let name = std::any::type_name::<T>().into();
             let index = self.single_res_arr.insert(Some(r.clone()));
@@ -195,38 +227,47 @@ impl World {
             });
             index = r.value().1;
         }
-        
         index
     }
 
     /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回SingleRes
     #[inline]
-    pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&T> {
+    pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<(&T, &Tick)> {
         unsafe { transmute(self.index_single_res_ptr::<T>(index)) }
     }
     /// 用索引获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回SingleRes
     #[inline]
-    pub fn index_single_res_mut<T: 'static>(&mut self, index: usize) -> Option<&mut T> {
+    pub fn index_single_res_mut<T: 'static>(
+        &mut self,
+        index: usize,
+    ) -> Option<(&mut T, &mut Tick)> {
         unsafe { transmute(self.index_single_res_ptr::<T>(index)) }
     }
     #[inline]
-    pub(crate) fn index_single_res_ptr<T: 'static>(&self, index: usize) -> *mut T {
+    pub(crate) fn index_single_res_ptr<T: 'static>(&self, index: usize) -> (*mut T, *mut Tick) {
         self.single_res_arr
             .get(index)
-            .map_or(null_mut(), |r| unsafe {
+            .map_or((null_mut(), null_mut()), |r| unsafe {
                 match r {
-                    Some(r) => transmute(r.0.downcast_ref_unchecked::<T>()),
-                    None => null_mut(),
+                    Some(r) => (
+                        transmute(r.0.downcast_ref_unchecked::<T>()),
+                        transmute(&r.1),
+                    ),
+                    None => (null_mut(), null_mut()),
                 }
             })
     }
 
     /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回SingleRes
     #[inline]
     pub fn get_single_res<T: 'static>(&self) -> Option<&T> {
         unsafe { transmute(self.get_single_res_ptr::<T>()) }
     }
     /// 获得指定的单例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回SingleRes
     #[inline]
     pub fn get_single_res_mut<T: 'static>(&mut self) -> Option<&mut T> {
         unsafe { transmute(self.get_single_res_ptr::<T>()) }
@@ -244,7 +285,12 @@ impl World {
             })
     }
     pub(crate) fn get_single_res_any(&self, tid: &TypeId) -> Option<SingleResource> {
-        self.single_res_map.get(tid).map_or(None, |r| r.value().0.clone())
+        self.single_res_map
+            .get(tid)
+            .map_or(None, |r| r.value().0.clone())
+    }
+    pub(crate) fn index_single_res_any(&self, index: usize) -> Option<&mut SingleResource> {
+        self.single_res_arr.load(index).map_or(None, |r| r.as_mut())
     }
     /// 注册指定类型的多例资源，为了安全，必须保证不在ECS执行中调用
     pub fn register_multi_res<T: 'static>(&mut self) {
@@ -263,14 +309,17 @@ impl World {
     pub(crate) fn system_init_write_multi_res<T: 'static, F>(
         &mut self,
         f: F,
-    ) -> Option<SingleResource>
+    ) -> Option<(SingleResource, Share<ShareU32>)>
     where
         F: FnOnce() -> T,
     {
         let tid = TypeId::of::<T>();
-        self.multi_res_map.get_mut(&tid).map(|mut r| r.insert(f()))
+        self.multi_res_map
+            .get_mut(&tid)
+            .map(|mut r| (r.insert(f()), r.1.clone()))
     }
     /// 获得指定的多例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回SingleRes
     pub fn get_multi_res<T: 'static>(&self, index: usize) -> Option<&T> {
         let tid = TypeId::of::<T>();
         self.multi_res_map
@@ -278,6 +327,7 @@ impl World {
             .map(|v| unsafe { transmute(v.get::<T>(index)) })
     }
     /// 获得指定的多例资源，为了安全，必须保证不在ECS执行中调用
+    /// todo!() 改成返回MultiResMut
     pub fn get_multi_res_mut<T: 'static>(&mut self, index: usize) -> Option<&mut T> {
         let tid = TypeId::of::<T>();
         self.multi_res_map
@@ -440,10 +490,10 @@ impl<T: Default> FromWorld for T {
 }
 
 #[derive(Debug, Clone)]
-pub struct SingleResource(Share<dyn Any>);
+pub struct SingleResource(Share<dyn Any>, pub(crate) Tick);
 impl SingleResource {
     fn new<T: 'static>(value: T) -> Self {
-        Self(Share::new(value))
+        Self(Share::new(value), Tick::default())
     }
     // pub fn name(&self) -> &Cow<'static, str> {
     //     &self.1
@@ -457,41 +507,44 @@ unsafe impl Sync for SingleResource {}
 
 #[derive(Debug, Clone)]
 pub struct MultiResource(
-    Share<SyncUnsafeCell<Vec<Share<dyn Any>>>>,
+    Share<SyncUnsafeCell<Vec<SingleResource>>>,
+    pub(crate) Share<ShareU32>,
     Cow<'static, str>,
 );
 impl MultiResource {
     fn new<T: 'static>() -> Self {
         Self(
             Share::new(SyncUnsafeCell::new(Vec::new())),
+            Share::new(ShareU32::new(0)),
             std::any::type_name::<T>().into(),
         )
     }
     pub fn name(&self) -> &Cow<'static, str> {
-        &self.1
+        &self.2
     }
     pub fn insert<T: 'static>(&mut self, value: T) -> SingleResource {
-        let r = Share::new(value);
+        let r = SingleResource::new(value);
         let vec = unsafe { &mut *self.0.get() };
         vec.push(r.clone());
-        SingleResource(r)
+        r
     }
     pub fn len(&self) -> usize {
         let vec = unsafe { &*self.0.get() };
         vec.len()
     }
-    pub fn vec(&self) -> &Vec<Share<dyn Any>> {
+    pub fn vec(&self) -> &Vec<SingleResource> {
         unsafe { &*self.0.get() }
+    }
+    pub fn changed_tick(&self) -> Tick {
+        self.1.load(Ordering::Relaxed).into()
     }
     pub(crate) fn get<T: 'static>(&self, index: usize) -> *mut T {
         let vec = unsafe { &*self.0.get() };
-        vec.get(index).map_or(ptr::null_mut(), |r| unsafe {
-            transmute(r.downcast_ref_unchecked::<T>())
-        })
+        vec.get(index).map_or(ptr::null_mut(), |r| r.downcast())
     }
     pub(crate) fn get_unchecked<T: 'static>(&self, index: usize) -> *mut T {
         let vec = unsafe { &*self.0.get() };
-        unsafe { transmute(vec.get_unchecked(index).downcast_ref_unchecked::<T>()) }
+        unsafe { vec.get_unchecked(index).downcast() }
     }
 }
 

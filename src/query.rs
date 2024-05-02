@@ -102,7 +102,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
 pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
     pub(crate) state: &'world mut QueryState<Q, F>,
-    tick: Tick,
+    pub(crate) tick: Tick,
     // 缓存上次的索引映射关系
     pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
@@ -254,14 +254,60 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
     for Notify<'a, Q, F>
 {
     type Event = ArchetypeInit<'a>;
-    fn listen(&self, ar: Self::Event) {
-        if !QueryState::<Q, F>::relate(ar.0) {
+    fn listen(&self, e: Self::Event) {
+        if !QueryState::<Q, F>::relate(e.0) {
             return;
         }
         unsafe {
-            ar.0.add_ticks(&self.0);
-            ar.0.add_dirty_listeners(TypeId::of::<QueryState<Q, F>>(), &self.1)
+            add_ticks(&e.0, &self.0);
+            add_dirty_listeners(&e.0, TypeId::of::<QueryState<Q, F>>(), &self.1)
         };
+    }
+}
+
+// 根据tick列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
+pub(crate) unsafe fn add_ticks(ar: &Archetype, ticks: &Vec<TypeId>) {
+    for tid in ticks.iter() {
+        if let Some((c, _)) = ar.get_column_mut(tid) {
+            c.is_tick = true;
+        }
+    }
+}
+
+// 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
+unsafe fn add_dirty_listeners(
+    ar: &Archetype,
+    owner: TypeId,
+    listeners: &SmallVec<[(TypeId, ListenType); 1]>,
+) {
+    for (tid, ltype) in listeners.iter() {
+        if let Some((c, _)) = ar.get_column_mut(tid) {
+            c.is_tick = true;
+            match ltype {
+                ListenType::Changed => c.dirty.insert_listener(owner),
+                ListenType::Removed => c.dirty.insert_listener(owner),
+                ListenType::Destroyed => c.dirty.insert_listener(owner),
+            }
+        }
+    }
+}
+
+// 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
+unsafe fn find_dirty_listeners(
+    ar: &Archetype,
+    owner: TypeId,
+    listens: &SmallVec<[(TypeId, ListenType); 1]>,
+    vec: &mut SmallVec<[DirtyIndex; 1]>,
+) {
+    for (tid, ltype) in listens.iter() {
+        if let Some((c, index)) = ar.get_column_mut(tid) {
+            let d = match ltype {
+                ListenType::Changed => &c.dirty,
+                ListenType::Removed => &c.dirty,
+                ListenType::Destroyed => &c.dirty,
+            };
+            d.find(index, owner, *ltype, vec);
+        }
     }
 }
 
@@ -314,7 +360,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             vec: Vec::new(),
             archetype_len: 0,
             map: Default::default(),
-            last_run: 0,
+            last_run: Tick::default(),
             cache_mapping: (ArchetypeWorldIndex::null(), 0),
             _k: PhantomData,
         }
@@ -356,7 +402,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let mut listeners = SmallVec::new();
         if F::LISTENER_COUNT > 0 {
-            ar.find_dirty_listeners(TypeId::of::<Self>(), &self.listeners, &mut listeners);
+            unsafe { find_dirty_listeners(&ar, TypeId::of::<Self>(), &self.listeners, &mut listeners) };
             // if vec.len() == 0 {
             //     // 表示该原型没有监听的组件，本查询可以不关心该原型
             //     return;
@@ -436,7 +482,7 @@ pub(crate) fn check<'w>(
 pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) world: &'w World,
     state: &'w QueryState<Q, F>,
-    tick: Tick,
+    pub(crate) tick: Tick,
     // 原型的位置
     pub(crate) ar_index: ArchetypeLocalIndex,
     // 原型

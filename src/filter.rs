@@ -15,14 +15,12 @@ use crate::archetype::Archetype;
 use crate::system::SystemMeta;
 use crate::world::World;
 
-/// Edge direction.
-#[derive(Default, Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[derive(Default, Clone, Copy, Debug)]
 pub enum ListenType {
     #[default]
-    Add = 0,
-    ComponentChange, // 组件改变，包括新增，用列表来记录变化
-    ComponentRemove, // 组件删除，用列表来记录变化
-    EntityDestroy, // 实体销毁，用列表来记录变化
+    Changed, // 组件改变，包括新增，用列表来记录变化
+    Removed, // 组件删除，用列表来记录变化
+    Destroyed, // 实体销毁，用列表来记录变化
 }
 
 pub trait FilterArchetype {
@@ -77,19 +75,11 @@ impl<T: 'static> FilterComponents for With<T> {
     }
 }
 
-pub struct Added<T: 'static>(PhantomData<T>);
-impl<T: 'static> FilterComponents for Added<T> {
-    const LISTENER_COUNT: usize = 1;
-    fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<T>(), ListenType::Add));
-    }
-}
-
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<T>(), ListenType::ComponentChange));
+        listeners.push((TypeId::of::<T>(), ListenType::Changed));
     }
 }
 
@@ -97,14 +87,14 @@ pub struct Removed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Removed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<T>(), ListenType::ComponentRemove));
+        listeners.push((TypeId::of::<T>(), ListenType::Removed));
     }
 }
 pub struct Destroyed;
 impl FilterComponents for Destroyed {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(_world: &World, listeners: &mut SmallVec<[(TypeId, ListenType); 1]>) {
-        listeners.push((TypeId::of::<()>(), ListenType::EntityDestroy));
+        listeners.push((TypeId::of::<()>(), ListenType::Destroyed));
     }
 }
 macro_rules! impl_tuple_filter {

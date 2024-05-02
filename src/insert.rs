@@ -76,7 +76,7 @@ impl<'world, I: Bundle> Insert<'world, I> {
     pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
         let row = self.state.1.table.alloc();
         let e = self.world.insert(self.state.0, row);
-        I::insert(&self.state.2, components, e, row);
+        I::insert(&self.state.2, components, e, row, self.tick);
         self.state.1.table.set(row, e);
         e
     }
@@ -157,7 +157,7 @@ pub trait Bundle {
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
 
-    fn insert(state: &Self::State, components: Self::Item, e: Entity, row: Row);
+    fn insert(state: &Self::State, components: Self::Item, e: Entity, row: Row, tick: Tick);
 }
 
 pub struct TState<T: 'static>(pub *const Column, PhantomData<T>);
@@ -169,10 +169,10 @@ impl<T: 'static> TState<T> {
         TState(unsafe { transmute(c) }, PhantomData)
     }
     #[inline(always)]
-    pub fn write(&self, e: Entity, row: Row, val: T) {
+    pub fn write(&self, e: Entity, row: Row, val: T, tick: Tick) {
         let c: &mut Column = unsafe { transmute(self.0) };
         c.write(row, val);
-        c.added.record(e, row);
+        c.change_record(e, row, tick);
     }
 }
 
@@ -196,11 +196,12 @@ macro_rules! impl_tuple_insert {
                 _components: Self::Item,
                 _e: Entity,
                 _row: Row,
+                _tick: Tick,
             ) {
                 let ($($name,)*) = _components;
                 let ($($state,)*) = _state;
                 $(
-                    {$state.write(_e, _row, $name)}
+                    {$state.write(_e, _row, $name, _tick)}
                 )*
             }
         }
