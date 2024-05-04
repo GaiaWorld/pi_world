@@ -30,6 +30,21 @@ pub struct Age18(usize);
 pub struct Age19(usize);
 pub struct Age20(usize);
 
+pub fn print_info(
+    q: Query<(
+        Entity,
+        ArchetypeInfo,
+    )>,
+) {
+    println!("print_info it:{:?}", q.iter().size_hint());
+    let q = q.iter();
+    for (e, a) in q
+    {
+        println!(" e:{:?}, a:{:?}", e, a);
+    }
+    println!("print_info over");
+}
+
 pub fn insert1(i0: Insert<(Age1, Age0)>) {
     println!("insert1 is now");
     let e = i0.insert((Age1(1), Age0(0)));
@@ -167,6 +182,7 @@ mod test_mod {
         // app::*,
         archetype::{ComponentInfo, Row}, column::Column, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
+    use bevy_utils::dbg;
     use pi_append_vec::AppendVec;
     use pi_async_rt::{
         rt::single_thread::SingleTaskRuntime,
@@ -467,16 +483,8 @@ mod test_mod {
         ) {
             println!("alter1 it:{:?}", q0.iter().size_hint());
             for (e, _, _) in q0.iter() {
-                let r = i0.alter(e, ());
-                dbg!(e, r);
+                let _r = i0.alter(e, ());
             }
-            // let mut it = i0.iter_mut();
-            // while let Some(a0) = it.next() {
-            //     if a0.0 == 1 {
-            //         // let e = it.entity(); 
-            //         let _ = it.delete();
-            //     }
-            // }
             println!("alter1: end");
         }
         pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>,)>) {
@@ -489,9 +497,10 @@ mod test_mod {
         }
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert);
-        app.add_system(Update, print_changed_entities);
+        // app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter);
         app.add_system(Update, removed_l);
+        app.add_system(Update, print_info);
         
         app.run();
         app.run();
@@ -752,6 +761,43 @@ mod test_mod {
         app.add_system(Update, insert);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, print_changed2);
+        
+        app.run();
+        app.run();
+    }
+
+    #[test]
+    fn test_destroyed() {
+        pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
+            println!("insert1 is now");
+            let e = i0.insert((Age3(3), Age1(1), Age0(0)));
+            println!("insert1 is end, e:{:?}", e);
+        }
+        pub fn alter(
+            mut i0: Alter<&Age1, (), (), ()>,
+            q0: Query<(Entity, &mut Age0, &Age1), ()>,
+        ) {
+            println!("alter1 it:{:?}", q0.iter().size_hint());
+            for (e, _, _) in q0.iter() {
+                let _r = i0.destroy(e);
+                dbg!(_r);
+            }
+            println!("alter1: end");
+        }
+        pub fn destroyed(q0: Query<(Entity, &mut Age0, &mut Age1), Destroyed>) {
+            println!("destroyed");
+            for (e, age0, _) in q0.iter() {
+                println!("e {:?}, age0: {:?}", e, age0);
+            }
+        
+            println!("destroyed: end");
+        }
+        let mut app = SingleThreadApp::new();
+        app.add_system(Update, insert);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, alter);
+        app.add_system(Update, destroyed);
+        app.add_system(Update, print_info);
         
         app.run();
         app.run();

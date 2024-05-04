@@ -5,37 +5,42 @@
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
 use std::any::TypeId;
-use std::mem::{replace, transmute};
 use std::cell::SyncUnsafeCell;
+use std::mem::{replace, transmute};
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
+use pi_arr::Iter;
 use pi_null::Null;
+use pi_phf_map::PhfMap;
+use smallvec::SmallVec;
 
 use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
+use crate::dirty::{Dirty, DirtyIndex, DirtyType, EntityRow};
 use crate::world::{Entity, World};
-use crate::dirty::Dirty;
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
-    pub(crate) columns: Vec<Column>,       // 每个组件
-    removes: AppendVec<Row>,               // 整理前被移除的实例
-    pub(crate) column_removes: SyncUnsafeCell<Vec<(TypeId, Dirty)>>, // 其他原型通过移除Component转到该原型
-    pub(crate) destroys: Dirty, // 该原型的实体被标记销毁的脏列表
+    columns: Vec<Column>,        // 每个组件
+    column_map: PhfMap<TypeId, ColumnIndex>,
+    remove_columns: SyncUnsafeCell<Vec<(TypeId, Dirty)>>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
+    pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
+    removes: AppendVec<Row>,                    // 整理前被移除的实例
 }
 impl Table {
-    pub fn new(infos: Vec<ComponentInfo>) -> Self {
+    pub fn new(infos: Vec<ComponentInfo>, vec: Vec<(TypeId, u32)>) -> Self {
         Self {
             entities: AppendVec::default(),
             columns: infos.into_iter().map(|info| Column::new(info)).collect(),
+            column_map: PhfMap::new(vec),
+            remove_columns: Default::default(),
+            destroys: SyncUnsafeCell::new(Dirty::default()),
             removes: AppendVec::default(),
-            column_removes: Default::default(),
-            destroys: Dirty::default(),
         }
     }
-    /// 长度
+    /// Returns the number of elements in the archetype.
     #[inline(always)]
     pub fn len(&self) -> Row {
         self.entities.len() as Row
@@ -49,15 +54,154 @@ impl Table {
         let a = self.entities.load_alloc(row as usize);
         *a = e;
     }
-
+    #[inline(always)]
+    pub fn get_columns(&self) -> &Vec<Column> {
+        &self.columns
+    }
+    #[inline(always)]
+    pub fn get_column_index(&self, type_id: &TypeId) -> ColumnIndex {
+        if let Some(t) = self.column_map.get(&type_id) {
+            if t.is_null() {
+                return u32::null();
+            }
+            let ti = self.get_column_unchecked(*t);
+            if &ti.info().type_id == type_id {
+                return *t;
+            }
+        }
+        u32::null()
+    }
+    #[inline(always)]
+    pub fn get_column(&self, type_id: &TypeId) -> Option<(&Column, ColumnIndex)> {
+        if let Some(t) = self.column_map.get(&type_id) {
+            if t.is_null() {
+                return None;
+            }
+            let c = self.get_column_unchecked(*t);
+            if &c.info().type_id == type_id {
+                return Some((c, *t));
+            }
+        }
+        None
+    }
+    #[inline(always)]
+    pub(crate) unsafe fn get_column_mut(
+        &self,
+        type_id: &TypeId,
+    ) -> Option<(&mut Column, ColumnIndex)> {
+        if let Some(t) = self.column_map.get(&type_id) {
+            if t.is_null() {
+                return None;
+            }
+            let c = self.get_column_unchecked(*t);
+            if &c.info().type_id == type_id {
+                return unsafe { transmute(Some((c, *t))) };
+            }
+        }
+        None
+    }
     #[inline(always)]
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
         unsafe { self.columns.get_unchecked(index as usize) }
     }
-    #[inline(always)]
-    pub(crate) unsafe fn get_column_mut_unchecked(&self, index: ColumnIndex) -> *mut Column {
-        transmute(self.columns.get_unchecked(index as usize))
+    /// 添加changed监听器，原型刚创建时调用
+    pub fn add_changed_listener(&self, tid: &TypeId, owner: TypeId) {
+        if let Some((c, _)) = unsafe { self.get_column_mut(tid) } {
+            c.is_record_tick = true;
+            c.dirty.insert_listener(owner)
+        }
     }
+    /// 添加removed监听器，原型刚创建时调用
+    pub fn add_removed_listener(&self, tid: &TypeId, owner: TypeId) {
+        if !self.get_column_index(tid).is_null() {
+            return;
+        }
+        let vec = unsafe { &mut *self.remove_columns.get() };
+        let r = vec.iter_mut().find(|(t, _)| t == tid);
+        if let Some((_, d)) = r {
+            d.insert_listener(owner);
+        }else{
+            vec.push((*tid, Dirty::new(owner)));
+        }
+    }
+    /// 添加destroyed监听器，原型刚创建时调用
+    pub fn add_destroyed_listener(&self, owner: TypeId) {
+        unsafe { &mut *self.destroys.get() }.insert_listener(owner)
+    }
+    /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
+    pub(crate) fn find_changed_listener(
+        &self,
+        tid: &TypeId,
+        owner: TypeId,
+        vec: &mut SmallVec<[DirtyIndex; 1]>,
+    ) {
+        if let Some((c, column_index)) = unsafe { self.get_column_mut(tid) } {
+            let listener_index = c.dirty.find_listener_index(owner);
+            if !listener_index.is_null() {
+                vec.push(DirtyIndex {
+                    listener_index,
+                    dtype: DirtyType::Changed(column_index),
+                });
+            }
+        }
+    }
+    /// 查询在同步到原型时，寻找自己添加的removed监听器，并记录组件位置和监听器位置
+    pub(crate) fn find_removed_listener(
+        &self,
+        tid: &TypeId,
+        owner: TypeId,
+        vec: &mut SmallVec<[DirtyIndex; 1]>,
+    ) {
+        let vec1 = unsafe { &*self.remove_columns.get() };
+        let r = vec1.iter().enumerate().find(|r| &r.1 .0 == tid);
+        if let Some((column_index, d)) = r {
+            let listener_index = d.1.find_listener_index(owner);
+            if !listener_index.is_null() {
+                vec.push(DirtyIndex {
+                    listener_index,
+                    dtype: DirtyType::Removed(column_index as u32),
+                });
+            }
+        }
+    }
+    /// 查询在同步到原型时，寻找自己添加的destroyed监听器，并记录监听器位置
+    pub(crate) fn find_destroyed_listener(
+        &self,
+        owner: TypeId,
+        vec: &mut SmallVec<[DirtyIndex; 1]>,
+    ) {
+        let listener_index = unsafe { &*self.destroys.get() }.find_listener_index(owner);
+        if !listener_index.is_null() {
+            vec.push(DirtyIndex {
+                listener_index,
+                dtype: DirtyType::Destroyed,
+            });
+        }
+    }
+    /// 寻找指定组件列的脏位置
+    pub(crate) fn find_remove_column_dirty(&self, tid: &TypeId) -> u32 {
+        let mut it = unsafe { &*self.remove_columns.get() }.iter().enumerate();
+        it.find(|r| &r.1 .0 == tid)
+            .map_or(u32::null(), |(column_index, _)| column_index as u32)
+    }
+    /// 寻找指定位置的组件列脏
+    pub(crate) fn get_remove_column_dirty(&self, column_index: u32) -> &Dirty {
+        unsafe {
+            &(&*self.remove_columns.get())
+                .get_unchecked(column_index as usize)
+                .1
+        }
+    }
+    /// 获得对应的脏列表, 及是否不检查entity是否存在
+    pub(crate) fn get_iter<'a>(&'a self, dirty_index: &DirtyIndex) -> (Iter<'a, EntityRow>, bool) {
+        let (r, b) = match dirty_index.dtype {
+            DirtyType::Destroyed => (unsafe { &*self.destroys.get() }, true),
+            DirtyType::Changed(column_index) => (&self.get_column_unchecked(column_index).dirty, false),
+            DirtyType::Removed(column_index) => (self.get_remove_column_dirty(column_index), false),
+        };
+        (r.get_iter(dirty_index.listener_index), b)
+    }
+
     /// 扩容
     pub fn reserve(&mut self, additional: usize) {
         let len = self.entities.len();
@@ -70,10 +214,20 @@ impl Table {
     pub fn alloc(&self) -> Row {
         self.entities.alloc_index(1) as Row
     }
+    /// 标记销毁，用于destroy
+    /// mark removes a key from the archetype, returning the value at the key if the
+    /// key was not previously removed.
+    pub(crate) fn mark_destroy(&self, row: Row) -> Entity {
+        let e = self.entities.load_alloc(row as usize);
+        if e.is_null() {
+            return *e;
+        }
+        { unsafe { &*self.destroys.get() } }.record_unchecked(*e, row);
+        replace(e, Entity::null())
+    }
     /// 标记移出，用于delete 和 alter
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
-    #[inline(always)]
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
         let e = self.entities.load_alloc(row as usize);
         if e.is_null() {
@@ -82,11 +236,31 @@ impl Table {
         self.removes.insert(row);
         replace(e, Entity::null())
     }
-    /// 删除全部组件，用于delete
-    #[inline(always)]
-    pub(crate) fn drop_row(&self, row: Row) {
+    // 处理标记移除的条目，返回true，表示所有监听器都已经处理完毕，然后可以清理destroys
+    fn clear_destroy(&mut self) -> bool {
+        let dirty = unsafe { &mut *self.destroys.get() };
+        let len = match dirty.can_clear() {
+            Some(len) => {
+                if len == 0 {
+                    return true;
+                }
+                len
+            }
+            _ => return false,
+        };
+        for e in dirty.vec.iter() {
+            self.removes.insert(e.row);
+        }
+        self.drop_vec(&dirty.vec);
+        dirty.clear(len);
+        true
+    }
+    /// 删除全部组件
+    pub(crate) fn drop_vec(&self, vec: &AppendVec<EntityRow>) {
         for t in self.columns.iter() {
-            t.drop_row(row);
+            for e in vec.iter() {
+                t.drop_row(e.row);
+            }
         }
     }
     /// 获得移除数组产生的动作， 返回新entitys的长度
@@ -175,10 +349,22 @@ impl Table {
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) -> bool {
+        if !self.clear_destroy() {
+            // 如果清理destroys不成功，不调整row，返回
+            return false;
+        }
         let mut r = true;
         // 先整理每个列，如果所有列的脏列表成功清空
         for c in self.columns.iter_mut() {
-            r &= c.collect_dirty();
+            r &= c.dirty.collect();
+        }
+        if !r {
+            // 有失败的脏，不调整row，返回
+            return false;
+        }
+        // 整理全部的remove_columns，如果所有移除列的脏列表成功清空
+        for (_, d) in self.remove_columns.get_mut().iter_mut() {
+            r &= d.collect();
         }
         if !r {
             // 有失败的脏，不调整row，返回

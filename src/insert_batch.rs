@@ -38,7 +38,7 @@ where
         // world.entitys.reserve(length);
         let ptr = ShareArchetype::as_ptr(&ar);
         let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
-        ar_mut.table.reserve(length);
+        ar_mut.reserve(length);
         let tick = world.tick();
         Self {
             world,

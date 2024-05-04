@@ -18,12 +18,12 @@ use core::fmt::*;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::mem::{needs_drop, size_of, transmute};
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 
 use bitflags::bitflags;
 use fixedbitset::FixedBitSet;
 use pi_null::Null;
-use pi_phf_map::PhfMap;
 use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
@@ -82,8 +82,7 @@ impl ArchetypeDependResult {
 pub struct Archetype {
     id: u128,
     name: Cow<'static, str>,
-    pub(crate) table: Table,
-    map: PhfMap<TypeId, ColumnIndex>,
+    table: Table,
     pub(crate) index: ShareU32, // ，在全局原型列表中的位置，也表示是否已就绪，脏列表是否已经被全部的system添加好了
 }
 
@@ -131,12 +130,11 @@ impl Archetype {
         Self {
             id,
             name: s.into(),
-            table: Table::new(components),
-            map: PhfMap::new(vec1),
+            table: Table::new(components, vec1),
             index: ShareU32::new(u32::null()),
         }
     }
-    // 获得ready状态
+    // 获得ready状态及所在的World原型index
     #[inline(always)]
     pub fn index(&self) -> ArchetypeWorldIndex {
         self.index.load(Ordering::Relaxed)
@@ -145,14 +143,14 @@ impl Archetype {
     pub fn alter(
         &self,
         sort_add: &Vec<ComponentInfo>,
-        sort_del: &Vec<ComponentInfo>,
+        sort_remove: &Vec<ComponentInfo>,
     ) -> (Vec<ComponentInfo>, Vec<ComponentInfo>) {
         let mut add = sort_add.clone();
         // 记录移动的组件
         let mut moving = Vec::new();
-        for c in self.table.columns.iter() {
+        for c in self.get_columns().iter() {
             // 如果组件是要删除或要添加的组件，则不添加，只有移动的才添加
-            if sort_del.binary_search(&c.info()).is_err()
+            if sort_remove.binary_search(&c.info()).is_err()
                 && sort_add.binary_search(&c.info()).is_err()
             {
                 add.push(c.info().clone());
@@ -184,60 +182,28 @@ impl Archetype {
         &self.name
     }
     #[inline(always)]
-    pub fn get_columns(&self) -> &Vec<Column> {
-        &self.table.columns
-    }
-    #[inline(always)]
     pub fn get_column_index(&self, type_id: &TypeId) -> ColumnIndex {
-        if let Some(t) = self.map.get(&type_id) {
-            if t.is_null() {
-                return u32::null();
-            }
-            let ti = self.table.get_column_unchecked(*t);
-            if &ti.info().type_id == type_id {
-                return *t;
-            }
-        }
-        u32::null()
+        self.table.get_column_index(type_id)
     }
     #[inline(always)]
     pub fn get_column(&self, type_id: &TypeId) -> Option<(&Column, ColumnIndex)> {
-        if let Some(t) = self.map.get(&type_id) {
-            if t.is_null() {
-                return None;
-            }
-            let c = self.table.get_column_unchecked(*t);
-            if &c.info().type_id == type_id {
-                return Some((c, *t));
-            }
-        }
-        None
+        self.table.get_column(type_id)
     }
     #[inline(always)]
     pub(crate) unsafe fn get_column_mut(
         &self,
         type_id: &TypeId,
     ) -> Option<(&mut Column, ColumnIndex)> {
-        if let Some(t) = self.map.get(&type_id) {
-            if t.is_null() {
-                return None;
-            }
-            let c = self.table.get_column_unchecked(*t);
-            if &c.info().type_id == type_id {
-                return unsafe { transmute(Some((c, *t))) };
-            }
-        }
-        None
+        self.table.get_column_mut(type_id)
     }
-    /// Returns the number of elements in the archetype.
     #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.table.len() as usize
+    pub fn column_len(&self) -> usize {
+        self.get_columns().len()
     }
     /// Returns if the archetype is empty.
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.table.columns.len() == 0
+    pub fn is_empty_columns(&self) -> bool {
+        self.get_columns().len() == 0
     }
     /// 整理方法
     pub(crate) fn collect(
@@ -247,10 +213,20 @@ impl Archetype {
         set: &mut FixedBitSet,
     ) {
         let _r = self.table.collect(world, action, set);
-        // println!("{:?} collect {}", self.name, r);
     }
 }
 
+impl Deref for Archetype {
+    type Target = Table;
+    fn deref(&self) -> &Self::Target {
+        &self.table
+    }
+}
+impl DerefMut for Archetype {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.table
+    }
+}
 impl Debug for Archetype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Archetype")

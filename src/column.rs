@@ -19,7 +19,7 @@ use crate::{
 pub struct Column {
     blob: Blob,
     ticks: AppendVec<Tick>,
-    pub(crate) is_tick: bool,           // 是否记录tick
+    pub(crate) is_record_tick: bool,           // 是否记录tick
     pub(crate) dirty: Dirty, // Alter和Insert产生的添加脏和Query产生的修改脏，
 }
 
@@ -29,7 +29,7 @@ impl Column {
         Self {
             blob: Blob::new(info),
             ticks: Default::default(),
-            is_tick: false,
+            is_record_tick: false,
             dirty: Default::default(),
         }
     }
@@ -47,14 +47,23 @@ impl Column {
         self.ticks.get(row as usize).map(|t| *t)
     }
     #[inline]
+    pub fn add_record(&self, e: Entity, row: Row, tick: Tick) {
+        if !self.is_record_tick {
+            return;
+        }
+        *self.ticks.load_alloc(row as usize) = tick;
+        self.dirty.record(e, row);
+    }
+    #[inline]
     pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
-        if !self.is_tick {
+        if !self.is_record_tick {
             return;
         }
         let old = self.ticks.load_alloc(row as usize);
-        if *old < tick {
-            *old = tick;
+        if *old >= tick {
+            return;
         }
+        *old = tick;
         self.dirty.record(e, row);
     }
     #[inline]
@@ -109,14 +118,14 @@ impl Column {
     /// 扩容
     pub fn reserve(&mut self, len: usize, additional: usize) {
         self.blob.reserve(len, additional);
-        if self.is_tick {
+        if self.is_record_tick {
             self.ticks.reserve(additional);
         }
         self.dirty.reserve(additional);
     }
     /// 整理合并空位
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
-        if self.is_tick {
+        if self.is_record_tick {
             for (src, dst) in action.iter() {
                 self.collect_key(src, dst);
                 unsafe {
@@ -132,10 +141,6 @@ impl Column {
         }
         // 整理合并内存
         self.blob.reserve(entity_len, 0);
-    }
-    /// 整理方法，返回该列的脏列表是否清空
-    pub(crate) fn collect_dirty(&mut self) -> bool {
-        self.dirty.collect()
     }
     /// 整理合并指定的键
     fn collect_key(&mut self, src: &Row, dst: &Row) {

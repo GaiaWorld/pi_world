@@ -10,7 +10,6 @@ use crate::archetype::{
 };
 use crate::column::Column;
 use crate::system::SystemMeta;
-use crate::table::Table;
 use crate::world::{Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
@@ -77,7 +76,7 @@ pub trait FetchComponents {
 }
 
 impl FetchComponents for Entity {
-    type Fetch<'w> = &'w Table;
+    type Fetch<'w> = &'w Archetype;
     type Item<'w> = Entity;
     type ReadOnly = Entity;
     type State = ();
@@ -92,7 +91,7 @@ impl FetchComponents for Entity {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        &archetype.table
+        archetype
     }
 
     #[inline(always)]
@@ -134,7 +133,7 @@ impl<T: 'static> FetchComponents for &T {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        &archetype.table.get_column_unchecked(*state)
+        &archetype.get_column_unchecked(*state)
     }
 
     #[inline(always)]
@@ -176,11 +175,7 @@ impl<T: 'static> FetchComponents for &mut T {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
-            tick,
-            last_run,
-        )
+        ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
     #[inline(always)]
@@ -226,11 +221,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
-            tick,
-            last_run,
-        )
+        ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
     #[inline(always)]
@@ -276,11 +267,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
-            tick,
-            last_run,
-        )
+        ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
     #[inline(always)]
@@ -327,7 +314,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         last_run: Tick,
     ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
+            &archetype.get_column_unchecked(*state),
             tick,
             last_run,
         ))
@@ -380,7 +367,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         last_run: Tick,
     ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
+            &archetype.get_column_unchecked(*state),
             tick,
             last_run,
         ))
@@ -428,7 +415,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.table.get_column_unchecked(*state))
+        (!state.is_null()).then_some(&archetype.get_column_unchecked(*state))
     }
 
     #[inline(always)]
@@ -471,7 +458,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         last_run: Tick,
     ) -> Self::Fetch<'w> {
         (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.table.get_column_unchecked(*state),
+            &archetype.get_column_unchecked(*state),
             tick,
             last_run,
         ))
@@ -539,7 +526,7 @@ impl<T: 'static> FetchComponents for OrDefault<T> {
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
         match state {
-            Ok(s) => Ok(&archetype.table.get_column_unchecked(*s)),
+            Ok(s) => Ok(&archetype.get_column_unchecked(*s)),
             Err(r) => Err(unsafe { &mut *r.downcast::<T>() }),
         }
     }
@@ -581,6 +568,37 @@ impl<T: 'static> FetchComponents for Has<T> {
         *fetch
     }
 }
+
+#[derive(Debug)]
+pub struct ArchetypeInfo<'a>(pub &'a Cow<'static, str>, pub Row);
+impl FetchComponents for ArchetypeInfo<'_> {
+    type Fetch<'w> = &'w Cow<'static, str>;
+    type Item<'w> = ArchetypeInfo<'w>;
+    type ReadOnly = ArchetypeInfo<'static>;
+    type State = ();
+    const TICK_COUNT: usize = 0;
+
+    fn init_state(_world: &World, _: &Archetype) -> Self::State {
+        ()
+    }
+
+    #[inline]
+    fn init_fetch<'w>(
+        _world: &'w World,
+        archetype: &'w Archetype,
+        _state: &'w Self::State,
+        _tick: Tick,
+        _last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        archetype.name()
+    }
+
+    #[inline(always)]
+    fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        ArchetypeInfo(fetch, row)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ColumnTick<'a> {
     pub(crate) column: &'a Column,

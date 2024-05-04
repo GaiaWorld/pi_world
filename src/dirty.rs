@@ -7,61 +7,43 @@
 //! 整理时，如果该Column所关联的所有AddedIndex都和该AppendVec的长度一样，则所有AddedIndex和AppendVec就可以清空，否则继续保留，等下一帧再检查是否清空。 因为必须保证Row不被错误重用，只有清空的情况下，才可以做原型的Removed整理。
 //!
 use core::fmt::*;
-use std::sync::atomic::Ordering;
 use std::any::TypeId;
+use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
 use pi_null::Null;
 use pi_share::ShareUsize;
-use smallvec::SmallVec;
 
-use crate::archetype::{Archetype, ColumnIndex, Row};
-use crate::filter::ListenType;
+use crate::archetype::{ColumnIndex, Row};
 use crate::world::Entity;
 
+#[derive(Default, Debug, Clone, Copy)]
+pub enum DirtyType {
+    #[default]
+    Destroyed,
+    Changed(ColumnIndex), // table.columns组件列的位置
+    Removed(ColumnIndex), // table.remove_columns组件列的位置
+}
+
 #[derive(Debug, Default, Clone, Copy)]
-pub struct DirtyIndex {
-    column_index: ColumnIndex, // 对应列的位置
-    vec_index: u32,    // 在Dirty的Vec中的位置
-    ltype: ListenType,
+pub(crate) struct DirtyIndex {
+    pub(crate) dtype: DirtyType,
+    pub(crate) listener_index: u32, // 在Dirty的Vec中的位置
 }
-impl DirtyIndex {
-    #[inline]
-    pub fn new(ltype: ListenType, column_index: ColumnIndex, vec_index: usize) -> Self {
-        DirtyIndex {
-            column_index,
-            vec_index: vec_index as u32,
-            ltype,
-        }
-    }
-    #[inline]
-    pub(crate) fn get_iter<'a>(self, archetype: &'a Archetype) -> Iter<'a, EntityDirty> {
-        let r = match self.ltype {
-            ListenType::Changed => &archetype.table.get_column_unchecked(self.column_index).dirty,
-            ListenType::Removed => &archetype.table.get_column_unchecked(self.column_index).dirty,
-            ListenType::Destroyed => &archetype.table.get_column_unchecked(self.column_index).dirty,
-        };
-        let end = r.vec.len();
-        // 从上次读取到的位置开始读取
-        let len = unsafe { &r.listener_list().get_unchecked(self.vec_index as usize).1 };
-        let start = len.load(Ordering::Relaxed);
-        len.store(end, Ordering::Relaxed);
-        r.vec.slice(start..end)
-    }
-}
+
 #[derive(Debug, Default)]
-pub(crate) struct EntityDirty {
+pub(crate) struct EntityRow {
     pub(crate) e: Entity,
     pub(crate) row: Row,
 }
-impl Null for EntityDirty {
+impl Null for EntityRow {
     fn is_null(&self) -> bool {
         self.e.is_null()
     }
 
     fn null() -> Self {
-        EntityDirty {
+        EntityRow {
             e: Entity::null(),
             row: Row::null(),
         }
@@ -70,12 +52,20 @@ impl Null for EntityDirty {
 
 #[derive(Debug, Default)]
 pub struct Dirty {
-    listeners: Vec<(TypeId, ShareUsize)>,           // 每个监听器的TypeId和当前读取的长度
-    vec: AppendVec<EntityDirty>,                    // 记录的脏Row，可以重复
+    listeners: Vec<(TypeId, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
+    pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
 }
 unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
+    pub(crate) fn new(owner: TypeId) -> Self {
+        let listeners = vec![(owner, ShareUsize::new(0))];
+        Self {
+            listeners,
+            vec: AppendVec::default(),
+        }
+    }
+
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: TypeId) {
         self.listeners.push((owner, ShareUsize::new(0)));
@@ -84,18 +74,13 @@ impl Dirty {
     pub(crate) fn listener_list(&self) -> &Vec<(TypeId, ShareUsize)> {
         &self.listeners
     }
-    pub fn find(
-        &self,
-        index: ColumnIndex,
-        owner: TypeId,
-        ltype: ListenType,
-        result: &mut SmallVec<[DirtyIndex; 1]>,
-    ) {
-        for (j, d) in self.listener_list().iter().enumerate() {
-            if d.0 == owner {
-                result.push(DirtyIndex::new(ltype, index, j))
-            }
-        }
+    // 返回监听器的位置
+    pub fn find_listener_index(&self, owner: TypeId) -> u32 {
+        self.listener_list()
+            .iter()
+            .enumerate()
+            .find(|r| r.1 .0 == owner)
+            .map_or(u32::null(), |r| r.0 as u32)
     }
     #[inline(always)]
     pub(crate) fn listener_len(&self) -> usize {
@@ -103,12 +88,12 @@ impl Dirty {
     }
     #[inline(always)]
     pub(crate) fn record_unchecked(&self, e: Entity, row: Row) {
-        self.vec.insert(EntityDirty { e, row });
+        self.vec.insert(EntityRow { e, row });
     }
     #[inline(always)]
     pub(crate) fn record(&self, e: Entity, row: Row) {
         if !self.listener_list().is_empty() {
-            self.vec.insert(EntityDirty { e, row });
+            self.vec.insert(EntityRow { e, row });
         }
     }
     #[inline(always)]
@@ -117,21 +102,34 @@ impl Dirty {
             self.vec.reserve(additional);
         }
     }
-
-    // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
-    pub(crate) fn collect(&mut self) -> bool {
-        if self.listeners.is_empty() {
-            return true;
-        }
+    pub(crate) fn get_iter<'a>(&'a self, listener_index: u32) -> Iter<'a, EntityRow> {
+        let end = self.vec.len();
+        // 从上次读取到的位置开始读取
+        let len = unsafe {
+            &self
+                .listener_list()
+                .get_unchecked(listener_index as usize)
+                .1
+        };
+        let start = len.load(Ordering::Relaxed);
+        len.store(end, Ordering::Relaxed);
+        self.vec.slice(start..end)
+    }
+    /// 判断是否能够清空脏列表
+    pub(crate) fn can_clear(&mut self) -> Option<usize> {
         let len = self.vec.len();
         if len == 0 {
-            return true;
+            return Some(0);
         }
         for (_, read_len) in self.listeners.iter_mut() {
             if *read_len.get_mut() < len {
-                return false;
+                return None;
             }
         }
+        return Some(len);
+    }
+    /// 清理方法
+    pub(crate) fn clear(&mut self, len: usize) {
         self.vec.clear();
         // 以前用到了arr，所以扩容
         if self.vec.vec_capacity() < len {
@@ -140,6 +138,20 @@ impl Dirty {
         for (_, read_len) in self.listeners.iter_mut() {
             *read_len.get_mut() = 0;
         }
-        true
+    }
+    // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
+    pub(crate) fn collect(&mut self) -> bool {
+        if self.listeners.is_empty() {
+            return true;
+        }
+        match self.can_clear() {
+            Some(len) => {
+                if len > 0 {
+                    self.clear(len);
+                }
+                true
+            }
+            _ => false,
+        }
     }
 }

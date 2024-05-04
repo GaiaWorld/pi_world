@@ -45,7 +45,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
         // 强行将原型转为可写
         let ptr = ShareArchetype::as_ptr(&self.state.1);
         let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
-        ar_mut.table.reserve(length);
+        ar_mut.reserve(length);
         for item in iter {
             self.insert(item);
         }
@@ -74,10 +74,10 @@ impl<'world, I: Bundle> Insert<'world, I> {
     }
     #[inline]
     pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
-        let row = self.state.1.table.alloc();
+        let row = self.state.1.alloc();
         let e = self.world.insert(self.state.0, row);
         I::insert(&self.state.2, components, e, row, self.tick);
-        self.state.1.table.set(row, e);
+        self.state.1.set(row, e);
         e
     }
 }
@@ -172,7 +172,7 @@ impl<T: 'static> TState<T> {
     pub fn write(&self, e: Entity, row: Row, val: T, tick: Tick) {
         let c: &mut Column = unsafe { transmute(self.0) };
         c.write(row, val);
-        c.change_record(e, row, tick);
+        c.add_record(e, row, tick);
     }
 }
 
