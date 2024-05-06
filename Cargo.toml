@@ -11,6 +11,9 @@ readme = "README.md"
 categories = ["data-structures", "memory-management", "ecs"]
 
 
+[features]
+single_thread = []
+
 [dependencies]
 bitflags="2.4"
 smallvec="1.13"

@@ -105,6 +105,13 @@ impl<'a> Dot<'a> {
             writeln!(f, "{} {{", TYPE[1])?;
         }
 
+        // for i in g.node_references() {
+        //     if let crate::exec_graph::NodeType::System(_,_ ) = i.label() {
+        //         println!("g.node_references()============={:?}", i);
+        //     }
+            
+        // }
+        
         // output all labels
         for (index, node) in g.node_references().enumerate() {
             write!(f, "{}{}", INDENT, index,)?;

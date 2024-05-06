@@ -21,6 +21,7 @@ use std::mem::transmute;
 use std::sync::atomic::Ordering;
 
 use async_channel::{bounded, Receiver, RecvError, Sender};
+use bevy_utils::label;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
@@ -111,10 +112,14 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct ExecGraph(Share<GraphInner>);
+#[derive(Clone)]
+pub struct ExecGraph(Share<GraphInner>, String);
 
 impl ExecGraph {
+    pub fn new(name: String) -> Self {
+        Self(Default::default(), name)
+    }
+
     pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
@@ -162,10 +167,8 @@ impl ExecGraph {
         for r in world.archetype_arr.iter() {
             self.add_archetype_node(&systems, range.clone(), r, world);
         }
-        dbg!(
-            "res & archtypes initialized",
-            Dot::with_config(&self, Config::empty())
-        );
+        log::trace!("res & archtypes initialized, {:?}", Dot::with_config(&self, Config::empty()));
+        std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
         inner.nodes.collect();
@@ -323,12 +326,18 @@ impl ExecGraph {
             node.from_count
                 .store(node.edge(Direction::From).0, Ordering::Relaxed);
         }
+
         // 从graph的froms开始执行
+        println!("run !!!!===={}", inner.froms.len());
         for i in inner.froms.iter() {
             let node = unsafe { inner.nodes.load_unchecked(i.index()) };
             self.exec(systems, rt, world, *i, node, vec![], u32::null());
         }
-        inner.receiver.recv().await
+        println!("run1 !!!!===={}", inner.froms.len());
+        let r = inner.receiver.recv().await;
+        println!("run2 !!!!===={}", inner.froms.len());
+        r
+        
     }
     fn exec<A: AsyncRuntime>(
         &self,
@@ -369,7 +378,9 @@ impl ExecGraph {
                         panic!("run status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
                     }
                     vec.push(r);
+                    println!("run start===={:?}", sys.name());
                     sys.run(world).await;
+                    println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, vec, node_index)
                 });
             }
@@ -744,6 +755,7 @@ impl Display for NodeType {
 
 // 空边， 长度为0， next_edge为null
 const NULL_EDGE: u64 = encode(0, u32::MAX);
+
 pub struct Node {
     // edges的索引，from在0位， to在1位。ShareU64里，低32位是edge总数量。高32位是第一个edge的索引。
     edges: [ShareU64; 2],
@@ -893,8 +905,7 @@ impl<'a> Listener for Notify<'a> {
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
         self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
-        if self.2 {
-            dbg!(Dot::with_config(&self.0, Config::empty()));
-        }
+        log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
+        std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
     }
 }

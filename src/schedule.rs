@@ -132,7 +132,7 @@ impl Schedule {
         config: &BaseConfig, 
         stage_label: &Interned<dyn StageLabel>, 
         index: usize, 
-        name: &Cow<'static, str>,
+        system_name: &Cow<'static, str>,
         schedule_graph: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
         set_configs: &HashMap<Interned<dyn SystemSet>, BaseConfig>,
     ) {
@@ -143,10 +143,13 @@ impl Schedule {
                 let schedule = schedule_graph.entry(*schedule_label);
                 let schedule = schedule.or_default();
                 
-                let stage = schedule.entry(stage_label.clone());
-                let stage = stage.or_default();
+                // let mut stage = schedule.entry(stage_label.clone());
+                let stage = match schedule.entry(stage_label.clone()) {
+                    std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(r) => r.insert(ExecGraph::new(format!("{:?}&{:?}", schedule_label, stage_label))),
+                };
 
-                stage.add_system(index, name.clone());
+                stage.add_system(index, system_name.clone());
 
                 // println!("add_system_inner:{:?}", (schedule_label, &schedule_graph.get(&MainSchedule.intern()).is_some()));
             }
@@ -156,8 +159,14 @@ impl Schedule {
             return;
         }
 
-        for config in set_configs.values() {
-            Self::add_system_inner(config, &stage_label, index, &name, schedule_graph, set_configs)
+        // log::warn!("set_configs===={:?}", (set_configs, system_name, config));
+
+        for in_set in config.sets.iter() {
+            let config = match set_configs.get(in_set) {
+                Some(r) => r,
+                None => continue,
+            };
+            Self::add_system_inner(config, &stage_label, index, &system_name, schedule_graph, set_configs)
         }
     }
 
@@ -225,6 +234,7 @@ impl Schedule {
         let _ = rt.block_on(async move {
             let rt2 = rt1;
             g.run(s, &rt2, w).await.unwrap();
+            println!("run end!!!!====");
             g.collect();
         });
     }
@@ -266,7 +276,7 @@ impl Schedule {
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
         g.run(s, rt, w).await.unwrap();
-
+      
         g.collect();
     }
 }

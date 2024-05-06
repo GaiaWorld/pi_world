@@ -428,7 +428,7 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
                     ]
                 }
                 fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
-                    (#(#world_path::insert::TState::new(_archetype.get_column(&std::any::TypeId::of::<#tuple_types>()).unwrap()),)*)
+                    (#(#world_path::insert::TState::new(_archetype.get_column(&std::any::TypeId::of::<#tuple_types>()).unwrap().0),)*)
                 }
 
                 fn insert(
@@ -436,9 +436,10 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
                     components: Self::Item,
                     _e: #world_path::world::Entity,
                     _row: #world_path::archetype::Row,
+                    tick: #world_path::world::Tick,
                 ) {
                     #(
-                        _state.#indexs.write(_e, _row, components.#idens);
+                        _state.#indexs.write(_e, _row, components.#idens, tick);
                     )*
 
                 }
@@ -469,7 +470,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     ]
                 }
                 fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
-                    #world_path::insert::TState::new(_archetype.get_column(&std::any::TypeId::of::<Self>()).unwrap())
+                    #world_path::insert::TState::new(_archetype.get_column(&std::any::TypeId::of::<Self>()).unwrap().0)
                 }
 
                 fn insert(
@@ -477,8 +478,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     components: Self::Item,
                     e: #world_path::world::Entity,
                     row: #world_path::archetype::Row,
+                    tick: #world_path::world::Tick,
                 ) {
-                    state.write(e, row, components);
+                    state.write(e, row, components, tick);
                 }
             }
         };

@@ -9,10 +9,10 @@
 extern crate test;
 /// Most commonly used re-exported types.
 pub mod prelude {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(feature="single_thread", target_arch = "wasm32"))]
     pub type App = crate::app::SingleThreadApp;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(feature="single_thread", target_arch = "wasm32")))]
     pub type App = crate::app::MultiThreadApp;
 
     #[doc(hidden)]

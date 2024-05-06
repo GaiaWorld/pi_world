@@ -662,6 +662,19 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ mut T> {
     }
 }
 
+impl<'a, T: 'static> Ticker<'a, &'_ mut T> {
+    #[inline(always)]
+    pub fn bypass_change_detection(&mut self) -> &mut T {
+        self.c.column.get_mut::<T>(self.row)
+    }
+    #[inline(always)]
+    pub fn set_changed(&mut self) {
+        self.c.column.change_record(self.e, self.row, self.c.tick);
+    }
+}
+
+
+
 impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.c.column.change_record(self.e, self.row, self.c.tick);

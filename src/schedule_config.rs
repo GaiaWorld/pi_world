@@ -126,6 +126,7 @@ impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
 }
 
 
+#[derive(Debug)]
 pub struct BaseConfig {
     pub(crate) sets: Vec<Interned<dyn SystemSet>>,
     pub(crate) schedules: Vec<Interned<dyn ScheduleLabel>>, // 需要添加到哪些日程中
