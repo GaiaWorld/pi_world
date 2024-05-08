@@ -15,7 +15,7 @@ categories = ["data-structures", "memory-management", "ecs"]
 single_thread = []
 
 [dependencies]
-pi_map = "0.1"
+pi_map = "0.2"
 bitflags="2.4"
 smallvec="1.13"
 fixedbitset="0.5"

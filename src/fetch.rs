@@ -367,11 +367,15 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.get_column_unchecked(*state),
-            tick,
-            last_run,
-        ))
+        if !state.is_null() {
+            Some(ColumnTick::new(
+                &archetype.get_column_unchecked(*state),
+                tick,
+                last_run,
+            ))
+        } else {
+            None
+        }
     }
 
     #[inline(always)]
@@ -416,7 +420,11 @@ impl<T: 'static> FetchComponents for Option<&T> {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.get_column_unchecked(*state))
+        if !state.is_null() {
+            Some(&archetype.get_column_unchecked(*state))
+        } else {
+            None
+        }
     }
 
     #[inline(always)]
@@ -458,11 +466,15 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.get_column_unchecked(*state),
-            tick,
-            last_run,
-        ))
+        if !state.is_null() {
+            Some(ColumnTick::new(
+                &archetype.get_column_unchecked(*state),
+                tick,
+                last_run,
+            ))
+        } else {
+            None
+        }
     }
 
     #[inline(always)]
@@ -675,8 +687,6 @@ impl<'a, T: 'static> Ticker<'a, &'_ mut T> {
         self.c.column.change_record(self.e, self.row, self.c.tick);
     }
 }
-
-
 
 impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
     fn deref_mut(&mut self) -> &mut Self::Target {

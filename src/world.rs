@@ -458,12 +458,12 @@ impl World {
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn collect_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
-        self.entities.collect();
-        self.archetype_arr.collect();
-        for ar in self.archetype_arr.iter() {
-            let archetype = unsafe { Share::get_mut_unchecked(ar) };
-            archetype.collect(self, action, set)
-        }
+        // self.entities.collect();
+        // self.archetype_arr.collect();
+        // for ar in self.archetype_arr.iter() {
+        //     let archetype = unsafe { Share::get_mut_unchecked(ar) };
+        //     archetype.collect(self, action, set)
+        // }
     }
 }
 unsafe impl Send for World {}

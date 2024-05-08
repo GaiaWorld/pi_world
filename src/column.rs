@@ -8,6 +8,7 @@ use std::{
 
 use pi_append_vec::AppendVec;
 use pi_arr::{Arr, Location, BUCKETS};
+use pi_null::Null;
 
 use crate::{
     archetype::{ComponentInfo, Row},
@@ -179,6 +180,7 @@ impl Blob {
     }
     #[inline(always)]
     pub unsafe fn get(&self, row: Row) -> *mut u8 {
+        assert!(!row.is_null());
         let row = row as usize;
         if row < self.vec_capacity {
             // todo get_unchecked()
