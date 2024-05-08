@@ -19,7 +19,7 @@ pub struct SingleRes<'w, T: 'static> {
 unsafe impl<T> Send for SingleRes<'_, T> {}
 unsafe impl<T> Sync for SingleRes<'_, T> {}
 impl<'w, T: 'static> SingleRes<'w, T> {
-    #[inline]
+    
     pub(crate) fn new(state: &'w SingleResource, last_run: Tick) -> Self {
         SingleRes {
             value: unsafe { &*state.downcast::<T>() },
@@ -27,11 +27,11 @@ impl<'w, T: 'static> SingleRes<'w, T> {
             last_run,
         }
     }
-    #[inline(always)]
+    
     pub fn changed_tick(&self) -> Tick {
         self.changed_tick
     }
-    #[inline(always)]
+    
     pub fn is_changed(&self) -> bool {
         self.changed_tick > self.last_run
     }
@@ -61,7 +61,7 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         }
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         _world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -71,7 +71,7 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         let last_run = replace(&mut state.1, tick);
         SingleRes::new(&state.0, last_run)
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -84,7 +84,7 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
 
 impl<'w, T: Sync + Send + 'static> Deref for SingleRes<'w, T> {
     type Target = T;
-    #[inline]
+    
     fn deref(&self) -> &Self::Target {
         self.value
     }
@@ -99,7 +99,7 @@ pub struct SingleResMut<'w, T: 'static> {
 unsafe impl<T> Send for SingleResMut<'_, T> {}
 unsafe impl<T> Sync for SingleResMut<'_, T> {}
 impl<'w, T: 'static> SingleResMut<'w, T> {
-    #[inline]
+    
     pub(crate) fn new(state: &'w mut SingleResource, tick: Tick) -> Self {
         SingleResMut {
             value: unsafe { &mut *state.downcast::<T>() },
@@ -107,7 +107,7 @@ impl<'w, T: 'static> SingleResMut<'w, T> {
             tick,
         }
     }
-    #[inline(always)]
+    
     pub fn changed_tick(&self) -> Tick {
         *self.changed_tick
     }
@@ -136,7 +136,7 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
         }
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         _world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -145,7 +145,7 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
     ) -> Self::Item<'world> {
         SingleResMut::new(state, tick)
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -157,13 +157,13 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
 }
 impl<'w, T: Sync + Send + 'static> Deref for SingleResMut<'w, T> {
     type Target = T;
-    #[inline]
+    
     fn deref(&self) -> &Self::Target {
         self.value
     }
 }
 impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
-    #[inline]
+    
     fn deref_mut(&mut self) -> &mut Self::Target {
         *self.changed_tick = self.tick;
         self.value
@@ -194,7 +194,7 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         }
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -209,7 +209,7 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
             None => None,
         }
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -244,7 +244,7 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         }
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -256,7 +256,7 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
             None => None,
         }
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
