@@ -155,7 +155,7 @@ impl ExecGraph {
         inner.to_len.fetch_add(1, Ordering::Relaxed);
         
         let index = inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name.clone())));
-        println!("find_node====={:?}", (index, inner.to_len.load(Ordering::Relaxed), &self.1, sys_name));
+        // println!("find_node====={:?}", (index, inner.to_len.load(Ordering::Relaxed), &self.1, sys_name));
         index
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
@@ -292,6 +292,8 @@ impl ExecGraph {
     ) {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
+
+        println!("add_archetype_node====={:?}", (archetype.id(), archetype.name()));
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
         let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
@@ -305,9 +307,6 @@ impl ExecGraph {
                 NodeType::System(sys_index, _) => {
                     let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
                     depend.clear();
-                    if node_index.index() == 144{
-                        println!("archetype_depend==========");
-                    }
                     sys.archetype_depend(world, archetype, &mut depend);
                     if depend.flag.contains(Flags::WITHOUT) {
                         // 如果被排除，则跳过
@@ -529,7 +528,7 @@ impl GraphInner {
                 n.from_count.fetch_add(1, Ordering::Relaxed);
                 let node_index = NodeIndex::new(self.nodes.insert(n));
                 entry.insert(node_index);
-                println!("find_node====={:?}", (node_index.index(), self.to_len.load(Ordering::Relaxed), name, label));
+                // println!("find_node====={:?}", (node_index.index(), self.to_len.load(Ordering::Relaxed), name, label));
                 (node_index, true)
             }
         }
@@ -640,11 +639,12 @@ impl GraphInner {
         // status解锁
         from_node.status.fetch_sub(1, Ordering::Relaxed);
 
+       
+        // if from.index() == 144 || to.index() == 144 {
+        //     println!("add_edge====={:?}", (from, to, old_to_len, self.to_len.load(Ordering::Relaxed), from_node.label(), to_node.label(), ));
+        // }
+
         // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1, to_count也减1
-        if from.index() == 144 || to.index() == 144 {
-            println!("add_edge====={:?}", (from, to, old_to_len, self.to_len.load(Ordering::Relaxed), from_node.label(), to_node.label(), ));
-        }
-        
         if old_to_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
             self.to_count.fetch_sub(1, Ordering::Relaxed);
