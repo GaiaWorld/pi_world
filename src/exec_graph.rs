@@ -13,6 +13,7 @@
 
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::ops::Range;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hint::spin_loop;
@@ -28,6 +29,7 @@ use dashmap::DashMap;
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
 use pi_async_rt::prelude::AsyncRuntime;
+use pi_map::vecmap::VecMap;
 use pi_null::Null;
 use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
 
@@ -39,11 +41,19 @@ use crate::system::BoxedSystem;
 use crate::world::{ArchetypeInit, World};
 
 const NODE_STATUS_STEP: u32 = 0x1000_0000;
+const NODE_STATUS_ALIGN_MASK: u32 = !0x1000_0001;
+
 const NODE_STATUS_WAIT: u32 = 0;
 const NODE_STATUS_RUN_START: u32 = NODE_STATUS_STEP; // 节点执行前（包括原型节点）前，状态被设为RUN_START
 const NODE_STATUS_RUNNING: u32 = NODE_STATUS_RUN_START + NODE_STATUS_STEP; // system系统如果通过长度检查新原型后，状态被设为Running
 const NODE_STATUS_RUN_END: u32 = NODE_STATUS_RUNNING + NODE_STATUS_STEP; // 节点执行后（包括原型节点）前，状态被设为RUN_END
 const NODE_STATUS_OVER: u32 = NODE_STATUS_RUN_END + NODE_STATUS_STEP; // 节点的所有to邻居都被调用后，状态才为Over
+
+const NODE_STATUS_WAIT_LOCK: u32 = NODE_STATUS_WAIT + 1; // wait锁定状态
+const NODE_STATUS_RUN_START_LOCK: u32 = NODE_STATUS_RUN_START + 1; // run锁定状态
+const NODE_STATUS_RUNNING_LOCK: u32 = NODE_STATUS_RUNNING + 1; // running锁定状态
+const NODE_STATUS_RUN_END_LOCK: u32 = NODE_STATUS_RUN_END + 1; // run_end锁定状态
+const NODE_STATUS_OVER_LOCK: u32 = NODE_STATUS_OVER + 1; // over锁定状态
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct NodeIndex(u32);
@@ -120,10 +130,33 @@ impl ExecGraph {
         Self(Default::default(), name)
     }
 
+    pub fn check(&self) {
+        let graph = self.0.as_ref();
+        let mut ngraph = NGraph::default();
+        for n in graph.nodes.iter().enumerate() {
+            ngraph.add_node(n.0);
+        }
+
+        for edge in graph.edges.iter() {
+            let from = edge.load(Direction::From).0;
+            let to = edge.load(Direction::To).0;
+            ngraph.add_edge(from.index() as usize, to.index() as usize);
+        }
+
+        let cycle_keys = ngraph.build();
+        if cycle_keys.len() > 0 {
+            let cycle: Vec<(usize, &Node)> = cycle_keys.iter().map(|k| {(k.clone(), graph.nodes.get(*k).unwrap())}).collect();
+            panic!("cycle=========={:?}", cycle);
+        }
+    }
+
     pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
-        inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name)))
+        
+        let index = inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name.clone())));
+        println!("find_node====={:?}", (index, inner.to_len.load(Ordering::Relaxed), &self.1, sys_name));
+        index
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -169,6 +202,8 @@ impl ExecGraph {
         }
         log::trace!("res & archtypes initialized, {:?}", Dot::with_config(&self, Config::empty()));
         std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
+
+        self.check();
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
         inner.nodes.collect();
@@ -213,7 +248,7 @@ impl ExecGraph {
         let _unused = inner.lock.lock();
         let id = unsafe { transmute(*tid) };
         // 如果图已经存在该节点，则返回，否则插入
-        let (node_index, is_new) = inner.find_node(id, NodeType::Res(name.clone()));
+        let (node_index, is_new) = inner.find_node(id, NodeType::Res(name.clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
             sys_range.start = 0;
         }
@@ -258,7 +293,7 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
-        let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()));
+        let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
             sys_range.start = 0;
         }
@@ -270,6 +305,9 @@ impl ExecGraph {
                 NodeType::System(sys_index, _) => {
                     let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
                     depend.clear();
+                    if node_index.index() == 144{
+                        println!("archetype_depend==========");
+                    }
                     sys.archetype_depend(world, archetype, &mut depend);
                     if depend.flag.contains(Flags::WITHOUT) {
                         // 如果被排除，则跳过
@@ -280,7 +318,7 @@ impl ExecGraph {
                         inner.adjust_edge(system_index, node_index);
                         for (id, name) in depend.alters.iter() {
                             // 获得该原型id到原型节点索引
-                            let (alter_node_index, _) = inner.find_node(*id, NodeType::Archetype(name.clone()));
+                            let (alter_node_index, _) = inner.find_node(*id, NodeType::Archetype(name.clone()), &self.1);
                             if alter_node_index != node_index {
                                 // 过滤掉alter的原型和原原型一样
                                 inner.adjust_edge(system_index, alter_node_index);
@@ -301,6 +339,15 @@ impl ExecGraph {
                 _ => (),
             }
         }
+
+        let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
+        let old_from_count = node.from_count.fetch_sub(1, Ordering::Relaxed);
+        if old_from_count == 1 {
+            // 只有当其他图的某系统S1创建该原型， 而当前图中不存在S1系统是，出现此情况， 此时需要给当前图添加froms
+            // 当前图此时一定处于未运行状态，可以直接安全的修改froms
+            let inner = unsafe{&mut *(Share::as_ptr(&self.0) as usize as *mut GraphInner)};
+            inner.froms.push(node_index);
+        }
     }
 
     pub async fn run<A: AsyncRuntime>(
@@ -315,7 +362,7 @@ impl ExecGraph {
             return Ok(());
         }
         inner.to_count.store(to_len, Ordering::Relaxed);
-        // println!("graph run:---------------, to_len:{}, systems_len:{}", to_len, systems.len());
+       
 
         // 确保看见每节点上的from_len, from_len被某个system的Alter设置时，system结束时也会调用fence(Ordering::Release)
         fence(Ordering::Acquire);
@@ -325,17 +372,31 @@ impl ExecGraph {
             node.status.store(NODE_STATUS_WAIT, Ordering::Relaxed);
             node.from_count
                 .store(node.edge(Direction::From).0, Ordering::Relaxed);
+            
         }
+    
+        // println!("graph run:---------------, to_len:{}, systems_len:{}, node_len: {:?}, \ndiff: {:?}", to_len, systems.len(), inner.nodes.len(), 
+        //     inner.nodes.iter().enumerate().filter(|r| {
+        //         for i in inner.froms.iter() {
+        //             if i.index() == r.0 {
+        //                 return false;
+        //             }
+        //         }
+        //         return true;
+        //     }).map(|r| {
+        //         r.0
+        //     }).collect::<Vec<usize>>()
+        // );
 
         // 从graph的froms开始执行
-        println!("run !!!!===={}", inner.froms.len());
+        // println!("run !!!!===={:?}", (&self.1, inner.froms.len(), inner.froms.iter().map(|r| {r.index()}).collect::<Vec<usize>>()));
         for i in inner.froms.iter() {
             let node = unsafe { inner.nodes.load_unchecked(i.index()) };
-            self.exec(systems, rt, world, *i, node, vec![], u32::null());
+            self.exec(systems, rt, world, *i, node);
         }
-        println!("run1 !!!!===={}", inner.froms.len());
+        // println!("run1 !!!!===={}", inner.froms.len());
         let r = inner.receiver.recv().await;
-        println!("run2 !!!!===={}", inner.froms.len());
+        // println!("run2 !!!!===={}", inner.froms.len());
         r
         
     }
@@ -346,49 +407,37 @@ impl ExecGraph {
         world: &'static World,
         node_index: NodeIndex,
         node: &Node,
-        mut vec: Vec<u32>,
-        parent: u32,
     ) {
         // println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
-                // RUN_START
-                let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-                if r != NODE_STATUS_WAIT {
-                    panic!("status err:{}, node_index:{} node:{:?}, parent:{} vec:{:?}", r, node_index.index(), node, parent, vec)
-                }else if parent == 0 {
-                    let p = unsafe { self.0.as_ref().nodes.load_unchecked(parent as usize) };
-                    if p.status.load(Ordering::Relaxed) != NODE_STATUS_RUN_END {
-                        panic!("parent status err, node_index:{} node:{:?}, vec:{:?}", r, node, vec)
-                    }
-                }
-                vec.push(r);
+                // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
                 let rt1 = rt.clone();
                 let g = self.clone();
                 let _ = rt.spawn(async move {
-                    let sys = unsafe { systems.load_unchecked_mut(sys_index) };
-                    // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
-                    // 如果node为要执行的system，则执行对齐原型
-                    sys.align(world);
                     let inner = g.0.as_ref();
                     let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-                    // NODE_STATUS_RUNNING
-                    let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-                    if r != NODE_STATUS_RUN_START {
-                        panic!("run status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
+                    let sys = unsafe { systems.load_unchecked_mut(sys_index) };
+                    let old_status = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
+                    // 如果node为要执行的system，并且未被锁定原型，则执行对齐原型
+                    if old_status & NODE_STATUS_ALIGN_MASK == 0 {
+                        sys.align(world);
                     }
-                    vec.push(r);
-                    println!("run start===={:?}", sys.name());
+                    
+                    // NODE_STATUS_RUNNING
+                    node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    // println!("run start===={:?}", sys.name());
                     sys.run(world).await;
-                    println!("run end===={:?}", sys.name());
-                    g.exec_end(systems, &rt1, world, node, vec, node_index)
+                    // println!("run end===={:?}", sys.name());
+                    g.exec_end(systems, &rt1, world, node, node_index)
                 });
             }
             _ => {
                 // RUN_START + RUNNING
                 node.status
                     .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
-                self.exec_end(systems, rt, world, node, vec, node_index)
+                self.exec_end(systems, rt, world, node, node_index)
             }
         }
     }
@@ -398,19 +447,16 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node: &Node,
-        mut vec: Vec<u32>,
-        node_index: NodeIndex,
+        index: NodeIndex,
     ) {
         // RUN_END
         let mut status =
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed) + NODE_STATUS_STEP;
         // 添加to邻居时，会锁定状态。如果被锁定，则等待锁定结束才去获取邻居
         // 如果全局同时有2个原型被添加，NODE_STATUS_RUN_END之后status又被加1，则会陷入死循环
-        while status != NODE_STATUS_RUN_END {
-            let s = status;
+        while status & 1 == 1 {
             spin_loop();
             status = node.status.load(Ordering::Relaxed);
-            panic!("status err node_index:{} status:{}={} node:{:?} vec:{:?}, ", node_index.index(), s, status, node, vec);
         }
         let inner = self.0.as_ref();
         // 执行后，检查to边的数量
@@ -422,21 +468,19 @@ impl ExecGraph {
         //     print!("n:{:?}, ", n);
         // }
         // println!("]");
-        vec.clear();
-        let mut it1 = it.clone();
-        while let Some(n) = it1.next() {
-            vec.push(n.index() as u32);
-            let nn = unsafe { inner.nodes.load_unchecked(n.index()) };
-            let r = nn.status.load(Ordering::Relaxed);
-            if r != NODE_STATUS_WAIT {
-                panic!("child status err node_index:{} child_status:{} node:{:?} child_index:{:?}, ", node_index.index(), r, node, n.index());
-            }
-            vec.push(r);
-        }
-        vec.push(u32::null());
+        // println!("exec_end====={:?}", (node.label(), it.edge.0, it.clone().map(|r| {r.index()}).collect::<Vec<usize>>()));
+        // println!("to====={:?}", (index, it.edge.0, it.clone().map(|r| {
+        //     let node = unsafe { inner.nodes.load_unchecked(r.index()) };
+        //     let from_count = node.from_count.load(Ordering::Relaxed);
+
+        //     let from = NeighborIter::new(inner, Direction::From, node.edge(Direction::From));
+
+        //     (r.index(), from_count as usize, from.map(|r| {r.index()}).collect::<Vec<usize>>())
+        // }).collect::<Vec<(usize, usize, Vec<usize>)>>(), node.label(), inner.to_count.load(Ordering::Relaxed)));
         if it.edge.0 == 0 {
             // 设置成结束状态
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+            // println!("run_over====={:?}", (index, node.label(), inner.to_count.load(Ordering::Relaxed)));
             //  to边的数量为0，表示为结束节点，减少to_count
             return inner.run_over(rt);
         }
@@ -446,14 +490,11 @@ impl ExecGraph {
             let r = node.from_count.fetch_sub(1, Ordering::Relaxed);
             if r == 1 {
                 // 减到0，表示要执行该节点
-                self.exec(systems, rt, world, n, node, vec.clone(), node_index.index() as u32);
+                self.exec(systems, rt, world, n, node);
             }
         }
         // 设置成结束状态
-        let r = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-        if r != NODE_STATUS_RUN_END {
-            panic!("end status err, node_index:{} node:{:?} vec:{:?}", r, node, vec)
-        }
+        node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
 }
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn collect(&mut self) {
@@ -479,13 +520,16 @@ pub struct GraphInner {
 impl GraphInner {
 
     // 查找图节点， 如果不存在将该label放入图的节点中，保存id到图节点索引的对应关系， 图的to_len也加1
-    fn find_node(&self, id: u128, label: NodeType) -> (NodeIndex, bool) {
+    fn find_node(&self, id: u128, label: NodeType, name: &str) -> (NodeIndex, bool) {
         match self.map.entry(id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
                 self.to_len.fetch_add(1, Ordering::Relaxed);
-                let node_index = NodeIndex::new(self.nodes.insert(Node::new(label)));
+                let n = Node::new(label.clone());
+                n.from_count.fetch_add(1, Ordering::Relaxed);
+                let node_index = NodeIndex::new(self.nodes.insert(n));
                 entry.insert(node_index);
+                println!("find_node====={:?}", (node_index.index(), self.to_len.load(Ordering::Relaxed), name, label));
                 (node_index, true)
             }
         }
@@ -544,14 +588,14 @@ impl GraphInner {
         // 锁定status, exec时，就会等待解锁后，才访问to边
         let status = from_node.status.fetch_add(1, Ordering::Relaxed);
         // println!("add_edge, from:{:?}, to:{:?}, from_status:{:?}", from, to, status);
-        let r = if status < NODE_STATUS_RUN_END {
+        let old_from = if status < NODE_STATUS_RUN_END {
             // 节点还为执行到遍历to边，先把to_node.from_count加1
             // 这一步，如果该to节点还未执行，则不会执行， 因为要等待from_count为0
             to_node.from_count.fetch_add(1, Ordering::Relaxed)
         } else if status >= NODE_STATUS_OVER {
             1
         } else {
-            // 等待status为Over，如果为Over，表示exec对to边已经遍历过，可以修改to边了
+            // 正在遍历to边，等待status为Over，如果为Over，表示exec对to边已经遍历过，可以修改to边了
             while from_node.status.load(Ordering::Relaxed) < NODE_STATUS_OVER {
                 spin_loop();
             }
@@ -597,14 +641,28 @@ impl GraphInner {
         from_node.status.fetch_sub(1, Ordering::Relaxed);
 
         // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1, to_count也减1
+        if from.index() == 144 || to.index() == 144 {
+            println!("add_edge====={:?}", (from, to, old_to_len, self.to_len.load(Ordering::Relaxed), from_node.label(), to_node.label(), ));
+        }
+        
         if old_to_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
             self.to_count.fetch_sub(1, Ordering::Relaxed);
         }
-        // 该to节点的from_count已经为0，表示正在执行或已经执行，则等待该to节点执行到RUNNING，这样返回后，确保该to节点为system，则不会看到该原型
-        if r == 0 {
-            while to_node.status.load(Ordering::Relaxed) < NODE_STATUS_RUNNING {
-                spin_loop();
+        // 该to节点的from_count已经为0，表示正在执行或未执行
+        if old_from == 0 {
+            // 则添加状态2锁定原型， 使得还未进行原型对齐的to执行时不进行原型对齐；
+            // 不进行原型对齐的原因： 
+            //     假定系统S1生成原生A1， 系统S2对A1存在只读引用，他们在并行执行（注意， 在A1原型生成之前，S1和S2可能不存在先后顺序，他们可以并行）
+            //     如果S2系统进行原型对齐， 将能看到A1，那么， S1写入A1与S2读取A1并行执行，可能存在数据不一致的情况
+            let mut state = to_node.status.fetch_add(2, Ordering::Relaxed);
+
+            // 如果该to正处于对齐阶段，则等待，直到to进入到RUNNING状态，以保证to看不到原型
+            if state & NODE_STATUS_RUN_START == NODE_STATUS_RUN_START {
+                while state < NODE_STATUS_RUNNING {
+                    spin_loop();
+                    state = to_node.status.load(Ordering::Relaxed);
+                }
             }
         }
     }
@@ -664,12 +722,21 @@ impl GraphInner {
     // 尝试run是否over
     fn run_over<A: AsyncRuntime>(&self, rt: &A) {
         let r = self.to_count.fetch_sub(1, Ordering::Relaxed);
-        // println!("run_over, {}", r);
         if r == 1 {
             let s = self.sender.clone();
             let _ = rt.spawn(async move {
                 s.send(()).await.unwrap();
             });
+        } else if r == 5 {
+            // for n in self.nodes.iter() {
+            //     // println!("next exec====={:?}", (n.label(), n.from_count.load(Ordering::Relaxed)));
+            //     if n.from_count.load(Ordering::Relaxed) != 0 {
+            //         println!("next exec====={:?}", (n.label(), n.from_count.load(Ordering::Relaxed)));
+            //         // v.push(format!("{:?}", ));
+            //     }
+            //     // // let it = NeighborIter::new(inner, Direction::To, node.edge(Direction::To));
+            //     // println!("next exec====={:?}", v.join("\n"));
+            // }
         }
     }
 }
@@ -720,6 +787,7 @@ impl<'a> Iterator for NeighborIter<'a> {
     }
 }
 
+#[derive(Clone)]
 pub enum NodeType {
     None,
     System(usize, Cow<'static, str>),
@@ -769,7 +837,7 @@ impl Node {
     fn new(label: NodeType) -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
-            status: ShareU32::new(NODE_STATUS_OVER),
+            status: ShareU32::new(NODE_STATUS_WAIT),
             label,
             from_count: ShareU32::new(0),
         }
@@ -906,6 +974,138 @@ impl<'a> Listener for Notify<'a> {
     fn listen(&self, ar: Self::Event) {
         self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
         log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
+        self.0.check();
         std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
     }
+}
+
+
+/// 图节点
+#[derive(Debug, Clone)]
+pub struct NGraphNode {
+    // 该节点的入度节点
+    from: Vec<usize>,
+    // 该节点的出度节点
+    to: Vec<usize>,
+	
+}
+
+#[derive(Default)]
+pub struct NGraph {
+    nodes: pi_map::vecmap::VecMap<NGraphNode>,
+    from: Vec<usize>,
+    to: Vec<usize>,
+    edges: HashSet<(usize, usize)>,
+}
+
+impl NGraph {
+	/// 如果parent_graph_id是Null， 表示插入到根上
+    pub fn add_node(&mut self, k: usize) {
+        self.nodes.insert(k, NGraphNode {
+            from: Vec::new(),
+            to: Vec::new(),
+        });
+    }
+
+    pub fn add_edge(&mut self, before: usize, after: usize) {
+        if self.edges.contains(&(before, after)) {
+            panic!("边已经存在！！{:?}", (before, after));
+        }
+        self.edges.insert((before, after));
+		let before_node = self.nodes.get_mut(before).unwrap();
+        before_node.to.push(after);
+
+        let after_node = self.nodes.get_mut(after).unwrap();
+        after_node.from.push(before);
+    }
+
+    pub fn build(&mut self) -> Vec<usize> {
+        let mut queue = std::collections::VecDeque::new();
+        let mut counts: VecMap<usize> = VecMap::with_capacity(self.nodes.len());
+        for k in self.nodes.iter().enumerate() {
+            if let Some(r) = k.1 {
+                if r.from.is_empty() {
+                    queue.push_back(k.0);
+                }
+                counts.insert(k.0, r.from.len());
+            }
+        }
+
+        let nodes = &self.nodes;
+        let mut topological = Vec::new();
+        let mut topological_len = 0;
+        while let Some(k) = queue.pop_front() {
+			let node = nodes.get(k).unwrap();
+			topological.push(k);
+			topological_len += 1;
+            
+			
+            // 处理 from 的 下一层
+           
+			// debug!("from = {:?}, to: {:?}", k, node.edges.to);
+            // 遍历节点的后续节点
+            for to in &node.to  {
+				// debug!("graph's each = {:?}, count = {:?}", to, counts[key_index(*to)]);
+				counts[*to] -= 1;
+                // handle_set.insert(*to, ());
+				if counts[*to] == 0 {
+					queue.push_back(*to);
+				}
+            }
+        }
+
+		// 如果拓扑排序列表的节点数等于图中的总节点数，则返回拓扑排序列表，否则返回空列表（说明图中存在环路）
+		if topological_len == nodes.len() {
+			// topological = topos;
+			return Default::default();
+		}
+
+		let not_contains = nodes.iter().enumerate().map(|k|{k.clone()}).filter(|r| {
+            match r.1 {
+                Some(r) => r,
+                None => return false,
+            };
+			let mut is_not_contains = !topological.contains(&r.0);
+
+			return  is_not_contains;
+		}).map(|r| {r.0}).collect::<Vec<usize>>();
+
+		let mut iter = not_contains.into_iter();
+		while let Some(n) = iter.next() {
+			let mut cycle_keys = Vec::new();
+			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::new());
+
+			if cycle_keys.len() > 0 {
+				return cycle_keys;
+			}
+		}
+
+        Default::default()
+    }
+
+    // 寻找循环依赖
+    fn find_cycle(map: &VecMap<NGraphNode>, node: usize, nodes: &mut Vec<usize>, mut indexs: Vec<usize>) {
+		nodes.push(node.clone());
+        indexs.push(0);
+        while nodes.len() > 0 {
+            let index = nodes.len() - 1;
+            let k = &nodes[index];
+            let n = map.get(*k).unwrap();
+            let to = &n.to;
+            let child_index = indexs[index];
+            if child_index >= to.len() {
+                nodes.pop();
+                indexs.pop();
+                continue
+            }
+            let child = to[child_index].clone();
+            if child == node {
+                break;
+            }
+            indexs[index] += 1;
+            nodes.push(child);
+            indexs.push(0);
+        }
+    }
+
 }

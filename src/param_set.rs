@@ -19,7 +19,7 @@ use pi_world_macros::impl_param_set;
 pub use pi_world_macros::ParamSetElement;
 
 pub trait ParamSetElement: SystemParam {
-    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State;
+    fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State;
 }
 
 pub struct ParamSet<'w, T: 'static + ParamSetElement>(<T as SystemParam>::Item<'w>);
@@ -101,7 +101,7 @@ macro_rules! impl_param_set_tuple_fetch {
         #[allow(clippy::unused_unit)]
         impl<$($param: ParamSetElement),*> ParamSetElement for ($($param,)*) {
 
-            fn init_set_state(_world: &World, _system_meta: &mut SystemMeta) -> Self::State{
+            fn init_set_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State{
                 (($($param::init_set_state(_world, _system_meta),)*))
             }
         }

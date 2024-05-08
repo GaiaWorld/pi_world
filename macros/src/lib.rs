@@ -226,6 +226,10 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
                 }
 
+                fn align<'w>(world: &'w #path::world::World, system_meta: &'w #path::system::SystemMeta, state: &'w mut Self::State) {
+                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::align(world, system_meta, &mut state.state);
+                }
+
                 fn get_param<'w>(
                     world: &'w #path::world::World,
                     system_meta: &'w #path::system::SystemMeta,
@@ -373,7 +377,7 @@ pub fn derive_param_set_element(input: TokenStream) -> TokenStream {
         impl<#punctuated_generics> #path::param_set::ParamSetElement for
             #struct_name <#(#shadowed_lifetimes,)* #punctuated_generic_idents> #where_clause
         {
-            fn init_set_state<'w>(world: &'w #path::world::World, system_meta: &'w mut #path::system::SystemMeta) -> Self::State {
+            fn init_set_state<'w>(world: &'w mut #path::world::World, system_meta: &'w mut #path::system::SystemMeta) -> Self::State {
                 #state_struct_name {
                     state: <#fields_alias::<'_, #punctuated_generic_idents> as #path::param_set::ParamSetElement>::init_set_state(world, system_meta),
                 }

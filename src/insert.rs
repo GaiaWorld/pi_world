@@ -129,7 +129,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 }
 
 impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
-    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State{
+    fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
         let components = I::components();
         let id = ComponentInfo::calc_id(&components);
 

@@ -128,13 +128,14 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     #[inline]
     pub fn contains(&self, entity: Entity) -> bool {
-        check(
+        let r = check(
             self.world,
             entity,
             unsafe { &mut *self.cache_mapping.get() },
             &self.state.map,
         )
-        .is_ok()
+        .is_ok();
+        r
     }
     #[inline]
     pub fn get(
@@ -232,7 +233,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
 impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement
     for Query<'_, Q, F>
 {
-    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+    fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
@@ -376,6 +377,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     #[inline]
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();
+        // println!("align===={:?}", (len, self.archetype_len));
         if len == self.archetype_len {
             return;
         }
@@ -385,6 +387,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             self.add_archetype(world, ar, i as ArchetypeWorldIndex);
         }
         self.archetype_len = len;
+        // println!("align1===={:?}", (std::any::type_name::<Self>(), len, self.archetype_len));
     }
     // 新增的原型
     pub fn add_archetype(
@@ -423,6 +426,8 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = check(world, entity, cache_mapping, &self.map)?;
+        let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
+        println!("get======{:?}", (entity, cache_mapping.0, arch.name()));
         let arqs = unsafe { &self.vec.get_unchecked(self.cache_mapping.1) };
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))

@@ -285,6 +285,10 @@ impl<
         archetype: &Archetype,
         result: &mut ArchetypeDependResult,
     ) {
+        if &state.1.writing_archetype == archetype.id() {
+            println!("archetype_depend: ar:{:?}", archetype.name());
+            return result.merge(ArchetypeDepend::Flag(Flags::WRITE));  
+        }
         Q::archetype_depend(archetype, result);
         // 如果相关， 则添加移除类型，并返回Alter后的原型id
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
@@ -339,7 +343,7 @@ impl<
         D: Bundle + Send + 'static,
     > ParamSetElement for Alter<'_, Q, F, A, D>
 {
-    fn init_set_state(world: &World, system_meta: &mut SystemMeta) -> Self::State {
+    fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
@@ -400,7 +404,7 @@ pub struct AlterState<A: Bundle> {
     added_columns: Vec<ColumnIndex>,       // 目标原型的新增加的组件位置列表，主要是给Bundle用的
     removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有对应的监听
     mapping_dirtys: Vec<ArchetypeLocalIndex>,         // 本次变更的原型映射在vec上的索引
-                                                      // destroys: Vec<(ArchetypeLocalIndex, Row)>,    // 本次移除的本地原型位置及条目
+    writing_archetype: u128,                                // 正在写入的原型
 }
 impl<A: Bundle> AlterState<A> {
     pub(crate) fn new(mut add: Vec<ComponentInfo>, mut remove: Vec<ComponentInfo>) -> Self {
@@ -415,7 +419,7 @@ impl<A: Bundle> AlterState<A> {
             added_columns: Default::default(),
             removed_columns: Default::default(),
             mapping_dirtys: Vec::new(),
-            // destroys: Vec::new(),
+            writing_archetype: 0,
         }
     }
     #[inline]
@@ -445,6 +449,7 @@ impl<A: Bundle> AlterState<A> {
                 &mut self.removed_columns,
                 &self.sort_add,
                 &self.sort_remove,
+                &mut self.writing_archetype,
             );
 
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
@@ -544,6 +549,7 @@ pub(crate) fn mapping_init<'a>(
     removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
     sort_add: &Vec<ComponentInfo>,
     sort_remove: &Vec<ComponentInfo>,
+    writing_archetype: &mut u128,
 ) {
     let add_len = sort_add.len();
     let remove_len = sort_remove.len();
@@ -566,6 +572,7 @@ pub(crate) fn mapping_init<'a>(
         };
         return;
     }
+    *writing_archetype = id;
     let (dst_index, dst) = world.find_archtype(id, components);
     mapping.dst = dst;
     mapping.dst_index = dst_index;

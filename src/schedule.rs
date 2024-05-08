@@ -234,7 +234,6 @@ impl Schedule {
         let _ = rt.block_on(async move {
             let rt2 = rt1;
             g.run(s, &rt2, w).await.unwrap();
-            println!("run end!!!!====");
             g.collect();
         });
     }

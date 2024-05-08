@@ -17,6 +17,7 @@ pub struct App<A: AsyncRuntime + AsyncRuntimeExt> {
     pub schedule: Schedule,
     pub startup_schedule: Schedule,
     pub rt: A,
+    pub is_first_run: bool,
 }
 impl App<SingleTaskRuntime> {
     pub fn new() -> Self {
@@ -27,6 +28,7 @@ impl App<SingleTaskRuntime> {
             schedule: Schedule::new(true),
             startup_schedule: Schedule::new(false),
             rt,
+            is_first_run: true,
         }
     }
 }
@@ -43,6 +45,7 @@ impl App<MultiTaskRuntime> {
             schedule: Schedule::new(true),
             startup_schedule: Schedule::new(false),
             rt,
+            is_first_run: true,
         }
     }
 }
@@ -76,7 +79,11 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
     pub fn run(&mut self) {
-        self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+        // if self.is_first_run {
+            self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+        //     self.is_first_run = false;
+        // }
+        
 
         self.schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
     }
@@ -85,7 +92,10 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
     pub fn run_schedule(&mut self, schedule_label: impl ScheduleLabel) {
-        self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+        if self.is_first_run {
+            self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
+            self.is_first_run = false;
+        }
 
         self.schedule.run(&mut self.world, &self.rt, &schedule_label.intern());
     }
@@ -94,7 +104,10 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
     pub async fn async_run(&mut self, schedule_label: impl ScheduleLabel) {
-        self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+        if self.is_first_run {
+            self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+            self.is_first_run = false;
+        }
 
         self.schedule.async_run(&mut self.world, &self.rt, &schedule_label.intern()).await;
     }
@@ -103,7 +116,10 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
     pub async fn async_run_schedule(&mut self) {
-        self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+        if self.is_first_run {
+            self.startup_schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
+            self.is_first_run = false;
+        }
 
         self.schedule.async_run(&mut self.world, &self.rt, &MainSchedule.intern()).await;
     }
