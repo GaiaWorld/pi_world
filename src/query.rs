@@ -55,7 +55,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
             cache_mapping,
         }
     }
-    #[inline]
+    
     pub fn contains(&self, entity: Entity) -> bool {
         check(
             self.world,
@@ -65,7 +65,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
         )
         .is_ok()
     }
-    #[inline]
+    
     pub fn get(
         &self,
         e: Entity,
@@ -76,20 +76,20 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
                 &mut *self.cache_mapping.get()
             })
     }
-    #[inline]
+    
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .get(self.world, self.tick, e, self.cache_mapping.get_mut())
     }
-    #[inline]
+    
     pub fn is_empty(&self) -> bool {
         self.state.is_empty()
     }
-    #[inline]
+    
     pub fn len(&self) -> usize {
         self.state.len()
     }
-    #[inline]
+    
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         QueryIter::new(self.world, self.state.as_readonly(), self.tick)
     }
@@ -108,7 +108,7 @@ pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'st
 unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Send for Query<'world, Q, F> {}
 unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'world, Q, F> {}
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
-    #[inline]
+    
     pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
         let cache_mapping = UnsafeCell::new(state.cache_mapping);
         Query {
@@ -118,15 +118,15 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
             cache_mapping,
         }
     }
-    #[inline]
+    
     pub fn tick(&self) -> Tick {
         self.tick
     }
-    #[inline]
+    
     pub fn last_run(&self) -> Tick {
         self.state.last_run
     }
-    #[inline]
+    
     pub fn contains(&self, entity: Entity) -> bool {
         let r = check(
             self.world,
@@ -137,7 +137,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
         .is_ok();
         r
     }
-    #[inline]
+    
     pub fn get(
         &self,
         e: Entity,
@@ -148,20 +148,20 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
                 &mut *self.cache_mapping.get()
             })
     }
-    #[inline]
+    
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .get(self.world, self.tick, e, self.cache_mapping.get_mut())
     }
-    #[inline]
+    
     pub fn is_empty(&self) -> bool {
         self.state.is_empty()
     }
-    #[inline]
+    
     pub fn len(&self) -> usize {
         self.state.len()
     }
-    #[inline]
+    
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         QueryIter::new(self.world, self.state.as_readonly(), self.tick)
     }
@@ -206,12 +206,12 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         Q::res_depend(res_tid, res_name, single, result);
     }
 
-    #[inline]
+    
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
         state.align(world);
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -220,7 +220,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
     ) -> Self::Item<'world> {
         Query::new(world, state, tick)
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -374,7 +374,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
-    #[inline]
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();
         // println!("align===={:?}", (len, self.archetype_len));
@@ -431,14 +430,14 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
     }
-    #[inline]
+    
     pub fn is_empty(&self) -> bool {
         if self.vec.is_empty() {
             return true;
         }
         self.len() == 0
     }
-    #[inline]
+    
     pub fn len(&self) -> usize {
         let mut len = 0;
         for arqs in &self.vec {
@@ -520,8 +519,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// # Safety
     /// - `world` must have permission to access any of the components registered in `query_state`.
     /// - `world` must be the same one used to initialize `query_state`.
-    #[inline(always)]
-    pub(crate) fn new(world: &'w World, state: &'w QueryState<Q, F>, tick: Tick) -> Self {
+    pub fn new(world: &'w World, state: &'w QueryState<Q, F>, tick: Tick) -> Self {
         let mut ar_index = state.vec.len();
         println!("new======{:?}", (ar_index));
         while ar_index > 0 {
@@ -588,12 +586,10 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             cache_mapping: state.cache_mapping,
         }
     }
-    #[inline(always)]
     pub fn entity(&self) -> Entity {
         self.e
     }
 
-    #[inline(always)]
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
             println!("self.ar_index======{:?}", (self.ar_index, self.row));
@@ -627,7 +623,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
     }
 
-    #[inline]
     fn iter_dirty(&mut self) -> Option<Q::Item<'w>> {
         loop {
             println!("next0=====");
@@ -693,7 +688,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
     }
 
-    #[inline]
     fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
         loop {
             if let Some(d) = self.dirty.it.next() {
@@ -766,20 +760,17 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
     }
 
-    #[inline(always)]
     fn size_hint_normal(&self) -> (usize, Option<usize>) {
         let it = self.state.vec[0..self.ar_index as usize].iter();
         let count = it.map(|arqs| arqs.ar.len()).count();
         (self.row as usize, Some(self.row as usize + count))
     }
-    #[inline(always)]
     fn size_hint_dirty(&self) -> (usize, Option<usize>) {
         // 获得当前原型的当前列的脏长度
         let mut c: usize = self.dirty.it.size_hint().1.unwrap_or_default();
         c += self.size_hint_ar_dirty(self.ar_index);
         (0, Some(c))
     }
-    #[inline(always)]
     fn size_hint_ar_dirty(&self, ar_index: usize) -> usize {
         let mut c: usize = self.dirty.it.size_hint().1.unwrap_or_default();
         let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
@@ -792,7 +783,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
         c
     }
-    #[inline(always)]
     fn size_hint_ar_column_dirty(
         &self,
         ar: &Archetype,
@@ -811,7 +801,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
 impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, F> {
     type Item = Q::Item<'w>;
-    #[inline(always)]
+
     fn next(&mut self) -> Option<Self::Item> {
         if F::LISTENER_COUNT == 0 {
             self.iter_normal()

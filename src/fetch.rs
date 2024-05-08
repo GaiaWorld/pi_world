@@ -95,7 +95,7 @@ impl FetchComponents for Entity {
         archetype
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(_fetch: &mut Self::Fetch<'w>, _row: Row, e: Entity) -> Self::Item<'w> {
         e
     }
@@ -126,7 +126,7 @@ impl<T: 'static> FetchComponents for &T {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -137,7 +137,7 @@ impl<T: 'static> FetchComponents for &T {
         &archetype.get_column_unchecked(*state)
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         fetch.get(row)
     }
@@ -168,7 +168,7 @@ impl<T: 'static> FetchComponents for &mut T {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -179,7 +179,7 @@ impl<T: 'static> FetchComponents for &mut T {
         ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Mut::new(fetch, e, row)
     }
@@ -214,7 +214,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -225,7 +225,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -260,7 +260,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -271,7 +271,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         ColumnTick::new(&archetype.get_column_unchecked(*state), tick, last_run)
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -306,7 +306,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -321,7 +321,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         ))
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -359,7 +359,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -367,14 +367,18 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.get_column_unchecked(*state),
-            tick,
-            last_run,
-        ))
+        if !state.is_null() {
+            Some(ColumnTick::new(
+                &archetype.get_column_unchecked(*state),
+                tick,
+                last_run,
+            ))
+        } else {
+            None
+        }
     }
 
-    #[inline(always)]
+
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -408,7 +412,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -416,10 +420,14 @@ impl<T: 'static> FetchComponents for Option<&T> {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(&archetype.get_column_unchecked(*state))
+        if !state.is_null() {
+            Some(&archetype.get_column_unchecked(*state))
+        } else {
+            None
+        }
     }
 
-    #[inline(always)]
+
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         fetch.and_then(|c| Some(c.get(row)))
     }
@@ -450,7 +458,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         archetype.get_column_index(&TypeId::of::<T>())
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -458,14 +466,18 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(
-            &archetype.get_column_unchecked(*state),
-            tick,
-            last_run,
-        ))
+        if !state.is_null() {
+            Some(ColumnTick::new(
+                &archetype.get_column_unchecked(*state),
+                tick,
+                last_run,
+            ))
+        } else {
+            None
+        }
     }
 
-    #[inline(always)]
+
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Mut::new(f, e, row)),
@@ -520,7 +532,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         }
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -534,7 +546,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         }
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
             Ok(c) => c.get(row),
@@ -555,7 +567,7 @@ impl<T: 'static> FetchComponents for Has<T> {
         archetype.get_column(&TypeId::of::<T>()).is_some()
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         _archetype: &'w Archetype,
@@ -566,7 +578,7 @@ impl<T: 'static> FetchComponents for Has<T> {
         *state
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
         *fetch
     }
@@ -585,7 +597,7 @@ impl FetchComponents for ArchetypeInfo<'_> {
         ()
     }
 
-    #[inline]
+    
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -596,7 +608,7 @@ impl FetchComponents for ArchetypeInfo<'_> {
         archetype.name()
     }
 
-    #[inline(always)]
+    
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         ArchetypeInfo(fetch, row)
     }
@@ -627,7 +639,7 @@ pub struct Ticker<'a, T> {
 }
 
 impl<'a, T> Ticker<'a, T> {
-    #[inline(always)]
+    
     pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
         Self {
             c: c.clone(),
@@ -636,22 +648,22 @@ impl<'a, T> Ticker<'a, T> {
             _p: PhantomData,
         }
     }
-    #[inline(always)]
+    
     pub fn entity(&self) -> Entity {
         self.e
     }
-    #[inline(always)]
+    
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
-    #[inline(always)]
+    
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
     }
 }
 impl<'a, T: 'static> Deref for Ticker<'a, &'_ T> {
     type Target = T;
-    #[inline(always)]
+    
     fn deref(&self) -> &Self::Target {
         self.c.column.get::<T>(self.row)
     }
@@ -659,24 +671,22 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ T> {
 
 impl<'a, T: 'static> Deref for Ticker<'a, &'_ mut T> {
     type Target = T;
-    #[inline(always)]
+    
     fn deref(&self) -> &Self::Target {
         self.c.column.get::<T>(self.row)
     }
 }
 
 impl<'a, T: 'static> Ticker<'a, &'_ mut T> {
-    #[inline(always)]
+    
     pub fn bypass_change_detection(&mut self) -> &mut T {
         self.c.column.get_mut::<T>(self.row)
     }
-    #[inline(always)]
+    
     pub fn set_changed(&mut self) {
         self.c.column.change_record(self.e, self.row, self.c.tick);
     }
 }
-
-
 
 impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -695,7 +705,7 @@ pub struct Mut<'a, T: 'static> {
     _p: PhantomData<T>,
 }
 impl<'a, T: Sized> Mut<'a, T> {
-    #[inline(always)]
+    
     pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
         Self {
             column: c.column,
@@ -705,30 +715,30 @@ impl<'a, T: Sized> Mut<'a, T> {
             _p: PhantomData,
         }
     }
-    #[inline(always)]
+    
     pub fn into_inner(self) -> &'a mut T {
         self.column.change_record(self.e, self.row, self.tick);
         self.column.get_mut::<T>(self.row)
     }
 
-    #[inline(always)]
+    
     pub fn bypass_change_detection(&mut self) -> &mut T {
         self.column.get_mut::<T>(self.row)
     }
-    #[inline(always)]
+    
     pub fn set_changed(&mut self) {
         self.column.change_record(self.e, self.row, self.tick);
     }
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
-    #[inline(always)]
+    
     fn deref(&self) -> &Self::Target {
         self.column.get::<T>(self.row)
     }
 }
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
-    #[inline(always)]
+    
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.column.change_record(self.e, self.row, self.tick);
         self.column.get_mut::<T>(self.row)
@@ -766,7 +776,7 @@ macro_rules! impl_tuple_fetch {
                 )*)
             }
 
-            #[inline(always)]
+            
             #[allow(clippy::unused_unit)]
             fn init_fetch<'w>(
                 _world: &'w World,
@@ -779,7 +789,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init_fetch(_world, _archetype, $state, _tick, _last_run),)*)
             }
 
-            #[inline(always)]
+            
             #[allow(clippy::unused_unit)]
             fn fetch<'w>(
                 _fetch: &mut Self::Fetch<'w>,

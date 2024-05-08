@@ -102,7 +102,8 @@ impl Table {
     }
     #[inline(always)]
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
-        unsafe { self.columns.get_unchecked(index as usize) }
+        assert!(!index.is_null());
+        unsafe { self.columns.get_unchecked(index as usize)}
     }
     /// 添加changed监听器，原型刚创建时调用
     pub fn add_changed_listener(&self, tid: &TypeId, owner: TypeId) {
