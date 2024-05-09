@@ -399,65 +399,77 @@ impl World {
     pub fn alter_components(
         &mut self,
         e: Entity,
-        components: &[(TypeId, bool)],
-    ) -> Result<bool, QueryError> {
-        todo!()
+        components: &[(ComponentIndex, bool)],
+    ) -> Result<(), QueryError> {
+        todo!();
+    //     let mut sort_add = vec![];
+    //     let mut sort_remove = vec![];
+
+    //     for (index, is_add) in components{
+    //         if let Some(info) = unsafe { self.get_component_info(*index) }{
+    //             if *is_add{
+    //                 sort_add.push(info.clone());
+    //             }else{
+    //                 sort_remove.push(info.clone());
+    //             }
+    //         }
+    //     }
+    //     // let components = T::components();
+    //     let addr = match self.entities.get(e) {
+    //         Some(v) => v,
+    //         None => return Err(QueryError::NoSuchEntity),
+    //     };
+    //     let mut id: u128 = ComponentInfo::calc_id(&components_info);
+    //     let ar_index = addr.archetype_index();
+    //     let ar = unsafe { self.archetype_arr.get_unchecked(ar_index) };
+    //     let (components, moving) = ar.alter(&components_info, &vec![]);
+
+    //     let dst = self.find_archtype(id, components);
+    //     let mut mapping = ArchetypeMapping::new(ar.clone(), dst.1);
+
+    //     let mut moved_columns = vec![];
+    //     let mut added_columns = vec![];
+    //     let mut removed_columns = vec![];
+
+    //     if mapping.dst.len() > 0{
+    //         mapping_init(
+    //             self,
+    //             &mut mapping,
+    //             &mut moved_columns,
+    //             &mut added_columns,
+    //             &mut removed_columns,
+    //             &components_info,
+    //             &vec![],
+    //             &mut id,
+    //         );
+    //     }
+    //    let mut mapping_dirtys = vec![];
+    //     let dst_row = alter_row(&mut mapping_dirtys, &mut mapping, ar_index, addr.row)?;
+    //     let state = T::init_state(self, &ar);
+
+    //     T::insert(
+    //         &state,
+    //         value,
+    //         e,
+    //         dst_row,
+    //         self.tick(),
+    //     );
+
+    //     clear(
+    //         self,
+    //         &mut self.state.vec,
+    //         &mut mapping_dirtys,
+    //         &moved_columns,
+    //         &added_columns,
+    //         &removed_columns,
+    //         self.tick(),
+    //     );
+    //     Ok(())
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn add_component<T: Bundle + 'static>(&self, e: Entity, value: T::Item) -> Result<(), QueryError> {
-        // todo!()
-        let components = T::components();
-        let addr = match self.entities.get(e) {
-            Some(v) => v,
-            None => return Err(QueryError::NoSuchEntity),
-        };
-        let mut id: u128 = ComponentInfo::calc_id(&components);
-        let ar_index = addr.archetype_index();
-        let ar = unsafe { self.archetype_arr.get_unchecked(ar_index) };
-        let (components, moving) = ar.alter(&components, &vec![]);
-
-        let dst = self.find_archtype(id, components);
-        let mut mapping = ArchetypeMapping::new(ar.clone(), dst.1);
-
-        let mut moved_columns = vec![];
-        let mut added_columns = vec![];
-        let mut removed_columns = vec![];
-
-        if mapping.dst.len() > 0{
-            mapping_init(
-                self,
-                &mut mapping,
-                &mut moved_columns,
-                &mut added_columns,
-                &mut removed_columns,
-                &T::components(),
-                &vec![],
-                &mut id,
-            );
-        }
-       let mut mapping_dirtys = vec![];
-        let dst_row = alter_row(&mut mapping_dirtys, &mut mapping, ar_index, addr.row)?;
-        let state = T::init_state(self, &ar);
-
-        T::insert(
-            &state,
-            value,
-            e,
-            dst_row,
-            self.tick(),
-        );
-
-        // clear(
-        //     self,
-        //     &mut self.state.vec,
-        //     &mut mapping_dirtys,
-        //     &moved_columns,
-        //     &added_columns,
-        //     &removed_columns,
-        //     self.tick(),
-        // );
-
-        Ok(())
+        todo!()
+        // Ok(())
         // 原型改变
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
@@ -570,6 +582,19 @@ impl World {
         }
         self.entities.remove(e).unwrap();
         Ok(())
+    }
+    /// 判断指定的实体是否存在
+    pub fn create_entity(&self) -> Entity {
+        // self.entities.insert(EntityAddr::)
+        todo!()
+    }
+    /// 销毁指定的实体
+    pub fn init_component<T: 'static>(&self) -> ComponentIndex {
+        let mut index = self.get_component_index(&std::any::TypeId::of::<T>());
+        if index.is_null() {
+            index = self.add_component_info(ComponentInfo::of::<T>());
+        }
+        index
     }
     /// 替换Entity的原型及行
     #[inline(always)]
