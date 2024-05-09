@@ -374,7 +374,7 @@ impl<
 #[derive(Debug)]
 pub(crate) struct ArchetypeMapping {
     src: ShareArchetype,            // 源原型
-    dst: ShareArchetype,            // 映射到的目标原型
+    pub(crate) dst: ShareArchetype,            // 映射到的目标原型
     dst_index: ArchetypeWorldIndex, // 目标原型在World原型数组中的位置
     move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
     add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
