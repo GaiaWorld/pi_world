@@ -80,6 +80,23 @@ pub struct ArchetypeOk<'a>(
     pub &'a World,
 );
 
+
+pub trait SetDefault {
+    fn default_fn() -> Option<fn(*mut u8)>;
+}
+impl<T> SetDefault for T {
+    default fn default_fn() -> Option<fn(*mut u8)> {
+        None
+    }
+}
+impl<T:Default> SetDefault for T {
+    fn default_fn() -> Option<fn(*mut u8)> {
+        Some(|ptr| unsafe {
+            ptr::write(ptr as *mut T, T::default())
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct World {
     pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>,
