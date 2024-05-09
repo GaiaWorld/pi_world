@@ -3,9 +3,7 @@ use std::{any::TypeId, borrow::Cow, mem::transmute, ops::{Deref, DerefMut}};
 /// 系统参数的定义
 ///
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags},
-    system::SystemMeta,
-    world::{Tick, World},
+    archetype::{Archetype, ArchetypeDependResult, Flags}, prelude::FromWorld, system::SystemMeta, world::{Tick, World}
 };
 
 use pi_proc_macros::all_tuples;
@@ -99,13 +97,13 @@ impl <'a, T: Sized> Local<'a, T> {
         self.1
     }
 }
-impl<T: Send + Sync + Default + 'static> SystemParam for Local<'_, T> {
+impl<T: Send + Sync + Default + 'static + FromWorld> SystemParam for Local<'_, T> {
     type State = T;
 
     type Item<'world> = Local<'world, T>;
 
-    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        T::default()
+    fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        T::from_world(world)
     }
 
     fn get_param<'world>(

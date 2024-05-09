@@ -573,7 +573,11 @@ impl World {
     }
     /// 销毁指定的实体
     pub fn get_component_id<T: 'static>(&mut self) -> ComponentIndex {
-        self.get_component_index(&TypeId::of::<T>())
+        let mut index = self.get_component_index(&std::any::TypeId::of::<T>());
+        if index.is_null() {
+            index = self.add_component_info(ComponentInfo::of::<T>());
+        }
+        index
     }
     /// 替换Entity的原型及行
     #[inline(always)]
