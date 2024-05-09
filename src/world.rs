@@ -41,7 +41,8 @@ use pi_slot::{Iter, SlotMap};
 new_key_type! {
     pub struct Entity;
 }
-/// This is used to power change detection.
+
+pub type ComponentIndex = u32;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(u32);
@@ -84,6 +85,8 @@ pub struct World {
     pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>,
     pub(crate) single_res_arr: SafeVec<Option<SingleResource>>,
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
+    pub(crate) component_map: DashMap<TypeId, ComponentIndex>,
+    pub(crate) component_arr: SafeVec<ComponentInfo>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
@@ -100,6 +103,7 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         let empty_archetype = ShareArchetype::new(Archetype::new(vec![]));
+        let component_arr = SafeVec::with_capacity(1);
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
@@ -107,6 +111,8 @@ impl World {
             single_res_arr: SafeVec::default(),
             multi_res_map: DashMap::default(),
             entities: SlotMap::default(),
+            component_map: DashMap::new(),
+            component_arr,
             archetype_map: DashMap::new(),
             archetype_arr,
             empty_archetype,
@@ -142,9 +148,23 @@ impl World {
     }
 
     /// 是否存在实体
-    #[inline]
     pub fn contains(&self, entity: Entity) -> bool {
         self.entities.contains_key(entity)
+    }
+    /// 获得指定组件的索引
+    pub fn get_component_index(&self, component_type_id: &TypeId) -> ComponentIndex {
+        self.component_map.get(component_type_id).map_or(ComponentIndex::null(), |r| *r.value())
+    }
+    /// 获得指定组件的索引
+    pub fn get_component_info(&self, index: ComponentIndex) -> Option<&ComponentInfo> {
+        self.component_arr.get(index as usize)
+    }
+    /// 添加组件信息，如果重复，则返回原有的索引
+    pub fn add_component_info(&self, info: ComponentInfo) -> ComponentIndex {
+        let r = self.component_map.entry(info.type_id).or_insert_with(|| {
+            self.component_arr.insert(info) as ComponentIndex
+        });
+        *r.value()
     }
     /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
@@ -374,7 +394,8 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
-        if let Some((c, _)) = ar.get_column(tid) {
+        let index = self.get_component_index(tid);
+        if let Some((c, _)) = ar.get_column(index) {
             Ok(c.get_row(addr.row))
         } else {
             Err(QueryError::MissingComponent)

@@ -6,12 +6,12 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{
-    Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, Flags, Row,
+    Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row
 };
 use crate::column::Column;
 use crate::prelude::FromWorld;
 use crate::system::SystemMeta;
-use crate::world::{Entity, SingleResource, Tick, World};
+use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -29,11 +29,11 @@ pub trait FetchComponents {
     const TICK_COUNT: usize;
 
     /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, _ticks: &mut Vec<TypeId>) {}
+    fn init_ticks(_world: &World, _ticks: &mut Vec<ComponentIndex>) {}
 
     /// initializes ReadWrite for this [`FetchComponents`] type.
     fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {}
-    fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {}
+    fn archetype_depend(_world: &World, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {}
     fn res_depend(
         _res_tid: &TypeId,
         _res_name: &Cow<'static, str>,
@@ -85,6 +85,7 @@ impl FetchComponents for Entity {
 
     fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {}
 
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         archetype: &'w Archetype,
@@ -108,22 +109,24 @@ impl<T: 'static> FetchComponents for &T {
     type State = ColumnIndex;
     const TICK_COUNT: usize = 0;
 
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        let index = world.get_component_index(&TypeId::of::<T>());
         result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
+            if archetype.get_column_index(index).is_null() {
                 Flags::WITHOUT
             } else {
                 Flags::READ
             },
         ))
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -150,22 +153,17 @@ impl<T: 'static> FetchComponents for &mut T {
     type State = ColumnIndex;
     const TICK_COUNT: usize = 0;
 
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::WITHOUT
-            } else {
-                Flags::WRITE
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -193,25 +191,20 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     const TICK_COUNT: usize = 1;
 
     /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
-        ticks.push(TypeId::of::<T>());
+    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
+        ticks.push(world.get_component_index(&TypeId::of::<T>()));
     }
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::WITHOUT
-            } else {
-                Flags::READ
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -239,27 +232,21 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     const TICK_COUNT: usize = 1;
 
     /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
-        ticks.push(TypeId::of::<T>());
+    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
+        ticks.push(world.get_component_index(&TypeId::of::<T>()));
     }
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::WITHOUT
-            } else {
-                Flags::WRITE
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
-
     #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
@@ -285,25 +272,20 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
     const TICK_COUNT: usize = 1;
 
     /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
-        ticks.push(TypeId::of::<T>());
+    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
+        ticks.push(world.get_component_index(&TypeId::of::<T>()));
     }
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::READ
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -338,25 +320,20 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     const TICK_COUNT: usize = 1;
 
     /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, ticks: &mut Vec<TypeId>) {
-        ticks.push(TypeId::of::<T>());
+    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
+        ticks.push(world.get_component_index(&TypeId::of::<T>()));
     }
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::WRITE
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -394,22 +371,17 @@ impl<T: 'static> FetchComponents for Option<&T> {
     type State = ColumnIndex;
     const TICK_COUNT: usize = 0;
 
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::READ
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -440,22 +412,17 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     type State = ColumnIndex;
     const TICK_COUNT: usize = 0;
 
-    fn init_read_write(_world: &mut World, meta: &mut SystemMeta) {
+    fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::WRITE
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
     }
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column_index(&TypeId::of::<T>())
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
     }
 
     #[inline]
@@ -497,20 +464,15 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        world.add_component_info(ComponentInfo::of::<T>());
         let name: Cow<'static, str> = std::any::type_name::<T>().into();
         meta.res_read(TypeId::of::<T>(), name.clone());
         meta.cur_param.reads.insert(TypeId::of::<T>(), name);
 
         world.init_single_res::<T>();
     }
-    fn archetype_depend(archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column(&TypeId::of::<T>()).is_none() {
-                Flags::empty()
-            } else {
-                Flags::READ
-            },
-        ))
+    fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
     }
     fn res_depend(
         res_tid: &TypeId,
@@ -524,7 +486,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     }
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State {
-        let index = archetype.get_column_index(&TypeId::of::<T>());
+        let index = archetype.get_column_index_by_tid(&world, &TypeId::of::<T>());
         if index.is_null() {
             Err(world.get_single_res_any(&TypeId::of::<T>()).unwrap())
         } else {
@@ -563,8 +525,8 @@ impl<T: 'static> FetchComponents for Has<T> {
     type State = bool;
     const TICK_COUNT: usize = 0;
 
-    fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-        archetype.get_column(&TypeId::of::<T>()).is_some()
+    fn init_state(world: &World, archetype: &Archetype) -> Self::State {
+        !archetype.get_column_index_by_tid(&world, &TypeId::of::<T>()).is_null()
     }
 
     #[inline]
@@ -757,14 +719,14 @@ macro_rules! impl_tuple_fetch {
             type State = ($($name::State,)*);
             const TICK_COUNT: usize = $($name::TICK_COUNT + )* 0;
 
-            fn init_ticks(_world: &World, _ticks: &mut Vec<TypeId>) {
+            fn init_ticks(_world: &World, _ticks: &mut Vec<ComponentIndex>) {
                 ($($name::init_ticks(_world, _ticks),)*);
             }
             fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {
                 ($($name::init_read_write(_world, _meta),)*);
             }
-            fn archetype_depend(_archetype: &Archetype, _result: &mut ArchetypeDependResult) {
-                ($($name::archetype_depend(_archetype, _result),)*);
+            fn archetype_depend(_world: &World, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
+                ($($name::archetype_depend(_world, _archetype, _result),)*);
             }
             fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
                 ($($name::res_depend(_res_tid, _res_name, _single, _result),)*);

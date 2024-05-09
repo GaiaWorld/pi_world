@@ -279,7 +279,7 @@ impl<
         (q, AlterState::new(A::components(), D::components()))
     }
     fn archetype_depend(
-        _world: &World,
+        world: &World,
         _system_meta: &SystemMeta,
         state: &Self::State,
         archetype: &Archetype,
@@ -289,7 +289,7 @@ impl<
             println!("archetype_depend: ar:{:?}", archetype.name());
             return result.merge(ArchetypeDepend::Flag(Flags::WRITE));  
         }
-        Q::archetype_depend(archetype, result);
+        Q::archetype_depend(world, archetype, result);
         // 如果相关， 则添加移除类型，并返回Alter后的原型id
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
             result.merge(ArchetypeDepend::Flag(Flags::DELETE));
@@ -439,6 +439,7 @@ impl<A: Bundle> AlterState<A> {
         tick: Tick,
     ) -> Result<bool, QueryError> {
         let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index) };
+        println!("alter: e:{:?} row:{} ar:{:?}", e, row, (mapping.src.index(), mapping.dst_index));
         if mapping.dst.len() == 0 {
             // 如果为空映射，则创建components，去world上查找或创建
             mapping_init(
@@ -563,7 +564,7 @@ pub(crate) fn mapping_init<'a>(
         // 同原型内移动
         let start = moved_columns.len();
         for t in moving {
-            let column_index = mapping.src.get_column_index(&t.type_id);
+            let column_index = mapping.src.get_column_index(t.world_index);
             moved_columns.push((column_index, column_index));
         }
         mapping.move_indexs = Range {
@@ -581,8 +582,8 @@ pub(crate) fn mapping_init<'a>(
     let start = moved_columns.len();
     // 获得相同组件的列位置映射
     for t in moving {
-        let src_column = mapping.src.get_column_index(&t.type_id);
-        let dst_column = mapping.dst.get_column_index(&t.type_id);
+        let src_column = mapping.src.get_column_index(t.world_index);
+        let dst_column = mapping.dst.get_column_index(t.world_index);
         moved_columns.push((src_column, dst_column));
     }
     mapping.move_indexs = Range {
@@ -594,7 +595,7 @@ pub(crate) fn mapping_init<'a>(
     if add_len > 0 {
         // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
         for (i, t) in mapping.dst.get_columns().iter().enumerate() {
-            let column = mapping.src.get_column_index(&t.info().type_id);
+            let column = mapping.src.get_column_index(t.info().world_index);
             if column.is_null() {
                 add_columns.push(i as ColumnIndex);
             }
@@ -609,11 +610,11 @@ pub(crate) fn mapping_init<'a>(
     if remove_len > 0 {
         // 移除组件的位置，源组件存在，但目标原型上没有该组件
         for (i, t) in mapping.src.get_columns().iter().enumerate() {
-            let column = mapping.dst.get_column_index(&t.info().type_id);
+            let column = mapping.dst.get_column_index(t.info().world_index);
             if column.is_null() {
                 // 获取被移除的组件在目标原型的移除列的脏位置，如果没有，则表示该组件无监听
                 let remove_column_dirty_index =
-                    mapping.dst.find_remove_column_dirty(&t.info().type_id);
+                    mapping.dst.find_remove_column_dirty(t.info().world_index);
                 removed_columns.push((i as ColumnIndex, remove_column_dirty_index));
             }
         }

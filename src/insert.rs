@@ -188,7 +188,7 @@ macro_rules! impl_tuple_insert {
                 vec![$(ComponentInfo::of::<$name>(),)*]
             }
             fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
-                ($(TState::new(_archetype.get_column(&TypeId::of::<$name>()).unwrap().0),)*)
+                ($(TState::new(_archetype.get_column_by_tid(_world, &TypeId::of::<$name>()).unwrap().0),)*)
             }
 
             fn insert(

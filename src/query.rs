@@ -183,14 +183,14 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         Self::State::create(world)
     }
     fn archetype_depend(
-        _world: &World,
+        world: &World,
         _system_meta: &SystemMeta,
         _state: &Self::State,
         archetype: &Archetype,
         result: &mut ArchetypeDependResult,
     ) {
-        Q::archetype_depend(archetype, result);
-        if F::archetype_filter(archetype) {
+        Q::archetype_depend(world, archetype, result);
+        if F::archetype_filter(world, archetype) {
             result.merge(ArchetypeDepend::Flag(Flags::WITHOUT));
         }
     }
@@ -248,7 +248,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
 }
 /// 监听原型创建， 添加record
 pub struct Notify<'a, Q: FetchComponents, F: FilterComponents>(
-    Vec<TypeId>,
+    Vec<ComponentIndex>,
     SmallVec<[ListenType; 1]>,
     PhantomData<&'a ()>,
     PhantomData<Q>,
@@ -259,7 +259,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
 {
     type Event = ArchetypeInit<'a>;
     fn listen(&self, e: Self::Event) {
-        if !QueryState::<Q, F>::relate(e.0) {
+        if !QueryState::<Q, F>::relate(e.1, e.0) {
             return;
         }
         unsafe {
@@ -270,9 +270,9 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
 }
 
 // 根据components列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-pub(crate) unsafe fn add_ticks(ar: &Archetype, components: &Vec<TypeId>) {
-    for tid in components.iter() {
-        if let Some((c, _)) = ar.get_column_mut(tid) {
+pub(crate) unsafe fn add_ticks(ar: &Archetype, components: &Vec<ComponentIndex>) {
+    for index in components.iter() {
+        if let Some((c, _)) = ar.get_column_mut(*index) {
             c.is_record_tick = true;
         }
     }
@@ -286,8 +286,8 @@ unsafe fn add_dirty_listeners(
 ) {
     for ltype in listeners.iter() {
         match ltype {
-            ListenType::Changed(tid) => ar.add_changed_listener(tid, owner),
-            ListenType::Removed(tid) => ar.add_removed_listener(tid, owner),
+            ListenType::Changed(index) => ar.add_changed_listener(*index, owner),
+            ListenType::Removed(index) => ar.add_removed_listener(*index, owner),
             ListenType::Destroyed => ar.add_destroyed_listener(owner),
         }
     }
@@ -302,8 +302,8 @@ unsafe fn find_dirty_listeners(
 ) {
     for ltype in listeners.iter() {
         match ltype {
-            ListenType::Changed(tid) => ar.find_changed_listener(tid, owner, vec),
-            ListenType::Removed(tid) => ar.find_removed_listener(tid, owner, vec),
+            ListenType::Changed(index) => ar.find_changed_listener(*index, owner, vec),
+            ListenType::Removed(index) => ar.find_removed_listener(*index, owner, vec),
             ListenType::Destroyed => ar.find_destroyed_listener(owner, vec),
         }
     }
@@ -365,12 +365,12 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     }
 
     // 判断该原型是否和本查询相关
-    fn relate(archetype: &Archetype) -> bool {
-        if F::archetype_filter(archetype) {
+    fn relate(world: &World, archetype: &Archetype) -> bool {
+        if F::archetype_filter(world, archetype) {
             return false;
         }
         let mut result = ArchetypeDependResult::new();
-        Q::archetype_depend(archetype, &mut result);
+        Q::archetype_depend(world, archetype, &mut result);
         !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
@@ -397,7 +397,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         index: ArchetypeWorldIndex,
     ) {
         // 判断原型是否和查询相关
-        if !Self::relate(ar) {
+        if !Self::relate(world, ar) {
             return;
         }
         let mut listeners = SmallVec::new();
@@ -427,7 +427,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = check(world, entity, cache_mapping, &self.map)?;
         let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
-        println!("get======{:?}", (entity, cache_mapping.0, arch.name()));
+        println!("get======{:?}", (entity, addr, cache_mapping.0, arch.name()));
         let arqs = unsafe { &self.vec.get_unchecked(self.cache_mapping.1) };
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
@@ -464,6 +464,7 @@ pub(crate) fn check<'w>(
     cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
 ) -> Result<EntityAddr, QueryError> {
+    assert!(!entity.is_null());
     let addr = match world.entities.get(entity) {
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
@@ -643,6 +644,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
+                println!("query iter_dirty null, e:{:?} ar_index:{} row:{}", self.e, self.ar.index(), self.row);
                 // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
                 match self
                     .state

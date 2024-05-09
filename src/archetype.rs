@@ -27,15 +27,14 @@ use pi_null::Null;
 use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
-use crate::column::Column;
 use crate::table::Table;
-use crate::world::World;
+use crate::world::{ComponentIndex, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
 pub type Row = u32;
 pub type ArchetypeWorldIndex = u32;
-pub type ColumnIndex = u32;
+pub type ColumnIndex = u16;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,6 +70,16 @@ impl ArchetypeDependResult {
             ArchetypeDepend::Alter(t) if !self.flag.contains(Flags::WITHOUT) => self.alters.push(t),
             _ => (),
         }
+    }
+    pub fn depend(&mut self, ar: &Archetype, world: &World, tid: &TypeId, false_result: Flags, true_result: Flags) {
+        let index = ar.get_column_index_by_tid(world, &tid);
+        self.merge(ArchetypeDepend::Flag(
+            if index.is_null() {
+                false_result
+            } else {
+                true_result
+            },
+        ))
     }
     pub fn clear(&mut self) {
         self.flag = Flags::empty();
@@ -117,12 +126,10 @@ impl Archetype {
     pub fn new(mut components: Vec<ComponentInfo>) -> Self {
         let mut id = 0;
         let mut s = String::new();
-        let mut vec1 = Vec::with_capacity(components.capacity());
-        for (i, info) in components.iter_mut().enumerate() {
+        for info in components.iter_mut() {
             id ^= info.id();
             s.push_str(&info.type_name);
             s.push('+');
-            vec1.push((info.type_id, i as u32));
         }
         if s.len() > 0 {
             s.pop();
@@ -130,7 +137,7 @@ impl Archetype {
         Self {
             id,
             name: s.into(),
-            table: Table::new(components, vec1),
+            table: Table::new(components),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -182,21 +189,6 @@ impl Archetype {
         &self.name
     }
     #[inline(always)]
-    pub fn get_column_index(&self, type_id: &TypeId) -> ColumnIndex {
-        self.table.get_column_index(type_id)
-    }
-    #[inline(always)]
-    pub fn get_column(&self, type_id: &TypeId) -> Option<(&Column, ColumnIndex)> {
-        self.table.get_column(type_id)
-    }
-    #[inline(always)]
-    pub(crate) unsafe fn get_column_mut(
-        &self,
-        type_id: &TypeId,
-    ) -> Option<(&mut Column, ColumnIndex)> {
-        self.table.get_column_mut(type_id)
-    }
-    #[inline(always)]
     pub fn column_len(&self) -> usize {
         self.get_columns().len()
     }
@@ -212,7 +204,7 @@ impl Archetype {
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) {
-        //let _r = self.table.collect(world, action, set);
+        let _r = self.table.collect(world, action, set);
     }
 }
 
@@ -244,6 +236,7 @@ pub struct ComponentInfo {
     pub type_name: Cow<'static, str>,
     pub drop_fn: Option<fn(*mut u8)>,
     pub mem_size: usize, // 内存大小
+    pub world_index: ComponentIndex, // 在world上的索引
 }
 impl ComponentInfo {
     pub fn of<T: 'static>() -> ComponentInfo {
@@ -265,6 +258,7 @@ impl ComponentInfo {
             type_name,
             drop_fn,
             mem_size,
+            world_index: ComponentIndex::null(),
         }
     }
     pub fn id(&self) -> u128 {
