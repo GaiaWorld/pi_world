@@ -536,6 +536,24 @@ impl World {
         addr.index = ar_index;
         addr.row = row;
     }
+    /// 判断指定的实体是否存在
+    pub fn contains_entity(&self, e: Entity) -> bool {
+        self.entities.get(e).is_some()
+    }
+    /// 销毁指定的实体
+    pub fn destroy_entity(&mut self, e: Entity) -> Result<(), QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => *v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index as usize) };
+        let e = ar.mark_destroy(addr.row);
+        if e.is_null() {
+            return Err(QueryError::NoSuchRow);
+        }
+        self.entities.remove(e).unwrap();
+        Ok(())
+    }
     /// 替换Entity的原型及行
     #[inline(always)]
     pub(crate) fn replace_row(&self, e: Entity, row: Row) {
