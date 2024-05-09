@@ -431,8 +431,8 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
                         )*
                     ]
                 }
-                fn init_state(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
-                    (#(#world_path::insert::TState::new(_archetype.get_column(_world.get_component_index(&std::any::TypeId::of::<#tuple_types>())).unwrap().0),)*)
+                fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
+                    (#(#world_path::insert::TState::new(_archetype.get_column(_world.init_component::<#tuple_types>()).unwrap().0),)*)
                 }
 
                 fn insert(
@@ -473,8 +473,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                         #world_path::archetype::ComponentInfo::of::<Self>()
                     ]
                 }
-                fn init_state(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
-                    #world_path::insert::TState::new(_archetype.get_column(_world.get_component_index(&std::any::TypeId::of::<Self>())).unwrap().0)
+                fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
+                    #world_path::insert::TState::new(_archetype.get_column(_world.init_component::<Self>()).unwrap().0)
                 }
 
                 fn insert(
