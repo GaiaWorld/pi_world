@@ -293,7 +293,6 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
 
-        println!("add_archetype_node====={:?}", (archetype.id(), archetype.name()));
         // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
         let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点

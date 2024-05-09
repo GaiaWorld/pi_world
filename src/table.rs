@@ -36,6 +36,7 @@ impl Table {
             max = max.max(c.world_index as usize + 1);
             columns.push(Column::new(c));
         }
+        assert!(max < u16::MAX as usize);
         let mut column_map = Vec::with_capacity(max);
         column_map.resize(max, ColumnIndex::null());
         for (i, c) in columns.iter().enumerate() {
@@ -212,7 +213,6 @@ impl Table {
     }
     #[inline(always)]
     pub fn alloc(&self) -> Row {
-        println!("alloc======");
         self.entities.alloc_index(1) as Row
     }
     /// 标记销毁，用于destroy

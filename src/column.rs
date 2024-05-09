@@ -182,7 +182,6 @@ impl Blob {
     pub unsafe fn get(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
         let row = row as usize;
-        println!("get, row: {} vec_len:{}", row, self.vec_capacity);
         if row < self.vec_capacity {
             // todo get_unchecked()
             return transmute(self.vec.get(row * self.info.mem_size).unwrap());

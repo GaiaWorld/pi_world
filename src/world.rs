@@ -177,9 +177,13 @@ impl World {
         self.component_arr.get(index as usize)
     }
     /// 添加组件信息，如果重复，则返回原有的索引
-    pub fn add_component_info(&self, info: ComponentInfo) -> ComponentIndex {
+    pub fn add_component_info(&self, mut info: ComponentInfo) -> ComponentIndex {
         let r = self.component_map.entry(info.type_id).or_insert_with(|| {
-            self.component_arr.insert(info) as ComponentIndex
+            let e = self.component_arr.alloc_entry();
+            let index = e.index() as ComponentIndex;
+            info.world_index = index;
+            e.insert(info);
+            index
         });
         *r.value()
     }
@@ -514,12 +518,14 @@ impl World {
     pub(crate) fn find_archtype(
         &self,
         id: u128,
-        components: Vec<ComponentInfo>,
+        mut components: Vec<ComponentInfo>,
     ) -> (ArchetypeWorldIndex, ShareArchetype) {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let (ar, b) = match self.archetype_map.entry(id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
+                components.iter_mut()
+                    .for_each(|c| c.world_index = self.add_component_info(c.clone()));
                 let ar = Share::new(Archetype::new(components));
                 entry.insert(ar.clone());
                 (ar, true)
@@ -608,12 +614,12 @@ impl World {
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn collect_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
-        // self.entities.collect();
-        // self.archetype_arr.collect();
-        // for ar in self.archetype_arr.iter() {
-        //     let archetype = unsafe { Share::get_mut_unchecked(ar) };
-        //     archetype.collect(self, action, set)
-        // }
+        self.entities.collect();
+        self.archetype_arr.collect();
+        for ar in self.archetype_arr.iter() {
+            let archetype = unsafe { Share::get_mut_unchecked(ar) };
+            archetype.collect(self, action, set)
+        }
     }
 }
 unsafe impl Send for World {}

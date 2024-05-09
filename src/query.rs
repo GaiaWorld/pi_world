@@ -523,7 +523,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// - `world` must be the same one used to initialize `query_state`.
     pub fn new(world: &'w World, state: &'w QueryState<Q, F>, tick: Tick) -> Self {
         let mut ar_index = state.vec.len();
-        println!("new======{:?}", (ar_index));
         while ar_index > 0 {
             ar_index -= 1;
             let arqs = unsafe { state.vec.get_unchecked(ar_index) };
@@ -594,7 +593,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            println!("self.ar_index======{:?}", (self.ar_index, self.row));
             if self.row > 0 {
                 self.row -= 1;
                 self.e = self.ar.get(self.row);
@@ -627,9 +625,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
     fn iter_dirty(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            println!("next0=====");
             if let Some(d) = self.dirty.it.next() {
-                println!("next1====={:?}", d);
                 self.row = d.row;
                 if self.dirty.check_e {
                     // 如果不检查对应row的e，则是查询被标记销毁的实体
@@ -643,7 +639,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
-                println!("query iter_dirty null, e:{:?} ar_index:{} row:{}", self.e, self.ar.index(), self.row);
                 // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
                 match self
                     .state
@@ -654,7 +649,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 }
                 continue;
             }
-            println!("next2=====");
             // 检查当前原型的下一个被脏组件
             if self.dirty.index > 0 {
                 let len = self.dirty.index - 1;

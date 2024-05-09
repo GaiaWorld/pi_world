@@ -230,12 +230,16 @@ mod test_mod {
     }
     #[test]
     fn test() {
-        let mut app = App::new();
+        let mut app = SingleThreadApp::new();
+        dbg!("data0");
         let i = app.world.make_inserter::<(Age1, Age0)>();
+        println!("data1");
         let e1 = i.insert((Age1(1), Age0(0)));
+        println!("data2");
         let e2 = i.insert((Age1(1), Age0(0)));
+        println!("data3");
         app.add_system(Update, print_changed_entities);
-        
+        println!("data");
         app.run();
         app.run();
         assert_eq!(app.world.get_component::<Age0>(e1).unwrap().0, 4);
@@ -250,7 +254,7 @@ mod test_mod {
     }
     #[test]
     fn test_insert() {
-        let mut app = App::new();
+        let mut app = SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         
