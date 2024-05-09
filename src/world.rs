@@ -572,7 +572,7 @@ impl World {
         todo!()
     }
     /// 销毁指定的实体
-    pub fn get_component_id<T: 'static>(&mut self) -> ComponentIndex {
+    pub fn get_component_id<T: 'static>(&self) -> ComponentIndex {
         self.get_component_index(&TypeId::of::<T>())
     }
     /// 替换Entity的原型及行
