@@ -28,7 +28,7 @@ use pi_share::{Share, ShareU32};
 use smallvec::SmallVec;
 
 use crate::table::Table;
-use crate::world::{ComponentIndex, World};
+use crate::world::{ComponentIndex, SetDefault, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
@@ -235,6 +235,7 @@ pub struct ComponentInfo {
     pub type_id: TypeId,
     pub type_name: Cow<'static, str>,
     pub drop_fn: Option<fn(*mut u8)>,
+    pub default_fn: Option<fn(*mut u8)>,
     pub mem_size: usize, // 内存大小
     pub world_index: ComponentIndex, // 在world上的索引
 }
@@ -244,6 +245,7 @@ impl ComponentInfo {
             TypeId::of::<T>(),
             std::any::type_name::<T>().into(),
             get_drop::<T>(),
+            <T as SetDefault>::default_fn(),
             size_of::<T>(),
         )
     }
@@ -251,12 +253,14 @@ impl ComponentInfo {
         type_id: TypeId,
         type_name: Cow<'static, str>,
         drop_fn: Option<fn(*mut u8)>,
+        default_fn: Option<fn(*mut u8)>,
         mem_size: usize,
     ) -> Self {
         ComponentInfo {
             type_id,
             type_name,
             drop_fn,
+            default_fn,
             mem_size,
             world_index: ComponentIndex::null(),
         }

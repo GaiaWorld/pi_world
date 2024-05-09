@@ -4,6 +4,7 @@
 #![feature(downcast_unchecked)]
 #![feature(sync_unsafe_cell)]
 #![feature(test)]
+#![feature(specialization)]
 #[warn(async_fn_in_trait)]
 
 extern crate test;
