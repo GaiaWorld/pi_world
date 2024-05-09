@@ -572,7 +572,7 @@ impl World {
         todo!()
     }
     /// 销毁指定的实体
-    pub fn get_component_id<T: 'static>(&mut self) -> ComponentIndex {
+    pub fn init_component<T: 'static>(&mut self) -> ComponentIndex {
         let mut index = self.get_component_index(&std::any::TypeId::of::<T>());
         if index.is_null() {
             index = self.add_component_info(ComponentInfo::of::<T>());
