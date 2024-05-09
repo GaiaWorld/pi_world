@@ -212,7 +212,7 @@ impl Archetype {
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) {
-        //let _r = self.table.collect(world, action, set);
+        let _r = self.table.collect(world, action, set);
     }
 }
 

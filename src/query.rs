@@ -425,8 +425,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = check(world, entity, cache_mapping, &self.map)?;
-        let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
-        println!("get======{:?}", (entity, cache_mapping.0, arch.name()));
+        // let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
         let arqs = unsafe { &self.vec.get_unchecked(self.cache_mapping.1) };
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
@@ -522,6 +521,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// - `world` must be the same one used to initialize `query_state`.
     pub fn new(world: &'w World, state: &'w QueryState<Q, F>, tick: Tick) -> Self {
         let mut ar_index = state.vec.len();
+        println!("new======{:?}", (ar_index));
         while ar_index > 0 {
             ar_index -= 1;
             let arqs = unsafe { state.vec.get_unchecked(ar_index) };
@@ -592,6 +592,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
+            println!("self.ar_index======{:?}", (self.ar_index, self.row));
             if self.row > 0 {
                 self.row -= 1;
                 self.e = self.ar.get(self.row);
@@ -624,7 +625,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
     fn iter_dirty(&mut self) -> Option<Q::Item<'w>> {
         loop {
+            println!("next0=====");
             if let Some(d) = self.dirty.it.next() {
+                println!("next1====={:?}", d);
                 self.row = d.row;
                 if self.dirty.check_e {
                     // 如果不检查对应row的e，则是查询被标记销毁的实体
@@ -648,6 +651,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 }
                 continue;
             }
+            println!("next2=====");
             // 检查当前原型的下一个被脏组件
             if self.dirty.index > 0 {
                 let len = self.dirty.index - 1;

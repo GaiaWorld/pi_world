@@ -286,7 +286,7 @@ impl<
         result: &mut ArchetypeDependResult,
     ) {
         if &state.1.writing_archetype == archetype.id() {
-            println!("archetype_depend: ar:{:?}", archetype.name());
+            // println!("archetype_depend: ar:{:?}", archetype.name());
             return result.merge(ArchetypeDepend::Flag(Flags::WRITE));  
         }
         Q::archetype_depend(archetype, result);
@@ -631,6 +631,7 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
 ) -> Result<Row, QueryError> {
     let e = mapping.src.mark_remove(src_row);
+    println!("alter_row======={:?}", e);
     if e.is_null() {
         return Err(QueryError::NoSuchRow);
     }

@@ -213,6 +213,7 @@ impl Table {
     }
     #[inline(always)]
     pub fn alloc(&self) -> Row {
+        println!("alloc======");
         self.entities.alloc_index(1) as Row
     }
     /// 标记销毁，用于destroy
