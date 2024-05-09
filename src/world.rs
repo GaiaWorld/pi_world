@@ -379,6 +379,16 @@ impl World {
     pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
         self.get_component_ptr::<T>(e)
     }
+
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub fn get_component_by_index<T: 'static>(&self, e: Entity, index: ComponentIndex) -> Result<&T, QueryError> {
+        todo!();
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub fn get_component_by_index_mut<T: 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<&mut T, QueryError> {
+        todo!();
+    }
+
     pub fn alter_components(
         &mut self,
         e: Entity,
