@@ -21,14 +21,14 @@ use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
-use crate::alter::{AlterState, Alterer};
+use crate::alter::{alter_row, clear, mapping_init, AlterState, Alterer, ArchetypeMapping};
 use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{QueryError, QueryState, Queryer};
+use crate::query::{check, QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
@@ -378,6 +378,75 @@ impl World {
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
         self.get_component_ptr::<T>(e)
+    }
+    pub fn alter_components(
+        &mut self,
+        e: Entity,
+        components: &[(TypeId, bool)],
+    ) -> Result<bool, QueryError> {
+        todo!()
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub fn add_component<T: Bundle + 'static>(&self, e: Entity, value: T::Item) -> Result<(), QueryError> {
+        // todo!()
+        let components = T::components();
+        let addr = match self.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let mut id: u128 = ComponentInfo::calc_id(&components);
+        let ar_index = addr.archetype_index();
+        let ar = unsafe { self.archetype_arr.get_unchecked(ar_index) };
+        let (components, moving) = ar.alter(&components, &vec![]);
+
+        let dst = self.find_archtype(id, components);
+        let mut mapping = ArchetypeMapping::new(ar.clone(), dst.1);
+
+        let mut moved_columns = vec![];
+        let mut added_columns = vec![];
+        let mut removed_columns = vec![];
+
+        if mapping.dst.len() > 0{
+            mapping_init(
+                self,
+                &mut mapping,
+                &mut moved_columns,
+                &mut added_columns,
+                &mut removed_columns,
+                &T::components(),
+                &vec![],
+                &mut id,
+            );
+        }
+       let mut mapping_dirtys = vec![];
+        let dst_row = alter_row(&mut mapping_dirtys, &mut mapping, ar_index, addr.row)?;
+        let state = T::init_state(self, &ar);
+
+        T::insert(
+            &state,
+            value,
+            e,
+            dst_row,
+            self.tick(),
+        );
+
+        // clear(
+        //     self,
+        //     &mut self.state.vec,
+        //     &mut mapping_dirtys,
+        //     &moved_columns,
+        //     &added_columns,
+        //     &removed_columns,
+        //     self.tick(),
+        // );
+
+        Ok(())
+        // 原型改变
+    }
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub fn remove_component<T: Bundle + 'static>(&self, e: Entity) -> T {
+        todo!()
+        // 原型改变
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub(crate) fn get_component_ptr<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {

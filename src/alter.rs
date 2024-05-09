@@ -71,11 +71,11 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             _k: PhantomData,
         }
     }
-    #[inline]
+    
     pub fn contains(&self, entity: Entity) -> bool {
         self.query.contains(entity)
     }
-    #[inline]
+    
     pub fn get(
         &'world self,
         e: Entity,
@@ -83,23 +83,23 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     {
         self.query.get(e)
     }
-    #[inline]
+    
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
-    #[inline]
+    
     pub fn is_empty(&self) -> bool {
         self.query.is_empty()
     }
-    #[inline]
+    
     pub fn len(&self) -> usize {
         self.query.len()
     }
-    #[inline]
+    
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         self.query.iter()
     }
-    #[inline]
+    
     pub fn iter_mut(&mut self) -> AlterIter<'_, Q, F, A> {
         AlterIter {
             it: self.query.iter_mut(),
@@ -107,7 +107,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         }
     }
     /// 标记销毁实体
-    #[inline]
+    
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         destroy(
             &self.query.world,
@@ -118,7 +118,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             // &mut self.state.destroys,
         )
     }
-    #[inline]
+    
     pub fn alter(
         &mut self,
         e: Entity,
@@ -184,7 +184,7 @@ unsafe impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static,
 impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
     Alter<'world, Q, F, A, D>
 {
-    #[inline]
+    
     pub(crate) fn new(query: Query<'world, Q, F>, state: &'world mut AlterState<A>) -> Self {
         Alter {
             query,
@@ -192,37 +192,37 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             _k: PhantomData,
         }
     }
-    #[inline]
+    
     pub fn contains(&self, entity: Entity) -> bool {
         self.query.contains(entity)
     }
-    #[inline]
+    
     pub fn get<'a>(
         &'a self,
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'a>, QueryError> {
         self.query.get(e)
     }
-    #[inline]
+    
     pub fn get_mut<'a>(
         &'a mut self,
         e: Entity,
     ) -> Result<<Q as FetchComponents>::Item<'a>, QueryError> {
         self.query.get_mut(e)
     }
-    #[inline]
+    
     pub fn is_empty(&self) -> bool {
         self.query.is_empty()
     }
-    #[inline]
+    
     pub fn len(&self) -> usize {
         self.query.len()
     }
-    #[inline]
+    
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         self.query.iter()
     }
-    #[inline]
+    
     pub fn iter_mut(&mut self) -> AlterIter<'_, Q, F, A> {
         AlterIter {
             it: self.query.iter_mut(),
@@ -230,7 +230,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         }
     }
     /// 标记销毁实体
-    #[inline]
+    
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         destroy(
             &self.query.world,
@@ -241,7 +241,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             // &mut self.state.destroys,
         )
     }
-    #[inline]
+    
     pub fn alter(
         &mut self,
         e: Entity,
@@ -286,7 +286,7 @@ impl<
         result: &mut ArchetypeDependResult,
     ) {
         if &state.1.writing_archetype == archetype.id() {
-            println!("archetype_depend: ar:{:?}", archetype.name());
+            // println!("archetype_depend: ar:{:?}", archetype.name());
             return result.merge(ArchetypeDepend::Flag(Flags::WRITE));  
         }
         Q::archetype_depend(world, archetype, result);
@@ -310,12 +310,12 @@ impl<
         Q::res_depend(res_tid, res_name, single, result);
     }
 
-    #[inline]
+    
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
         state.0.align(world);
     }
 
-    #[inline]
+    
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -326,7 +326,7 @@ impl<
         Alterer::<Q, F, A, D>::state_align(world, &mut state.1, &state.0);
         Alter::new(Query::new(world, &mut state.0, tick), &mut state.1)
     }
-    #[inline]
+    
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -374,7 +374,7 @@ impl<
 #[derive(Debug)]
 pub(crate) struct ArchetypeMapping {
     src: ShareArchetype,            // 源原型
-    dst: ShareArchetype,            // 映射到的目标原型
+    pub(crate) dst: ShareArchetype,            // 映射到的目标原型
     dst_index: ArchetypeWorldIndex, // 目标原型在World原型数组中的位置
     move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
     add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
@@ -422,7 +422,7 @@ impl<A: Bundle> AlterState<A> {
             writing_archetype: 0,
         }
     }
-    #[inline]
+    
     pub(crate) fn push_archetype(&mut self, ar: ShareArchetype, world: &World) {
         self.vec
             .push(ArchetypeMapping::new(ar, world.empty_archetype().clone()));
@@ -474,12 +474,12 @@ pub struct AlterIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'st
     state: &'w mut AlterState<A>,
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F, A> {
-    #[inline(always)]
+    
     pub fn entity(&self) -> Entity {
         self.it.entity()
     }
     /// 标记销毁当前迭代的实体
-    #[inline(always)]
+    
     pub fn destroy(&mut self) -> Result<bool, QueryError> {
         destroy_row(
             &self.it.world,
@@ -489,7 +489,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
             // &mut self.state.destroys,
         )
     }
-    #[inline(always)]
+    
     pub fn alter(&mut self, components: <A as Bundle>::Item) -> Result<bool, QueryError> {
         self.state.alter(
             &self.it.world,
@@ -503,7 +503,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> Iterator for AlterIter<'w, Q, F, A> {
     type Item = Q::Item<'w>;
-    #[inline(always)]
+    
     fn next(&mut self) -> Option<Self::Item> {
         self.it.next()
     }
@@ -632,6 +632,7 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
 ) -> Result<Row, QueryError> {
     let e = mapping.src.mark_remove(src_row);
+    println!("alter_row======={:?}", e);
     if e.is_null() {
         return Err(QueryError::NoSuchRow);
     }
