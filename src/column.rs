@@ -84,6 +84,10 @@ impl Column {
         }
     }
     #[inline(always)]
+    pub fn load(&self, row: Row) -> *mut u8 {
+        unsafe { self.blob.load(row) }
+    }
+    #[inline(always)]
     pub(crate) fn write<T>(&self, row: Row, val: T) {
         unsafe {
             let ptr: *mut T = transmute(self.blob.load(row));
