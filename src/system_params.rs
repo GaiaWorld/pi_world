@@ -97,7 +97,7 @@ impl <'a, T: Sized> Local<'a, T> {
         self.1
     }
 }
-impl<T: Send + Sync + Default + 'static + FromWorld> SystemParam for Local<'_, T> {
+impl<T: Send + Sync + 'static + FromWorld> SystemParam for Local<'_, T> {
     type State = T;
 
     type Item<'world> = Local<'world, T>;
