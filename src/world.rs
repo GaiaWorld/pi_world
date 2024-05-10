@@ -39,6 +39,8 @@ use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
+use pi_map::hashmap::HashMap;
+use pi_map::Map;
 use pi_null::Null;
 use pi_share::{Share, ShareU32};
 use pi_slot::{Iter, SlotMap};
@@ -445,11 +447,16 @@ impl World {
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
-        // todo!();
+        
         let mut sort_add = vec![];
         let mut sort_remove = vec![];
 
+        // TODO, 性能
+        let mut map =  std::collections::HashMap::new();
         for (index, is_add) in components {
+            map.insert(index, is_add);
+        }
+        for (index, is_add) in map {
             if let Some(info) = self.get_component_info(*index) {
                 if *is_add {
                     sort_add.push(info.clone());
