@@ -98,7 +98,10 @@ impl Column {
     pub fn get_row(&self, row: Row) -> *mut u8 {
         unsafe { self.blob.get(row) }
     }
-
+    #[inline(always)]
+    pub fn load(&self, row: Row) -> *mut u8 {
+        unsafe { self.blob.load(row) }
+    }
     #[inline(always)]
     pub fn write_row(&self, row: Row, data: *mut u8) {
         unsafe {

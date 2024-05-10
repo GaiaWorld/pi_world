@@ -373,13 +373,13 @@ impl<
 }
 #[derive(Debug)]
 pub(crate) struct ArchetypeMapping {
-    src: ShareArchetype,            // 源原型
+    pub(crate)src: ShareArchetype,            // 源原型
     pub(crate) dst: ShareArchetype,            // 映射到的目标原型
-    dst_index: ArchetypeWorldIndex, // 目标原型在World原型数组中的位置
-    move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
-    add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
-    remove_indexs: Range<usize>,    // 源原型上被移除的组件的起始和结束位置
-    moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
+    pub(crate)dst_index: ArchetypeWorldIndex, // 目标原型在World原型数组中的位置
+    pub(crate)move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
+    pub(crate)add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
+    pub(crate)remove_indexs: Range<usize>,    // 源原型上被移除的组件的起始和结束位置
+    pub(crate)moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
 }
 
 impl ArchetypeMapping {
@@ -630,10 +630,16 @@ pub(crate) fn alter_row<'w, 'a>(
     ar_index: ArchetypeLocalIndex,
     src_row: Row,
 ) -> Result<Row, QueryError> {
-    let e = mapping.src.mark_remove(src_row);
-    if e.is_null() {
-        return Err(QueryError::NoSuchRow);
-    }
+    let e = if !ar_index.is_null() {
+        let e = mapping.src.mark_remove(src_row);
+        println!("alter_row======={:?}", e);
+        if e.is_null() {
+            return Err(QueryError::NoSuchRow);
+        }
+        e
+    }else{
+        Entity::null()
+    };
     let dst_row = mapping.dst.alloc();
     // 记录移动条目的源位置和目标位置
     mapping.moves.push((src_row, dst_row, e));
@@ -666,7 +672,7 @@ pub(crate) fn clear(
     mapping_dirtys.clear();
 }
 // 将需要移动的全部源组件移动到新位置上
-fn move_columns(am: &mut ArchetypeMapping, moved_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
+pub(crate) fn move_columns(am: &mut ArchetypeMapping, moved_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
     for i in am.move_indexs.clone().into_iter() {
         let (src_i, dst_i) = unsafe { moved_columns.get_unchecked(i) };
         let src_column = am.src.get_column_unchecked(*src_i);
@@ -675,14 +681,14 @@ fn move_columns(am: &mut ArchetypeMapping, moved_columns: &Vec<(ColumnIndex, Col
     }
 }
 // 将源组件移动到新位置上
-fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(Row, Row, Entity)>) {
+pub(crate)fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(Row, Row, Entity)>) {
     for (src_row, dst_row, _) in moves.iter() {
         let src_data: *mut u8 = src_column.get_row(*src_row);
         dst_column.write_row(*dst_row, src_data);
     }
 }
 // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
-fn remove_columns(am: &mut ArchetypeMapping, removed_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
+pub(crate)fn remove_columns(am: &mut ArchetypeMapping, removed_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
     for i in am.remove_indexs.clone().into_iter() {
         let column_index = unsafe { removed_columns.get_unchecked(i) };
         let column = am.src.get_column_unchecked(column_index.0);
@@ -709,7 +715,7 @@ fn remove_columns(am: &mut ArchetypeMapping, removed_columns: &Vec<(ColumnIndex,
     }
 }
 // 通知新增的源组件
-fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: Tick) {
+pub(crate) fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: Tick) {
     for i in am.add_indexs.clone().into_iter() {
         let column_index = unsafe { add_columns.get_unchecked(i) };
         let column = am.dst.get_column_unchecked(*column_index);
@@ -722,7 +728,7 @@ fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: 
     }
 }
 // 修改entity上的EntityAddr， table上的entitys也对应记录Entity
-fn update_table_world(world: &World, am: &mut ArchetypeMapping) {
+pub(crate) fn update_table_world(world: &World, am: &mut ArchetypeMapping) {
     for (_, dst_row, e) in am.moves.iter() {
         am.dst.set(*dst_row, *e);
         world.replace(*e, am.dst_index, *dst_row);
