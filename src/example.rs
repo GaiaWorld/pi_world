@@ -1,3 +1,4 @@
+#![allow(warnings)]
 use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -182,11 +183,9 @@ mod test_mod {
         // app::*,
         archetype::{ComponentInfo, Row}, column::Column, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
-    use bevy_utils::dbg;
+    // use bevy_utils::dbg;
     use pi_append_vec::AppendVec;
-    use pi_async_rt::{
-        rt::single_thread::SingleTaskRuntime,
-    };
+    // use pi_async_rt::rt::single_thread::SingleTaskRuntime;
     use pi_null::Null;
     use test::Bencher;
 
@@ -659,8 +658,8 @@ mod test_mod {
         fn ce(w: &World, c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
-            
         }
+        
         let mut app = MultiThreadApp::new();
         app.world.insert_single_res(A(0.0));
         app.world.insert_single_res(B(0.0));

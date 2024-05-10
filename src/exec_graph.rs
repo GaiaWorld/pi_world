@@ -22,7 +22,7 @@ use std::mem::transmute;
 use std::sync::atomic::Ordering;
 
 use async_channel::{bounded, Receiver, RecvError, Sender};
-use bevy_utils::label;
+// use bevy_utils::label;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
@@ -49,11 +49,12 @@ const NODE_STATUS_RUNNING: u32 = NODE_STATUS_RUN_START + NODE_STATUS_STEP; // sy
 const NODE_STATUS_RUN_END: u32 = NODE_STATUS_RUNNING + NODE_STATUS_STEP; // 节点执行后（包括原型节点）前，状态被设为RUN_END
 const NODE_STATUS_OVER: u32 = NODE_STATUS_RUN_END + NODE_STATUS_STEP; // 节点的所有to邻居都被调用后，状态才为Over
 
-const NODE_STATUS_WAIT_LOCK: u32 = NODE_STATUS_WAIT + 1; // wait锁定状态
-const NODE_STATUS_RUN_START_LOCK: u32 = NODE_STATUS_RUN_START + 1; // run锁定状态
-const NODE_STATUS_RUNNING_LOCK: u32 = NODE_STATUS_RUNNING + 1; // running锁定状态
-const NODE_STATUS_RUN_END_LOCK: u32 = NODE_STATUS_RUN_END + 1; // run_end锁定状态
-const NODE_STATUS_OVER_LOCK: u32 = NODE_STATUS_OVER + 1; // over锁定状态
+
+const _NODE_STATUS_WAIT_LOCK: u32 = NODE_STATUS_WAIT + 1; // wait锁定状态
+const _NODE_STATUS_RUN_START_LOCK: u32 = NODE_STATUS_RUN_START + 1; // run锁定状态
+const _NODE_STATUS_RUNNING_LOCK: u32 = NODE_STATUS_RUNNING + 1; // running锁定状态
+const _NODE_STATUS_RUN_END_LOCK: u32 = NODE_STATUS_RUN_END + 1; // run_end锁定状态
+const _NODE_STATUS_OVER_LOCK: u32 = NODE_STATUS_OVER + 1; // over锁定状态
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct NodeIndex(u32);
@@ -201,7 +202,7 @@ impl ExecGraph {
             self.add_archetype_node(&systems, range.clone(), r, world);
         }
         log::trace!("res & archtypes initialized, {:?}", Dot::with_config(&self, Config::empty()));
-        std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
+        let _ = std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
 
         self.check();
         // nodes和edges整理AppendVec
@@ -445,7 +446,7 @@ impl ExecGraph {
         rt: &A,
         world: &'static World,
         node: &Node,
-        index: NodeIndex,
+        _index: NodeIndex,
     ) {
         // RUN_END
         let mut status =
@@ -518,7 +519,7 @@ pub struct GraphInner {
 impl GraphInner {
 
     // 查找图节点， 如果不存在将该label放入图的节点中，保存id到图节点索引的对应关系， 图的to_len也加1
-    fn find_node(&self, id: u128, label: NodeType, name: &str) -> (NodeIndex, bool) {
+    fn find_node(&self, id: u128, label: NodeType, _name: &str) -> (NodeIndex, bool) {
         match self.map.entry(id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
@@ -960,6 +961,7 @@ pub(crate) const fn decode(value: u64) -> (u32, u32) {
     (low as u32, high as u32)
 }
 
+#[allow(warnings)]
 struct Notify<'a>(
     ExecGraph,
     Share<SafeVec<BoxedSystem>>,
@@ -974,7 +976,7 @@ impl<'a> Listener for Notify<'a> {
         self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
         log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
         self.0.check();
-        std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
+        let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
     }
 }
 
@@ -989,6 +991,7 @@ pub struct NGraphNode {
 	
 }
 
+#[allow(warnings)]
 #[derive(Default)]
 pub struct NGraph {
     nodes: pi_map::vecmap::VecMap<NGraphNode>,
@@ -1064,7 +1067,7 @@ impl NGraph {
                 Some(r) => r,
                 None => return false,
             };
-			let mut is_not_contains = !topological.contains(&r.0);
+			let is_not_contains = !topological.contains(&r.0);
 
 			return  is_not_contains;
 		}).map(|r| {r.0}).collect::<Vec<usize>>();

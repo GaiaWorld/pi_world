@@ -4,12 +4,12 @@
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::mem::transmute;
-use std::ops::{Deref, DerefMut};
+// use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 
 use crate::function_system::SystemParamItem;
-use crate::prelude::Query;
+// use crate::prelude::Query;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;

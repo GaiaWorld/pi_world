@@ -16,13 +16,13 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
-use std::mem::{transmute, ManuallyDrop, MaybeUninit};
+use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
 use crate::alter::{
-    add_columns, alter_row, clear, mapping_init, move_columns, remove_columns, update_table_world,
+    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world,
     AlterState, Alterer, ArchetypeMapping,
 };
 use crate::archetype::{
@@ -33,7 +33,7 @@ use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{check, QueryError, QueryState, Queryer};
+use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
@@ -421,7 +421,7 @@ impl World {
             return Err(QueryError::MissingComponent)
         }
     }
-    
+
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_by_index<T: 'static>(
         &self,
@@ -512,15 +512,15 @@ impl World {
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn add_component<T: Bundle + 'static>(
         &self,
-        e: Entity,
-        value: T::Item,
+        _e: Entity,
+        _value: T::Item,
     ) -> Result<(), QueryError> {
         todo!()
         // Ok(())
         // 原型改变
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn remove_component<T: Bundle + 'static>(&self, e: Entity) -> T {
+    pub fn remove_component<T: Bundle + 'static>(&self, _e: Entity) -> T {
         todo!()
         // 原型改变
     }
