@@ -376,7 +376,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();
-        // println!("align===={:?}", (len, self.archetype_len));
         if len == self.archetype_len {
             return;
         }
@@ -425,9 +424,9 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = check(world, entity, cache_mapping, &self.map)?;
-        let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
-        println!("get======{:?}", (entity, addr, cache_mapping.0, arch.name()));
-        let arqs = unsafe { &self.vec.get_unchecked(self.cache_mapping.1) };
+        // let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
+        let arqs = unsafe { &self.vec.get_unchecked(cache_mapping.1) };
+        // println!("get======{:?}", (entity, arqs.index, addr, cache_mapping.0, cache_mapping.1,  arch.name()));
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
     }
@@ -463,7 +462,7 @@ pub(crate) fn check<'w>(
     cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
 ) -> Result<EntityAddr, QueryError> {
-    assert!(!entity.is_null());
+    // assert!(!entity.is_null());
     let addr = match world.entities.get(entity) {
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
@@ -534,6 +533,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 state.last_run,
             ));
             if F::LISTENER_COUNT == 0 {
+                println!("ar_index===={:?}", (ar_index, arqs.ar.len()));
                 // 该查询没有监听组件变化，倒序迭代原型的行
                 return QueryIter {
                     world,
