@@ -371,7 +371,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let mut result = ArchetypeDependResult::new();
         Q::archetype_depend(world, archetype, &mut result);
-        !result.flag.contains(Flags::WITHOUT)
+        result.flag.bits() != 0 && !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
