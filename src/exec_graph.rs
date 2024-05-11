@@ -1095,7 +1095,7 @@ impl NGraph {
                 Some(r) => r,
                 None => return false,
             };
-			let mut is_not_contains = !topological.contains(&r.0);
+			let is_not_contains = !topological.contains(&r.0);
 
 			return  is_not_contains;
 		}).map(|r| {r.0}).collect::<Vec<usize>>();

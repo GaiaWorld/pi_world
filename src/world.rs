@@ -22,8 +22,7 @@ use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
 use crate::alter::{
-    add_columns, mapping_init, move_columns, remove_columns, update_table_world,
-    AlterState, Alterer, ArchetypeMapping,
+    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
     Archetype, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype,
@@ -39,8 +38,8 @@ use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
-use pi_map::hashmap::HashMap;
-use pi_map::Map;
+// use pi_map::hashmap::HashMap;
+// use pi_map::Map;
 use pi_null::Null;
 use pi_share::{Share, ShareU32};
 use pi_slot::{Iter, SlotMap};
@@ -709,31 +708,6 @@ fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>) {
     }
 }
 
-fn alter_row<'w, 'a>(
-    mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
-    mapping: &mut ArchetypeMapping,
-    ar_index: ArchetypeLocalIndex,
-    src_row: Row,
-    e: Entity
-) -> Result<Row, QueryError> {
-    let e = if !ar_index.0.is_null() {
-        let e = mapping.src.mark_remove(src_row);
-        if e.is_null() {
-            return Err(QueryError::NoSuchRow);
-        }
-        e
-    }else{
-        e
-    };
-    let dst_row = mapping.dst.alloc();
-    // 记录移动条目的源位置和目标位置
-    mapping.moves.push((src_row, dst_row, e));
-    if mapping.moves.len() == 1 {
-        // 如果该映射是首次记录，则记脏该映射
-        mapping_dirtys.push(ar_index);
-    }
-    Ok(dst_row)
-}
 
 /// Creates an instance of the type this trait is implemented for
 /// using data from the supplied [World].

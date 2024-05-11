@@ -458,7 +458,7 @@ impl<A: Bundle> AlterState<A> {
             let s = unsafe { self.state_vec.get_unchecked_mut(ar_index.0 as usize) };
             *s = MaybeUninit::new(A::init_state(world, &mapping.dst));
         }
-        let dst_row = alter_row(&mut self.mapping_dirtys, &mut mapping, ar_index, row)?;
+        let dst_row = alter_row(&mut self.mapping_dirtys, &mut mapping, ar_index, row, e)?;
         A::insert(
             unsafe { &self.state_vec.get_unchecked(ar_index.0 as usize).assume_init_ref() },
             components,
@@ -626,20 +626,21 @@ pub(crate) fn mapping_init<'a>(
     };
 }
 
-fn alter_row<'w, 'a>(
+pub(crate) fn alter_row<'w, 'a>(
     mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
     mapping: &mut ArchetypeMapping,
     ar_index: ArchetypeLocalIndex,
     src_row: Row,
+    e: Entity,
 ) -> Result<Row, QueryError> {
-    let e = if ar_index.0.is_null() {
+    let e = if !ar_index.0.is_null() {
         let e = mapping.src.mark_remove(src_row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
         e
     }else{
-        Entity::null()
+        e
     };
     let dst_row = mapping.dst.alloc();
     // 记录移动条目的源位置和目标位置
