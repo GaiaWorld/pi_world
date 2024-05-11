@@ -152,13 +152,25 @@ impl ExecGraph {
         }
     }
 
-    pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
+    pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> NodeIndex {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
         
         let index = inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name.clone())));
         // println!("find_node====={:?}", (index, inner.to_len.load(Ordering::Relaxed), &self.1, sys_name));
-        index
+        //inner.map.insert((sys_index as u128, 0), NodeIndex(index as u32));
+        NodeIndex(index as u32)
+    }
+    pub fn add_set(&self, set_name: Cow<'static, str>) -> NodeIndex {
+        let inner = self.0.as_ref();
+        inner.to_len.fetch_add(1, Ordering::Relaxed);
+        
+        let index = inner.nodes.insert(Node::new(NodeType::Set(set_name)));
+        NodeIndex(index as u32)
+    }
+    pub fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
+        let inner = self.0.as_ref();
+        inner.add_edge(from, to);
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -823,6 +835,7 @@ pub enum NodeType {
     System(usize, Cow<'static, str>),
     ArchetypeComponent(u128, Cow<'static, str>),
     Res(Cow<'static, str>),
+    Set(Cow<'static, str>),
 }
 impl NodeType {
     // 类型的名字
@@ -832,6 +845,7 @@ impl NodeType {
             NodeType::System(_, sys_name) => &sys_name,
             NodeType::ArchetypeComponent(_, s) => &s, // 要改一下，但是先这样吧
             NodeType::Res(s) => &s,
+            NodeType::Set(s) => &s,
         }
     }
 }
@@ -842,6 +856,7 @@ impl Debug for NodeType {
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
             NodeType::ArchetypeComponent(index, s) => write!(f, "ArchetypeComponent({},{:?})", index, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
+            NodeType::Set(s) => write!(f, "Set({:?})", s),
         }
     }
 }
