@@ -171,7 +171,7 @@ impl<P: SystemParam> ParamSystem<P> {
     }
     #[inline]
     pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParamItem<'w, P> {
-        let tick = world.tick();
+        let tick = world.increment_tick();
         let param_state = self.param_state.as_mut().unwrap();
         P::get_param(world, &mut self.system_meta, param_state, tick)
     }
