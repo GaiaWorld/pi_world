@@ -294,8 +294,10 @@ impl<
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
             result.merge(ArchetypeDepend::Flag(Flags::DELETE));
             let (components, _) = archetype.alter(&state.1.sort_add, &state.1.sort_remove);
-            let id_name = ComponentInfo::calc_id_name(&components);
-            result.merge(ArchetypeDepend::Alter(id_name));
+            let infos = world.calc_infos(components);
+            if archetype.id() != &infos.0 {
+                result.merge(ArchetypeDepend::Alter(infos));
+            }
         }
     }
     fn res_depend(
@@ -632,7 +634,6 @@ pub(crate) fn alter_row<'w, 'a>(
 ) -> Result<Row, QueryError> {
     let e = if !ar_index.is_null() {
         let e = mapping.src.mark_remove(src_row);
-        println!("alter_row======={:?}", e);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }

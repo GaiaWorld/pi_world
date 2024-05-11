@@ -95,17 +95,14 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         (ar_index, ar, s)
     }
     fn archetype_depend(
-        _world: &World,
+        world: &World,
         _system_meta: &SystemMeta,
         _state: &Self::State,
         archetype: &Archetype,
         depend: &mut ArchetypeDependResult,
     ) {
         let components = I::components();
-        let id = ComponentInfo::calc_id(&components);
-        if &id == archetype.id() {
-            depend.merge(ArchetypeDepend::Flag(Flags::WRITE));
-        }
+        depend.insert(archetype, world, components);
     }
 
     #[inline]

@@ -25,7 +25,6 @@ use bitflags::bitflags;
 use fixedbitset::FixedBitSet;
 use pi_null::Null;
 use pi_share::{Share, ShareU32};
-use smallvec::SmallVec;
 
 use crate::table::Table;
 use crate::world::{ComponentIndex, SetDefault, World};
@@ -50,18 +49,22 @@ bitflags! {
 #[derive(Debug, PartialEq)]
 pub enum ArchetypeDepend {
     Flag(Flags),
-    Alter((u128, Cow<'static, str>)),
+    Alter((u128, Cow<'static, str>, Vec<ComponentInfo>)),
 }
 #[derive(Debug, PartialEq)]
 pub struct ArchetypeDependResult {
     pub flag: Flags,
-    pub alters: SmallVec<[(u128, Cow<'static, str>); 1]>,
+    pub reads: Vec<ComponentIndex>,
+    pub writes: Vec<ComponentIndex>,
+    pub alters: Vec<(u128, Cow<'static, str>, Vec<ComponentInfo>)>,
 }
 impl ArchetypeDependResult {
     pub fn new() -> Self {
         Self {
             flag: Flags::empty(),
-            alters: SmallVec::new(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            alters: Vec::new(),
         }
     }
     pub fn merge(&mut self, depend: ArchetypeDepend) {
@@ -71,18 +74,37 @@ impl ArchetypeDependResult {
             _ => (),
         }
     }
+    pub fn insert(&mut self, ar: &Archetype, world: &World, components: Vec<ComponentInfo>) {
+        let id = ComponentInfo::calc_id(&components);
+        if &id != ar.id() {
+            return;
+        }
+        self.merge(ArchetypeDepend::Flag(Flags::WRITE));
+        for c in components {
+            let index = world.get_component_index(&c.type_id);
+            self.writes.push(index);
+        }
+    }
     pub fn depend(&mut self, ar: &Archetype, world: &World, tid: &TypeId, false_result: Flags, true_result: Flags) {
-        let index = ar.get_column_index_by_tid(world, &tid);
-        self.merge(ArchetypeDepend::Flag(
-            if index.is_null() {
-                false_result
-            } else {
-                true_result
-            },
-        ))
+        let world_index = world.get_component_index(tid);
+        let index = ar.get_column_index(world_index);
+        let r = if index.is_null() {
+            false_result
+        } else{
+            let set = if true_result == Flags::WRITE {
+                &mut self.writes
+            }else{
+                &mut self.reads
+            };
+            set.push(world_index);
+            true_result
+        };
+        self.merge(ArchetypeDepend::Flag(r))
     }
     pub fn clear(&mut self) {
         self.flag = Flags::empty();
+        self.reads.clear();
+        self.writes.clear();
         self.alters.clear();
     }
 }
@@ -274,20 +296,6 @@ impl ComponentInfo {
             id ^= c.id();
         }
         id
-    }
-    pub fn calc_id_name(vec: &Vec<ComponentInfo>) -> (u128, Cow<'static, str>) {
-        // todo 用前缀树的方式，类似use pi_share::{Share, ShareU32} 方式记录为name
-        let mut id = 0;
-        let mut s = String::new();
-        for c in vec.iter() {
-            id ^= c.id();
-            s.push_str(&c.type_name);
-            s.push('+');
-        }
-        if s.len() > 0 {
-            s.pop();
-        }
-        (id, s.into())
     }
 }
 

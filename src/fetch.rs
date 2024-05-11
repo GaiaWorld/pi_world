@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{
-    Archetype, ArchetypeDepend, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row
+    Archetype, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row
 };
 use crate::column::Column;
 use crate::prelude::FromWorld;
@@ -116,14 +116,7 @@ impl<T: 'static> FetchComponents for &T {
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        let index = world.get_component_index(&TypeId::of::<T>());
-        result.merge(ArchetypeDepend::Flag(
-            if archetype.get_column_index(index).is_null() {
-                Flags::WITHOUT
-            } else {
-                Flags::READ
-            },
-        ))
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ);
     }
     fn init_state(world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())

@@ -26,6 +26,7 @@ use bevy_utils::label;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
+use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
 use pi_async_rt::prelude::AsyncRuntime;
@@ -38,7 +39,7 @@ use crate::dot::{Config, Dot};
 use crate::listener::Listener;
 use crate::safe_vec::SafeVec;
 use crate::system::BoxedSystem;
-use crate::world::{ArchetypeInit, World};
+use crate::world::{ArchetypeInit, ComponentIndex, World};
 
 const NODE_STATUS_STEP: u32 = 0x1000_0000;
 const NODE_STATUS_ALIGN_MASK: u32 = !0x1000_0001;
@@ -122,6 +123,12 @@ impl Direction {
     }
 }
 
+fn vec_set(vec: &mut Vec<NodeIndex>, index: usize, value: NodeIndex) {
+    if vec.len() <= index {
+        vec.resize(index + 1, NodeIndex::null());
+    }
+    *unsafe { vec.get_unchecked_mut(index) } = value;
+}
 #[derive(Clone)]
 pub struct ExecGraph(Share<GraphInner>, String);
 
@@ -248,7 +255,7 @@ impl ExecGraph {
         let _unused = inner.lock.lock();
         let id = unsafe { transmute(*tid) };
         // 如果图已经存在该节点，则返回，否则插入
-        let (node_index, is_new) = inner.find_node(id, NodeType::Res(name.clone()), &self.1);
+        let (node_index, is_new) = inner.find_node((id, 0), NodeType::Res(name.clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
             sys_range.start = 0;
         }
@@ -293,11 +300,20 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
 
-        // 查找图节点， 如果不存在将该原型id放入图的节点中，保存原型id到原型节点索引的对应关系
-        let (node_index, is_new) = inner.find_node(*archetype.id(), NodeType::Archetype(archetype.name().clone()), &self.1);
-        if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
-            sys_range.start = 0;
+        let aid = *archetype.id();
+        let mut nodes = Vec::new();
+        let mut ar_component_index_node_index_map = Vec::new();
+        // 遍历该原型的全部组件
+        for c in archetype.get_columns().iter() {
+            let info = c.info();
+            // 查找图节点， 如果不存在将该原型组件id放入图的节点中，保存原型id到原型节点索引的对应关系
+            let (node_index, _is_new) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
+            vec_set(&mut ar_component_index_node_index_map, info.world_index as usize, node_index);
+            nodes.push(node_index);
         }
+        // if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
+        sys_range.start = 0;
+        // }
         let mut depend = ArchetypeDependResult::new();
         // 检查每个system和该原型的依赖关系，建立图连接
         for (system_index, node) in inner.nodes.iter().enumerate() {
@@ -312,23 +328,30 @@ impl ExecGraph {
                         continue;
                     }
                     if !depend.alters.is_empty() {
-                        // 表结构改变，则该system为该原型的from
-                        inner.adjust_edge(system_index, node_index);
-                        for (id, name) in depend.alters.iter() {
+                        // 表结构改变，则该system为该原型全部组件的from
+                        inner.adjust_edges(&nodes, system_index, NodeIndex::null());
+                        for infos in depend.alters.iter() {
+                            let aid = infos.0;
                             // 获得该原型id到原型节点索引
-                            let (alter_node_index, _) = inner.find_node(*id, NodeType::Archetype(name.clone()), &self.1);
-                            if alter_node_index != node_index {
-                                // 过滤掉alter的原型和原原型一样
+                            for info in infos.2.iter() {
+                                let (alter_node_index, _) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
+                                // 该system为该原型全部组件的from
                                 inner.adjust_edge(system_index, alter_node_index);
                             }
                         }
                     } else if depend.flag == Flags::READ {
-                        // 如果只有读，则该system为该原型的to
-                        inner.add_edge(node_index, system_index);
+                        // 如果只有读，则该system为该原型组件的to
+                        for index in depend.reads.iter() {
+                            let node_index = ar_component_index_node_index_map[*index as usize];
+                            inner.add_edge(node_index, system_index);
+                        }
                         continue;
                     } else if depend.flag.bits() != 0 {
                         // 有写或者删除，则该system为该原型的from
-                        inner.adjust_edge(system_index, node_index);
+                        for index in depend.reads.iter() {
+                            let node_index = ar_component_index_node_index_map[*index as usize];
+                            inner.adjust_edge(system_index, node_index);
+                        }
                     } else {
                         // 如果没有关联，则跳过
                         continue;
@@ -337,14 +360,15 @@ impl ExecGraph {
                 _ => (),
             }
         }
-
-        let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-        let old_from_count = node.from_count.fetch_sub(1, Ordering::Relaxed);
-        if old_from_count == 1 {
-            // 只有当其他图的某系统S1创建该原型， 而当前图中不存在S1系统是，出现此情况， 此时需要给当前图添加froms
-            // 当前图此时一定处于未运行状态，可以直接安全的修改froms
-            let inner = unsafe{&mut *(Share::as_ptr(&self.0) as usize as *mut GraphInner)};
-            inner.froms.push(node_index);
+        for node_index in nodes {
+            let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
+            let old_from_count = node.from_count.fetch_sub(1, Ordering::Relaxed);
+            if old_from_count == 1 {
+                // 只有当其他图的某系统S1创建该原型， 而当前图中不存在S1系统是，出现此情况， 此时需要给当前图添加froms
+                // 当前图此时一定处于未运行状态，可以直接安全的修改froms
+                let inner = unsafe{&mut *(Share::as_ptr(&self.0) as usize as *mut GraphInner)};
+                inner.froms.push(node_index);
+            }
         }
     }
 
@@ -505,7 +529,7 @@ impl ExecGraph {
 pub struct GraphInner {
     nodes: AppendVec<Node>,
     edges: AppendVec<Edge>,
-    map: DashMap<u128, NodeIndex>,
+    map: DashMap<(u128, ComponentIndex), NodeIndex>,
     to_len: ShareU32,
     froms: Vec<NodeIndex>,
     lock: ShareMutex<()>,
@@ -518,7 +542,7 @@ pub struct GraphInner {
 impl GraphInner {
 
     // 查找图节点， 如果不存在将该label放入图的节点中，保存id到图节点索引的对应关系， 图的to_len也加1
-    fn find_node(&self, id: u128, label: NodeType, name: &str) -> (NodeIndex, bool) {
+    fn find_node(&self, id: (u128, ComponentIndex), label: NodeType, name: &str) -> (NodeIndex, bool) {
         match self.map.entry(id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
@@ -529,6 +553,18 @@ impl GraphInner {
                 entry.insert(node_index);
                 // println!("find_node====={:?}", (node_index.index(), self.to_len.load(Ordering::Relaxed), name, label));
                 (node_index, true)
+            }
+        }
+    }
+
+    fn adjust_edges(&self, vec: &Vec<NodeIndex>, from: NodeIndex, to: NodeIndex) {
+        if from.is_null() {
+            for node_index in vec {
+                self.adjust_edge(*node_index, to);
+            }
+        }else{
+            for node_index in vec {
+                self.adjust_edge(from, *node_index);
             }
         }
     }
@@ -790,7 +826,7 @@ impl<'a> Iterator for NeighborIter<'a> {
 pub enum NodeType {
     None,
     System(usize, Cow<'static, str>),
-    Archetype(Cow<'static, str>),
+    ArchetypeComponent(u128, Cow<'static, str>),
     Res(Cow<'static, str>),
 }
 impl NodeType {
@@ -799,7 +835,7 @@ impl NodeType {
         match &self {
             NodeType::None => &Cow::Borrowed("None"),
             NodeType::System(_, sys_name) => &sys_name,
-            NodeType::Archetype(s) => &s,
+            NodeType::ArchetypeComponent(_, s) => &s, // 要改一下，但是先这样吧
             NodeType::Res(s) => &s,
         }
     }
@@ -809,7 +845,7 @@ impl Debug for NodeType {
         match &self {
             NodeType::None => write!(f, "None"),
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
-            NodeType::Archetype(s) => write!(f, "Archetype({:?})", s),
+            NodeType::ArchetypeComponent(index, s) => write!(f, "ArchetypeComponent({},{:?})", index, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
         }
     }
