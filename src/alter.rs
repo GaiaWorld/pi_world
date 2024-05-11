@@ -440,7 +440,7 @@ impl<A: Bundle> AlterState<A> {
         components: A::Item,
         tick: Tick,
     ) -> Result<bool, QueryError> {
-        let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index) };
+        let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index.0 as usize) };
         if mapping.dst.len() == 0 {
             // 如果为空映射，则创建components，去world上查找或创建
             mapping_init(
@@ -455,12 +455,12 @@ impl<A: Bundle> AlterState<A> {
             );
 
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
-            let s = unsafe { self.state_vec.get_unchecked_mut(ar_index) };
+            let s = unsafe { self.state_vec.get_unchecked_mut(ar_index.0 as usize) };
             *s = MaybeUninit::new(A::init_state(world, &mapping.dst));
         }
         let dst_row = alter_row(&mut self.mapping_dirtys, &mut mapping, ar_index, row)?;
         A::insert(
-            unsafe { &self.state_vec.get_unchecked(ar_index).assume_init_ref() },
+            unsafe { &self.state_vec.get_unchecked(ar_index.0 as usize).assume_init_ref() },
             components,
             e,
             dst_row,
@@ -523,7 +523,7 @@ fn destroy<'w>(
     // destroys: &mut Vec<(ArchetypeLocalIndex, Row)>,
 ) -> Result<bool, QueryError> {
     let addr = check(world, entity, cache_mapping, map)?;
-    let ar = unsafe { &vec.get_unchecked(cache_mapping.1).src };
+    let ar = unsafe { &vec.get_unchecked(cache_mapping.1.0 as usize).src };
     destroy_row(world, ar, addr.row)
 }
 /// 标记销毁
@@ -626,13 +626,13 @@ pub(crate) fn mapping_init<'a>(
     };
 }
 
-pub(crate) fn alter_row<'w, 'a>(
+fn alter_row<'w, 'a>(
     mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
     mapping: &mut ArchetypeMapping,
     ar_index: ArchetypeLocalIndex,
     src_row: Row,
 ) -> Result<Row, QueryError> {
-    let e = if !ar_index.is_null() {
+    let e = if ar_index.0.is_null() {
         let e = mapping.src.mark_remove(src_row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
@@ -663,7 +663,7 @@ pub(crate) fn clear(
 ) {
     // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
     for ar_index in mapping_dirtys.iter() {
-        let am = unsafe { vec.get_unchecked_mut(*ar_index) };
+        let am = unsafe { vec.get_unchecked_mut((*ar_index).0 as usize) };
         move_columns(am, moved_columns);
         remove_columns(am, removed_columns);
         add_columns(am, added_columns, tick);

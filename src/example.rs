@@ -1,10 +1,10 @@
 #![allow(warnings)]
 use crate::prelude::*;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Default,PartialEq)]
 pub struct Age0(usize);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Age1(usize);
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -858,6 +858,67 @@ mod test_mod {
 
          app.run();
          app.run();
+    }
+
+    #[test]
+    fn world_allow(){
+        struct ResEntity(Entity);
+        // std::thread::sleep_ms(1000 * 5);
+        let mut world = World::new();
+        let e = world.alloc_entity();
+        world.alter_components(e, &[
+            (world.init_component::<Age0>(), true), 
+            (world.init_component::<Age1>(), true)
+        ]).unwrap();
+
+        let age0 = world.get_component_mut::<Age0>(e);
+        println!("age0: {:?}", age0);
+        let age1 = world.get_component_mut::<Age1>(e);
+        println!("age1: {:?}", age1);
+    }
+
+    #[test]
+    fn app_allow(){
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(w: &World) {
+            let e = w.alloc_entity();
+            println!("alter_add!! e: {:?}", e);
+            w.alter_components(e, &[
+                (w.init_component::<Age0>(), true), 
+                (w.init_component::<Age1>(), true)
+            ]).unwrap();
+
+            println!("alter_add end");
+         }
+
+         pub fn alter_remove(w: &World, q: Query<(Entity, &Age1, &Age0)>) {
+            // let e = w.alloc_entity();
+            println!("alter_remove start!! ");
+            q.iter().for_each(|(e, age2, age0)|{
+                println!("alter_remove!! e: {:?}", e);
+                w.alter_components(e, &[
+                    (w.init_component::<Age2>(), true), 
+                    (w.init_component::<Age1>(), false)
+                ]).unwrap()
+            });
+            println!("alter_remove end");
+         }
+
+        pub fn query(w: &World, q: Query<(Entity, &Age0, &Age2)>) {
+            println!("query start!!!");
+            q.iter().for_each(|(e, age0, age2)|{
+                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
+            });
+            println!("query end!!!");
+         }
+         
+
+         app.add_startup_system(Update, alter_add);
+         app.add_startup_system(Update, alter_remove);
+         app.add_system(Update, query);
+
+         app.run();
+        //  app.run();
     }
 
 }
