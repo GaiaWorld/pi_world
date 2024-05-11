@@ -452,7 +452,7 @@ mod test_mod {
 
     #[test]
     fn test_added() {
-        let mut app = App::new();
+        let mut app = SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, added_l);
@@ -534,7 +534,7 @@ mod test_mod {
                 std::mem::swap(&mut c.0, &mut e.0);
             }
         }
-        let mut app = MultiThreadApp::new();
+        let mut app = SingleThreadApp::new();
         let i = app.world.make_inserter::<(A, B)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
         i.batch(it);
