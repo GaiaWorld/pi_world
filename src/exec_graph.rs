@@ -215,7 +215,7 @@ impl ExecGraph {
             self.add_archetype_node(&systems, range.clone(), r, world);
         }
         log::trace!("res & archtypes initialized, {:?}", Dot::with_config(&self, Config::empty()));
-        std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
+        let _ = std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
 
         self.check();
         // nodes和edges整理AppendVec
@@ -1020,7 +1020,7 @@ impl<'a> Listener for Notify<'a> {
         self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
         log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
         self.0.check();
-        std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
+        let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
     }
 }
 
@@ -1110,7 +1110,7 @@ impl NGraph {
                 Some(r) => r,
                 None => return false,
             };
-			let mut is_not_contains = !topological.contains(&r.0);
+			let is_not_contains = !topological.contains(&r.0);
 
 			return  is_not_contains;
 		}).map(|r| {r.0}).collect::<Vec<usize>>();

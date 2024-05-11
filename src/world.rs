@@ -22,8 +22,7 @@ use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
 use crate::alter::{
-    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world,
-    AlterState, Alterer, ArchetypeMapping,
+    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
     Archetype, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype,
@@ -33,14 +32,14 @@ use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{QueryError, QueryState, Queryer};
+use crate::query::{ArchetypeLocalIndex, QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
-use pi_map::hashmap::HashMap;
-use pi_map::Map;
+// use pi_map::hashmap::HashMap;
+// use pi_map::Map;
 use pi_null::Null;
 use pi_share::{Share, ShareU32};
 use pi_slot::{Iter, SlotMap};
@@ -416,7 +415,7 @@ impl World {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
         if let Some((c, _)) = ar.get_column(index) {
             return Ok(c.get_row(addr.row));
         } else {
@@ -472,9 +471,10 @@ impl World {
         };
         let mut id = ComponentInfo::calc_id(&sort_add);
         let ar_index = addr.archetype_index();
-        let mut ar = &self.empty_archetype;
-        if !ar_index.is_null() {
-            ar = unsafe { self.archetype_arr.get_unchecked(ar_index) };
+        let mut ar = self.empty_archetype();
+
+        if !addr.index.is_null() {
+            ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
         }
 
         // println!("components: {:?}", components);
@@ -503,7 +503,7 @@ impl World {
         // println!("removed_columns: {:?}", removed_columns);
 
         let mut mapping_dirtys = vec![];
-        let _ = alter_row(&mut mapping_dirtys, &mut mapping, ar_index, addr.row)?;
+        let _ = alter_row(&mut mapping_dirtys, &mut mapping, ArchetypeLocalIndex(ar_index as u16), addr.row, e)?;
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
@@ -545,7 +545,7 @@ impl World {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
         let index = self.get_component_index(tid);
         if let Some((c, _)) = ar.get_column(index) {
             Ok(c.get_row(addr.row))
@@ -708,27 +708,6 @@ fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>) {
     }
 }
 
-// 通知新增的源组件
-// fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: Tick) {
-//     for i in am.add_indexs.clone().into_iter() {
-//         println!("add_columns1: i: {}", i);
-//         let column_index = unsafe { add_columns.get_unchecked(i) };
-//         println!("add_columns2: column_index: {}", column_index);
-//         let column = am.dst.get_column_unchecked(*column_index);
-//         println!("add_columns3: column_index: {:?}", column);
-//         if column.dirty.listener_len() == 0 {
-//             continue;
-//         }
-//         for (src, dst_row, e) in am.moves.iter() {
-//             // column.add_record_unchecked(*e, *dst_row, tick);
-//             println!("add_columns4: src: {},dst: {}", src, dst_row);
-//             let dst_data: *mut u8 = column.get_row(*dst_row);
-//             println!("add_columns44: src: {},dst: {}", src, dst_row);
-//             column.info().default_fn.unwrap()(dst_data);
-//             println!("add_columns5: {}", dst_row);
-//         }
-//     }
-// }
 
 /// Creates an instance of the type this trait is implemented for
 /// using data from the supplied [World].
@@ -824,7 +803,7 @@ impl EntityAddr {
         }
     }
     #[inline(always)]
-    pub fn archetype_index(&self) -> usize {
-        self.index as usize
+    pub fn archetype_index(&self) -> u32 {
+        self.index 
     }
 }
