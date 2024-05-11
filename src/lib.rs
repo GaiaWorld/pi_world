@@ -1,6 +1,7 @@
 #![feature(const_type_id)]
 #![feature(get_mut_unchecked)]
 #![allow(invalid_reference_casting)]
+#![allow(incomplete_features)]
 #![feature(downcast_unchecked)]
 #![feature(sync_unsafe_cell)]
 #![feature(test)]

@@ -50,11 +50,6 @@ const NODE_STATUS_RUNNING: u32 = NODE_STATUS_RUN_START + NODE_STATUS_STEP; // sy
 const NODE_STATUS_RUN_END: u32 = NODE_STATUS_RUNNING + NODE_STATUS_STEP; // 节点执行后（包括原型节点）前，状态被设为RUN_END
 const NODE_STATUS_OVER: u32 = NODE_STATUS_RUN_END + NODE_STATUS_STEP; // 节点的所有to邻居都被调用后，状态才为Over
 
-const NODE_STATUS_WAIT_LOCK: u32 = NODE_STATUS_WAIT + 1; // wait锁定状态
-const NODE_STATUS_RUN_START_LOCK: u32 = NODE_STATUS_RUN_START + 1; // run锁定状态
-const NODE_STATUS_RUNNING_LOCK: u32 = NODE_STATUS_RUNNING + 1; // running锁定状态
-const NODE_STATUS_RUN_END_LOCK: u32 = NODE_STATUS_RUN_END + 1; // run_end锁定状态
-const NODE_STATUS_OVER_LOCK: u32 = NODE_STATUS_OVER + 1; // over锁定状态
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct NodeIndex(u32);

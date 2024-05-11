@@ -16,13 +16,13 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
-use std::mem::{transmute, ManuallyDrop, MaybeUninit};
+use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 
 use crate::alter::{
-    add_columns, alter_row, clear, mapping_init, move_columns, remove_columns, update_table_world,
+    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world,
     AlterState, Alterer, ArchetypeMapping,
 };
 use crate::archetype::{
@@ -33,12 +33,14 @@ use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{check, QueryError, QueryState, Queryer};
+use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_key_alloter::new_key_type;
+use pi_map::hashmap::HashMap;
+use pi_map::Map;
 use pi_null::Null;
 use pi_share::{Share, ShareU32};
 use pi_slot::{Iter, SlotMap};
@@ -405,13 +407,30 @@ impl World {
         self.get_component_ptr::<T>(e)
     }
 
+    fn get_component_ptr_by_index(
+        &self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Result<*mut u8, QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index()) };
+        if let Some((c, _)) = ar.get_column(index) {
+            return Ok(c.get_row(addr.row));
+        } else {
+            return Err(QueryError::MissingComponent)
+        }
+    }
+
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_by_index<T: 'static>(
         &self,
         e: Entity,
         index: ComponentIndex,
     ) -> Result<&T, QueryError> {
-        todo!();
+        unsafe { transmute(self.get_component_ptr_by_index(e, index))}
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_by_index_mut<T: 'static>(
@@ -419,19 +438,25 @@ impl World {
         e: Entity,
         index: ComponentIndex,
     ) -> Result<&mut T, QueryError> {
-        todo!();
+        unsafe { transmute(self.get_component_ptr_by_index(e, index))}
     }
 
+    /// 增加和删除实体
     pub fn alter_components(
         &self,
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
-        // todo!();
+        
         let mut sort_add = vec![];
         let mut sort_remove = vec![];
 
+        // TODO, 性能
+        let mut map =  std::collections::HashMap::new();
         for (index, is_add) in components {
+            map.insert(index, is_add);
+        }
+        for (index, is_add) in map {
             if let Some(info) = self.get_component_info(*index) {
                 if *is_add {
                     sort_add.push(info.clone());
@@ -494,15 +519,15 @@ impl World {
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn add_component<T: Bundle + 'static>(
         &self,
-        e: Entity,
-        value: T::Item,
+        _e: Entity,
+        _value: T::Item,
     ) -> Result<(), QueryError> {
         todo!()
         // Ok(())
         // 原型改变
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn remove_component<T: Bundle + 'static>(&self, e: Entity) -> T {
+    pub fn remove_component<T: Bundle + 'static>(&self, _e: Entity) -> T {
         todo!()
         // 原型改变
     }

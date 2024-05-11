@@ -1,3 +1,4 @@
+#![allow(warnings)]
 use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -6,10 +7,10 @@ pub struct Age0(usize);
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Age1(usize);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Age2(usize);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Age3(usize);
 
 pub struct Age4(usize);
@@ -182,11 +183,9 @@ mod test_mod {
         // app::*,
         archetype::{ComponentInfo, Row}, column::Column, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
-    use bevy_utils::dbg;
+    // use bevy_utils::dbg;
     use pi_append_vec::AppendVec;
-    use pi_async_rt::{
-        rt::single_thread::SingleTaskRuntime,
-    };
+    // use pi_async_rt::rt::single_thread::SingleTaskRuntime;
     use pi_null::Null;
     use test::Bencher;
 
@@ -659,8 +658,8 @@ mod test_mod {
         fn ce(w: &World, c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
-            
         }
+        
         let mut app = MultiThreadApp::new();
         app.world.insert_single_res(A(0.0));
         app.world.insert_single_res(B(0.0));
@@ -805,6 +804,60 @@ mod test_mod {
         
         app.run();
         app.run();
+    }
+
+    #[test]
+    fn alter(){
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age1, Age0)>();
+        let e1 = i.insert((Age1(2), Age0(1)));
+        println!("===========1114: {:?}", e1);
+        world.alter_components(e1, &[
+            (world.init_component::<Age3>(), true), 
+            (world.init_component::<Age1>(), false)
+        ]).unwrap();
+        
+        let age3 = world.get_component::<Age3>(e1);
+
+        let age1 = world.get_component::<Age1>(e1);
+
+        // let age0= world.get_component::<Age0>(e1);
+        println!(", age1: {:?}, age3: {:?}", age1, age3);
+    }
+
+    #[test]
+    fn app_alter(){
+        let mut app = SingleThreadApp::new();
+        // let mut world = &app.world;
+        pub fn insert(i0: Insert<(Age1, Age0)>) {
+            println!("insert1 is now");
+            let e = i0.insert((Age1(1), Age0(0)));
+            println!("insert1 is end, e:{:?}", e);
+        }
+
+        pub fn alter(w: &World, q: Query<(Entity, &Age1, &Age0)>) {
+           q.iter().for_each(|(e, age1, age0)|{
+            println!("alter!! e: {:?}, age1: {:?}, age0: {:?}", e, age1, age0);
+                w.alter_components(e, &[
+                    (w.init_component::<Age2>(), true), 
+                    (w.init_component::<Age1>(), false)
+                ]).unwrap();
+           });
+        }
+
+        pub fn query(w: &World, q: Query<(Entity, &Age2, &Age0)>) {
+            println!("query start!!!");
+            q.iter().for_each(|(e, age2, age0)|{
+                println!("query!!! e: {:?}, age2: {:?}, age0: {:?}", e, age2, age0);
+            });
+         }
+
+         app.add_system(Update, insert);
+         app.add_system(Update, alter);
+         app.add_system(Update, query);
+
+         app.run();
+         app.run();
     }
 
 }

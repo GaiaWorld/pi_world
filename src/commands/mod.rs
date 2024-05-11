@@ -1,3 +1,4 @@
+#![allow(warnings)]
 mod command_queue;
 use crate::{insert::Bundle, prelude::{Entity, World}};
 
@@ -720,7 +721,7 @@ impl<'w, 'a> EntityCommands<'w, 'a> {
     /// }
     /// # bevy_ecs::system::assert_is_system(add_combat_stats_system);
     /// ```
-    pub fn insert<T: Bundle + Send + 'static + Sync>(&mut self, bundle: T) -> &mut Self {
+    pub fn insert<T: Bundle + Send + 'static + Sync>(&mut self, _bundle: T) -> &mut Self {
         // self.commands.add(Insert {
         //     entity: self.entity,
         //     bundle,
@@ -959,7 +960,7 @@ impl<T> Command for Insert<T>
 where
     T: Bundle + 'static + std::marker::Send,
 {
-    fn apply(self, world: &mut World) {
+    fn apply(self, _world: &mut World) {
         // if let Some(mut entity) = world.get_entity_mut(self.entity) {
         //     entity.insert(self.bundle);
         // } else {

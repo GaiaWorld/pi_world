@@ -1,3 +1,4 @@
+#![allow(warnings)]
 // use crate::{App, AppError, Plugin};
 // use bevy_utils::{tracing::debug, tracing::warn, HashMap};
 use std::{

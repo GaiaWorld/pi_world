@@ -120,7 +120,10 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
         let tid = TypeId::of::<T>();
         let name = std::any::type_name::<T>().into();
         system_meta.res_write(tid, name);
-        world.get_single_res_any(&TypeId::of::<T>()).unwrap()
+        match world.get_single_res_any(&TypeId::of::<T>()) {
+            Some(r) => r,
+            None => panic!("init SingleRes fail, {:?} is not exist", std::any::type_name::<T>()),
+        }
     }
     fn res_depend(
         _world: &World,
