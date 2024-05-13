@@ -519,7 +519,7 @@ fn destroy<'w>(
     entity: Entity,
     vec: &Vec<ArchetypeMapping>,
     cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
-    map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
+    map: &Vec<ArchetypeLocalIndex>,
     // destroys: &mut Vec<(ArchetypeLocalIndex, Row)>,
 ) -> Result<bool, QueryError> {
     let addr = check(world, entity, cache_mapping, map)?;

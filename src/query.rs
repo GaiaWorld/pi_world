@@ -20,6 +20,7 @@ use crate::listener::Listener;
 use crate::param_set::ParamSetElement;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
+use crate::utils::VecExt;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
 use pi_arr::Iter;
@@ -326,7 +327,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
-    pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
+    pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
@@ -419,7 +420,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             // }
         }
         self.map
-            .insert(index, ArchetypeLocalIndex(self.vec.len() as u16));
+            .insert_value(index.0 as usize, ArchetypeLocalIndex(self.vec.len() as u16));
         self.vec.push(ArchetypeQueryState {
             ar: ar.clone(),
             state: Q::init_state(world, ar),
@@ -470,7 +471,7 @@ pub(crate) fn check<'w>(
     world: &'w World,
     entity: Entity,
     cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
-    map: &HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>,
+    map: &Vec<ArchetypeLocalIndex>,
 ) -> Result<EntityAddr, QueryError> {
     // assert!(!entity.is_null());
     let addr = match world.entities.get(entity) {
@@ -478,7 +479,7 @@ pub(crate) fn check<'w>(
         None => return Err(QueryError::NoSuchEntity),
     };
     if cache_mapping.0 != addr.index {
-        cache_mapping.1 = match map.get(&addr.index) {
+        cache_mapping.1 = match map.get(addr.index.0 as usize) {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchArchetype),
         };
