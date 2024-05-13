@@ -439,7 +439,7 @@ impl ExecGraph {
         node_index: NodeIndex,
         node: &Node,
     ) {
-        println!("exec, node_index: {:?}", node_index);
+        // println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
                 // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
@@ -601,13 +601,13 @@ impl GraphInner {
                 return;
             }
         }
-        // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
-        // if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
-        //     self.add_edge(from, NodeIndex(big_node_index));
-        // }
-        // if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
-        //     self.add_edge(NodeIndex(small_node_index as u32), from);
-        // }
+        println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
+        if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
+            self.add_edge(from, NodeIndex(big_node_index));
+        }
+        if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
+            self.add_edge(NodeIndex(small_node_index as u32), from);
+        }
         // 将当前的from和to节点连起来
         self.add_edge(from, to);
     }
@@ -773,7 +773,7 @@ impl GraphInner {
     // 尝试run是否over
     fn run_over<A: AsyncRuntime>(&self, rt: &A) {
         let r = self.to_count.fetch_sub(1, Ordering::Relaxed);
-        println!("run_over!!! to_count: {}", r);
+        // println!("run_over!!! to_count: {}", r);
         if r == 1 {
             let s = self.sender.clone();
             let _ = rt.spawn(async move {
@@ -1064,8 +1064,8 @@ impl NGraph {
 
     pub fn add_edge(&mut self, before: usize, after: usize) {
         if self.edges.contains(&(before, after)) {
-            // return;
-            panic!("边已经存在！！{:?}", (before, after));
+            return;
+            // panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
 		let before_node = self.nodes.get_mut(before).unwrap();
