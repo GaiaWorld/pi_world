@@ -5,7 +5,7 @@ use core::result::Result;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
 
@@ -48,7 +48,7 @@ pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + '
 impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'world, Q, F> {
     pub(crate) fn new(world: &'world World, state: QueryState<Q, F>) -> Self {
         let tick = world.increment_tick();
-        let cache_mapping = UnsafeCell::new(state.cache_mapping);
+        let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
         Self {
             world,
             state,
@@ -58,13 +58,17 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
     
     pub fn contains(&self, entity: Entity) -> bool {
-        check(
+        if let Ok( (_addr, world_index, local_index)) = check(
             self.world,
             entity,
-            unsafe { &mut *self.cache_mapping.get() },
+            // unsafe { &mut *self.cache_mapping.get() },
             &self.state.map,
-        )
-        .is_ok()
+        ){
+            unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
+            return true;
+        }else{
+            return false;
+        }
     }
     
     pub fn get(
@@ -73,14 +77,14 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get(self.world, self.tick, e, unsafe {
+            .get(self.world, self.tick, e, /* unsafe {
                 &mut *self.cache_mapping.get()
-            })
+            } */)
     }
     
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state
-            .get(self.world, self.tick, e, self.cache_mapping.get_mut())
+            .get(self.world, self.tick, e, /* self.cache_mapping.get_mut() */)
     }
     
     pub fn is_empty(&self) -> bool {
@@ -111,7 +115,7 @@ unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'wor
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     
     pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
-        let cache_mapping = UnsafeCell::new(state.cache_mapping);
+        let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
         Query {
             world,
             state,
@@ -129,14 +133,17 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     
     pub fn contains(&self, entity: Entity) -> bool {
-        let r = check(
+        if let Ok( (_addr, world_index, local_index)) = check(
             self.world,
             entity,
-            unsafe { &mut *self.cache_mapping.get() },
+            // unsafe { &mut *self.cache_mapping.get() },
             &self.state.map,
-        )
-        .is_ok();
-        r
+        ){
+            unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
+            return true;
+        }else{
+            return false;
+        }
     }
     
     pub fn get(
@@ -145,14 +152,14 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get(self.world, self.tick, e, unsafe {
+            .get(self.world, self.tick, e, /* unsafe {
                 &mut *self.cache_mapping.get()
-            })
+            } */)
     }
     
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.state
-            .get(self.world, self.tick, e, self.cache_mapping.get_mut())
+            .get(self.world, self.tick, e, /* self.cache_mapping.get_mut() */)
     }
     
     pub fn is_empty(&self) -> bool {
@@ -244,7 +251,7 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetEl
 impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
     fn drop(&mut self) {
         self.state.last_run = self.tick;
-        self.state.cache_mapping = *self.cache_mapping.get_mut();
+        // self.state.cache_mapping = *self.cache_mapping.get_mut();
     }
 }
 /// 监听原型创建， 添加record
@@ -329,7 +336,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
     pub(crate) last_run: Tick,                                         // 上次运行的tick
-    pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
+    // pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
 }
 
@@ -370,7 +377,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             archetype_len: 0,
             map: Default::default(),
             last_run: Tick::default(),
-            cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
+            // cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
             _k: PhantomData,
         }
     }
@@ -432,11 +439,12 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         world: &'w World,
         tick: Tick,
         entity: Entity,
-        cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+        // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
-        let addr = check(world, entity, cache_mapping, &self.map)?;
+        let (addr, _world_index, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
         // let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
-        let arqs = unsafe { &self.vec.get_unchecked(cache_mapping.1.0 as usize) };
+
+        let arqs = unsafe { &self.vec.get_unchecked(local_index.0 as usize) };
         // println!("get======{:?}", (entity, arqs.index, addr, cache_mapping.0, cache_mapping.1,  arch.name()));
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
@@ -470,22 +478,22 @@ pub struct ArchetypeQueryState<S> {
 pub(crate) fn check<'w>(
     world: &'w World,
     entity: Entity,
-    cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+    // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &Vec<ArchetypeLocalIndex>,
-) -> Result<EntityAddr, QueryError> {
+) -> Result<(EntityAddr, ArchetypeWorldIndex, ArchetypeLocalIndex), QueryError> {
     // assert!(!entity.is_null());
     let addr = match world.entities.get(entity) {
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
     };
-    if cache_mapping.0 != addr.index {
-        cache_mapping.1 = match map.get(addr.index.0 as usize) {
-            Some(v) => *v,
-            None => return Err(QueryError::NoSuchArchetype),
-        };
-        cache_mapping.0 = addr.index;
-    }
-    Ok(addr)
+
+    let local_index  = match map.get(addr.index.0 as usize) {
+        Some(v) => *v,
+        None => return Err(QueryError::NoSuchArchetype),
+    };
+    return Ok((addr, addr.index, local_index));
+
+    // Ok(addr)
 }
 struct DirtyIter<'a> {
     it: Iter<'a, EntityRow>,
@@ -525,7 +533,7 @@ pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'st
     // 用来脏查询时去重row
     bitset: FixedBitSet,
     // 缓存上次的索引映射关系
-    cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex),
+    // cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex),
 }
 impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// # Safety
@@ -556,7 +564,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     row: arqs.ar.len(),
                     dirty: DirtyIter::empty(),
                     bitset: FixedBitSet::new(),
-                    cache_mapping: state.cache_mapping,
+                    // cache_mapping: state.cache_mapping,
                 };
             } else if arqs.listeners.len() > 0 {
                 let bitset = if F::LISTENER_COUNT == 1 {
@@ -578,7 +586,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     row:  Row::null(),
                     dirty: DirtyIter::new(arqs.ar.get_iter(&d_index), len),
                     bitset,
-                    cache_mapping: state.cache_mapping,
+                    // cache_mapping: state.cache_mapping,
                 };
             }
         }
@@ -594,7 +602,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             row: Row(0),
             dirty: DirtyIter::empty(),
             bitset: FixedBitSet::new(),
-            cache_mapping: state.cache_mapping,
+            // cache_mapping: state.cache_mapping,
         }
     }
     pub fn entity(&self) -> Entity {
@@ -652,7 +660,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
                 match self
                     .state
-                    .get(self.world, self.tick, d.e, &mut self.cache_mapping)
+                    .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
                 {
                     Ok(item) => return Some(item),
                     Err(_) => (),
@@ -718,7 +726,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
                 match self
                     .state
-                    .get(self.world, self.tick, d.e, &mut self.cache_mapping)
+                    .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
                 {
                     Ok(item) => return Some(item),
                     Err(_) => (),

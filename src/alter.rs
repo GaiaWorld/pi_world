@@ -16,7 +16,7 @@
 ///
 use std::any::TypeId;
 use std::borrow::Cow;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
 use std::ops::Range;
@@ -113,7 +113,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             &self.query.world,
             e,
             &self.state.vec,
-            self.query.cache_mapping.get_mut(),
+            // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
             // &mut self.state.destroys,
         )
@@ -124,15 +124,15 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         e: Entity,
         components: <A as Bundle>::Item,
     ) -> Result<bool, QueryError> {
-        let addr = check(
+        let (addr, _world_index, local_index) = check(
             &self.query.world,
             e,
-            self.query.cache_mapping.get_mut(),
+            // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
         )?;
         self.state.alter(
             &self.query.world,
-            self.query.cache_mapping.get_mut().1,
+            local_index,
             e,
             addr.row,
             components,
@@ -236,7 +236,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             &self.query.world,
             e,
             &self.state.vec,
-            self.query.cache_mapping.get_mut(),
+            // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
             // &mut self.state.destroys,
         )
@@ -247,15 +247,15 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         e: Entity,
         components: <A as Bundle>::Item,
     ) -> Result<bool, QueryError> {
-        let addr = check(
+        let (addr, _world_index, local_index) = check(
             &self.query.world,
             e,
-            self.query.cache_mapping.get_mut(),
+            // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
         )?;
         self.state.alter(
             &self.query.world,
-            self.query.cache_mapping.get_mut().1,
+            local_index,
             e,
             addr.row,
             components,
@@ -518,12 +518,12 @@ fn destroy<'w>(
     world: &'w World,
     entity: Entity,
     vec: &Vec<ArchetypeMapping>,
-    cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+    // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &Vec<ArchetypeLocalIndex>,
     // destroys: &mut Vec<(ArchetypeLocalIndex, Row)>,
 ) -> Result<bool, QueryError> {
-    let addr = check(world, entity, cache_mapping, map)?;
-    let ar = unsafe { &vec.get_unchecked(cache_mapping.1.0 as usize).src };
+    let (addr, _world_index, local_index) = check(world, entity, /* cache_mapping, */ map)?;
+    let ar = unsafe { &vec.get_unchecked(local_index.0 as usize).src };
     destroy_row(world, ar, addr.row)
 }
 /// 标记销毁
