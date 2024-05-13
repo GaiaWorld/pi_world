@@ -425,7 +425,7 @@ impl ExecGraph {
         node_index: NodeIndex,
         node: &Node,
     ) {
-        // println!("exec, node_index: {:?}", node_index);
+        println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
                 // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
@@ -752,6 +752,7 @@ impl GraphInner {
     // 尝试run是否over
     fn run_over<A: AsyncRuntime>(&self, rt: &A) {
         let r = self.to_count.fetch_sub(1, Ordering::Relaxed);
+        println!("run_over!!! to_count: {}", r);
         if r == 1 {
             let s = self.sender.clone();
             let _ = rt.spawn(async move {

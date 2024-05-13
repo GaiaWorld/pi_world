@@ -195,14 +195,14 @@ mod test_mod {
     #[test]
     fn test_columns() {
         let mut c = Column::new(ComponentInfo::of::<Transform>());
-        c.write(0, Transform([0.0; 16]));
-        c.write(1, Transform([1.0; 16]));
-        dbg!(c.get::<Transform>(0));
-        dbg!(c.get::<Transform>(1));
+        c.write(Row(0), Transform([0.0; 16]));
+        c.write(Row(1), Transform([1.0; 16]));
+        dbg!(c.get::<Transform>(Row(0)));
+        dbg!(c.get::<Transform>(Row(1)));
         let mut action = Default::default();
         c.collect(2, &mut action);
-        dbg!(c.get::<Transform>(0));
-        dbg!(c.get::<Transform>(1));
+        dbg!(c.get::<Transform>(Row(0)));
+        dbg!(c.get::<Transform>(Row(1)));
     }
 
     #[test]
@@ -210,22 +210,22 @@ mod test_mod {
         let mut action = Default::default();
         let mut set = Default::default();
         let mut removes: AppendVec<Row> = Default::default();
-        removes.insert(1);
-        removes.insert(2);
+        removes.insert(Row(1));
+        removes.insert(Row(2));
         //removes.insert(0);
         let len = Table::removes_action(&removes, removes.len(), 7, &mut action, &mut set);
         assert_eq!(len, 5);
         assert_eq!(action.len(), 2);
-        assert_eq!(action[0], (6, 1));
-        assert_eq!(action[1], (5, 2));
+        assert_eq!(action[0], (Row(6), Row(1)));
+        assert_eq!(action[1], (Row(5), Row(2)));
         removes.clear();
-        removes.insert(1);
-        removes.insert(6);
+        removes.insert(Row(1));
+        removes.insert(Row(6));
         //removes.insert(0);
         let len = Table::removes_action(&removes, removes.len(), 7, &mut action, &mut set);
         assert_eq!(len, 5);
         assert_eq!(action.len(), 1);
-        assert_eq!(action[0], (5, 1));
+        assert_eq!(action[0], (Row(5), Row(1)));
     }
     #[test]
     fn test() {
@@ -267,7 +267,7 @@ mod test_mod {
         let entities = (0..10_000).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
         world.collect();
         {
-            let mut alter = world.make_alterer::<(), (With<A>,), (B,), ()>();
+            let mut alter = world.make_alterer::<(&A), (With<A>,), (B,), ()>();
             let mut it = alter.iter_mut();
             while let Some(_) = it.next() {
                 let _ = it.alter((B(0),));
@@ -277,7 +277,7 @@ mod test_mod {
             assert_eq!(world.get_component::<B>(*e).is_ok(), true)
         }
         {
-            let mut alter = world.make_alterer::<(), (With<A>, With<B>), (), (B,)>();
+            let mut alter = world.make_alterer::<(&A), (With<A>, With<B>), (), (B,)>();
             let mut it = alter.iter_mut();
             while let Some(_) = it.next() {
                 let _ = it.alter(());
@@ -484,9 +484,10 @@ mod test_mod {
             mut i0: Alter<&Age1, (), (), (Age3,)>,
             q0: Query<(Entity, &mut Age0, &Age1), ()>,
         ) {
-            println!("alter1 it:{:?}", q0.iter().size_hint());
+            // println!("alter1 it:{:?}", q0.iter().size_hint());
             for (e, _, _) in q0.iter() {
-                let _r = i0.alter(e, ());
+                println!("alter1!! e: {:?}", e);
+                let _r = i0.alter(e, ()).unwrap();
             }
             println!("alter1: end");
         }
@@ -495,18 +496,17 @@ mod test_mod {
             for (e, age0, _) in q0.iter() {
                 println!("e {:?}, age0: {:?}", e, age0);
             }
-        
             println!("removed_l: end");
         }
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert);
         // app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter);
-        app.add_system(Update, removed_l);
-        app.add_system(Update, print_info);
+        // app.add_system(Update, removed_l);
+        // app.add_system(Update, print_info);
         
         app.run();
-        app.run();
+        // app.run();
     }
 
     #[test]

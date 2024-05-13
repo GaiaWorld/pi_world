@@ -389,7 +389,7 @@ impl ArchetypeMapping {
         ArchetypeMapping {
             src,
             dst,
-            dst_index: 0,
+            dst_index: ArchetypeWorldIndex(0),
             move_indexs: 0..0,
             add_indexs: 0..0,
             remove_indexs: 0..0,
@@ -441,7 +441,7 @@ impl<A: Bundle> AlterState<A> {
         tick: Tick,
     ) -> Result<bool, QueryError> {
         let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index.0 as usize) };
-        if mapping.dst.len() == 0 {
+        if mapping.dst.len() == Row::default() {
             // 如果为空映射，则创建components，去world上查找或创建
             mapping_init(
                 world,
@@ -598,7 +598,7 @@ pub(crate) fn mapping_init<'a>(
         for (i, t) in mapping.dst.get_columns().iter().enumerate() {
             let column = mapping.src.get_column_index(t.info().world_index);
             if column.is_null() {
-                add_columns.push(i as ColumnIndex);
+                add_columns.push(ColumnIndex(i as u16));
             }
         }
     }
@@ -616,7 +616,7 @@ pub(crate) fn mapping_init<'a>(
                 // 获取被移除的组件在目标原型的移除列的脏位置，如果没有，则表示该组件无监听
                 let remove_column_dirty_index =
                     mapping.dst.find_remove_column_dirty(t.info().world_index);
-                removed_columns.push((i as ColumnIndex, remove_column_dirty_index));
+                removed_columns.push((ColumnIndex(i as u16), remove_column_dirty_index));
             }
         }
     }
@@ -633,7 +633,7 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
     e: Entity,
 ) -> Result<Row, QueryError> {
-    let e = if !ar_index.0.is_null() {
+    let e = if !ar_index.is_null() {
         let e = mapping.src.mark_remove(src_row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);

@@ -10,7 +10,8 @@
 ## 需要把执行图的图部分拆成单独的crate，这样静态依赖图和渲染图都可以重用这个图，同时也好检查是否循环引用。
 ## 优化SingleRes的init_state, 抽成多个函数，这样相同的T可以共用函数
 ## 优化Query的CacheMapping，及alter的Mapping
-## 将图拆成多个节点
+
+
 
 # v0.1.11 
 ## 已经支持异步system
@@ -28,3 +29,7 @@
 ## 增加Removed<组件>, 原型上加remove_columns的监听
 ## 增加了ArchetypeInfo的查询对象，显示实体所在的原型及行
 ## 优化了Query.iter, 根据是否有脏监听过滤器分为三种情况迭代，iter_normal, iter_dirty, iter_dirtys，多个脏监听内部使用bitset去重
+
+# v0.3
+## ArcheypeWorldIndex ComponentIndex ColumnIndex Row 改成类型
+## 将原型图节点拆成了原型组件节点

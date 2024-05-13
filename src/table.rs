@@ -40,7 +40,7 @@ impl Table {
         let mut column_map = Vec::with_capacity(max);
         column_map.resize(max, ColumnIndex::null());
         for (i, c) in columns.iter().enumerate() {
-            *unsafe { column_map.get_unchecked_mut(c.info().world_index as usize) } = i as ColumnIndex;
+            *unsafe { column_map.get_unchecked_mut(c.info().world_index as usize) } = ColumnIndex(i as u16);
         }
         Self {
             entities: AppendVec::default(),
@@ -54,15 +54,15 @@ impl Table {
     /// Returns the number of elements in the archetype.
     #[inline(always)]
     pub fn len(&self) -> Row {
-        self.entities.len() as Row
+        Row(self.entities.len() as u32) 
     }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {
-        *self.entities.load_alloc(row as usize)
+        *self.entities.load_alloc(row.0 as usize)
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
-        let a = self.entities.load_alloc(row as usize);
+        let a = self.entities.load_alloc(row.0 as usize);
         *a = e;
     }
     #[inline(always)]
@@ -103,7 +103,7 @@ impl Table {
     }
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
         assert!(!index.is_null());
-        unsafe { self.columns.get_unchecked(index as usize)}
+        unsafe { self.columns.get_unchecked(index.0 as usize)}
     }
     /// 添加changed监听器，原型刚创建时调用
     pub fn add_changed_listener(&self, index: ComponentIndex, owner: TypeId) {
@@ -160,7 +160,7 @@ impl Table {
             if !listener_index.is_null() {
                 vec.push(DirtyIndex {
                     listener_index,
-                    dtype: DirtyType::Removed(column_index as ColumnIndex),
+                    dtype: DirtyType::Removed(ColumnIndex(column_index as u16)),
                 });
             }
         }
@@ -183,13 +183,13 @@ impl Table {
     pub(crate) fn find_remove_column_dirty(&self, index: ComponentIndex) -> ColumnIndex {
         let mut it = unsafe { &*self.remove_columns.get() }.iter().enumerate();
         it.find(|r| r.1 .0 == index)
-            .map_or(ColumnIndex::null(), |(column_index, _)| column_index as ColumnIndex)
+            .map_or(ColumnIndex::null(), |(column_index, _)| ColumnIndex(column_index as u16))
     }
     /// 寻找指定位置的组件列脏
     pub(crate) fn get_remove_column_dirty(&self, column_index: ColumnIndex) -> &Dirty {
         unsafe {
             &(&*self.remove_columns.get())
-                .get_unchecked(column_index as usize)
+                .get_unchecked(column_index.0 as usize)
                 .1
         }
     }
@@ -213,13 +213,13 @@ impl Table {
     }
     #[inline(always)]
     pub fn alloc(&self) -> Row {
-        self.entities.alloc_index(1) as Row
+        Row(self.entities.alloc_index(1) as u32)
     }
     /// 标记销毁，用于destroy
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_destroy(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row as usize);
+        let e = self.entities.load_alloc(row.0 as usize);
         if e.is_null() {
             return *e;
         }
@@ -230,7 +230,7 @@ impl Table {
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row as usize);
+        let e = self.entities.load_alloc(row.0 as usize);
         if e.is_null() {
             return *e;
         }
@@ -281,8 +281,8 @@ impl Table {
         if remove_len == 1 {
             // 移除一个，用交换尾部的方式
             let remove_row = unsafe { removes.get_unchecked(0) };
-            if (*remove_row) as usize + 1 < entity_len {
-                action.push((entity_len as u32 - 1, *remove_row));
+            if (*remove_row).0 as usize + 1 < entity_len {
+                action.push((Row(entity_len as u32 - 1), *remove_row));
             }
             return entity_len - 1;
         }
@@ -302,14 +302,14 @@ impl Table {
             while start < end {
                 index -= 1;
                 let remove_row = unsafe { action.get_unchecked(end - 1) };
-                if remove_row.0 as usize == index {
+                if remove_row.0.0 as usize == index {
                     // 最大的要移动的行就是entitys的最后一个，则跳过
                     end -= 1;
                     continue;
                 }
                 // 移动到前面
                 let r = unsafe { action.get_unchecked_mut(start) };
-                r.0 = index as u32;
+                r.0 = Row(index as u32);
                 start += 1;
             }
             action.truncate(end);
@@ -320,7 +320,7 @@ impl Table {
         set.clear();
         set.grow(entity_len);
         for row in removes.iter() {
-            set.set(*row as usize, true);
+            set.set((*row).0 as usize, true);
         }
         let ones = set.ones();
         let mut end = entity_len;
@@ -333,7 +333,7 @@ impl Table {
                 }
                 if !set.contains(end) {
                     // 放入移动对
-                    action.push((end as u32, row as u32));
+                    action.push((Row(end as u32), Row(row as u32)));
                     break;
                 }
             }
@@ -395,11 +395,11 @@ impl Table {
         for (src, dst) in action.iter() {
             let e = unsafe {
                 replace(
-                    self.entities.get_unchecked_mut(*src as usize),
+                    self.entities.get_unchecked_mut((*src).0 as usize),
                     Entity::null(),
                 )
             };
-            *unsafe { self.entities.get_unchecked_mut(*dst as usize) } = e;
+            *unsafe { self.entities.get_unchecked_mut((*dst).0 as usize) } = e;
             // 修改world上entity的地址
             world.replace_row(e, *dst);
         }
@@ -414,7 +414,7 @@ impl Table {
 }
 impl Drop for Table {
     fn drop(&mut self) {
-        let len = self.len() as usize;
+        let len = self.len().0 as usize;
         if len == 0 {
             return;
         }
@@ -425,7 +425,7 @@ impl Drop for Table {
             // 释放每个列中还存在的row
             for (row, e) in self.entities.iter().enumerate() {
                 if !e.is_null() {
-                    c.drop_row_unchecked(row as Row);
+                    c.drop_row_unchecked(Row(row as u32));
                 }
             }
         }

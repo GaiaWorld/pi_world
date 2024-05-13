@@ -558,7 +558,7 @@ impl World {
         self.archetype_map.get(&id)
     }
     pub fn index_archetype(&self, index: ArchetypeWorldIndex) -> Option<&ShareArchetype> {
-        self.archetype_arr.get(index as usize)
+        self.archetype_arr.get(index.0 as usize)
     }
     pub fn archetype_list<'a>(&'a self) -> SafeVecIter<'a, ShareArchetype> {
         self.archetype_arr.iter()
@@ -623,7 +623,7 @@ impl World {
         let index = entry.index() as u32;
         ar.index.store(index, Ordering::Relaxed);
         entry.insert(ar.clone()); // 确保其他线程一定可以看见
-        index
+        ArchetypeWorldIndex(index)
     }
     /// 插入一个新的Entity
     #[inline(always)]
@@ -647,7 +647,7 @@ impl World {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index as usize) };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
         let e = ar.mark_destroy(addr.row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
@@ -658,7 +658,7 @@ impl World {
     /// 创建一个新的实体
     pub fn alloc_entity(&self) -> Entity {
         self.entities
-            .insert(EntityAddr::new(ArchetypeWorldIndex::null(), 0))
+            .insert(EntityAddr::new(ArchetypeWorldIndex::null(), Row(0)))
     }
     /// 销毁指定的实体
     pub fn init_component<T: 'static>(&self) -> ComponentIndex {
@@ -804,6 +804,6 @@ impl EntityAddr {
     }
     #[inline(always)]
     pub fn archetype_index(&self) -> u32 {
-        self.index 
+        self.index.0 
     }
 }

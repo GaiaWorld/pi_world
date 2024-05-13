@@ -41,18 +41,18 @@ impl Column {
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
         // todo!()
-        self.ticks.get_i(row as usize).map_or(Tick::default(), |t| *t)
+        self.ticks.get_i(row.0 as usize).map_or(Tick::default(), |t| *t)
     }
     #[inline(always)]
     pub fn get_tick(&self, row: Row) -> Option<Tick> {
-        self.ticks.get(row as usize).map(|t| *t)
+        self.ticks.get(row.0 as usize).map(|t| *t)
     }
     #[inline]
     pub fn add_record(&self, e: Entity, row: Row, tick: Tick) {
         if !self.is_record_tick {
             return;
         }
-        *self.ticks.load_alloc(row as usize) = tick;
+        *self.ticks.load_alloc(row.0 as usize) = tick;
         self.dirty.record(e, row);
     }
     #[inline]
@@ -60,7 +60,7 @@ impl Column {
         if !self.is_record_tick {
             return;
         }
-        let old = self.ticks.load_alloc(row as usize);
+        let old = self.ticks.load_alloc(row.0 as usize);
         if *old >= tick {
             return;
         }
@@ -69,7 +69,7 @@ impl Column {
     }
     #[inline]
     pub fn add_record_unchecked(&self, e: Entity, row: Row, tick: Tick) {
-        *self.ticks.load_alloc(row as usize) = tick;
+        *self.ticks.load_alloc(row.0 as usize) = tick;
         self.dirty.record_unchecked(e, row);
     }
     #[inline(always)]
@@ -133,8 +133,8 @@ impl Column {
             for (src, dst) in action.iter() {
                 self.collect_key(src, dst);
                 unsafe {
-                    let tick = self.ticks.get_unchecked(*src as usize);
-                    *self.ticks.get_unchecked_mut(*dst as usize) = *tick;
+                    let tick = self.ticks.get_unchecked((*src).0 as usize);
+                    *self.ticks.get_unchecked_mut((*dst).0 as usize) = *tick;
                 }
             }
             self.ticks.collect();
@@ -184,7 +184,7 @@ impl Blob {
     #[inline(always)]
     pub unsafe fn get(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
-        let row = row as usize;
+        let row = row.0 as usize;
         if row < self.vec_capacity {
             // todo get_unchecked()
             return transmute(self.vec.get(row * self.info.mem_size).unwrap());
@@ -196,7 +196,7 @@ impl Blob {
     }
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {
-        let row = row as usize;
+        let row = row.0 as usize;
         if row < self.vec_capacity {
             // todo get_unchecked()
             return transmute(self.vec.get(row * self.info.mem_size).unwrap());

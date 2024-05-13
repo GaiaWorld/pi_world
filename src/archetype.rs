@@ -31,9 +31,39 @@ use crate::world::{ComponentIndex, SetDefault, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
-pub type Row = u32;
-pub type ArchetypeWorldIndex = u32;
-pub type ColumnIndex = u16;
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Row(pub(crate) u32);
+impl pi_null::Null for Row {
+    fn is_null(&self) -> bool{
+        self.0 == u32::MAX
+    }
+    
+    fn null() -> Self {
+        Self(u32::MAX)
+    }
+}
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct  ArchetypeWorldIndex(pub(crate) u32);
+impl pi_null::Null for ArchetypeWorldIndex {
+    fn is_null(&self) -> bool{
+        self.0 == u32::MAX
+    }
+    
+    fn null() -> Self {
+        Self(u32::MAX)
+    }
+}
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ColumnIndex(pub(crate) u16);
+impl pi_null::Null for ColumnIndex {
+    fn is_null(&self) -> bool{
+        self.0 == u16::MAX
+    }
+    
+    fn null() -> Self {
+        Self(u16::MAX)
+    }
+}
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -166,7 +196,7 @@ impl Archetype {
     // 获得ready状态及所在的World原型index
     #[inline(always)]
     pub fn index(&self) -> ArchetypeWorldIndex {
-        self.index.load(Ordering::Relaxed)
+        ArchetypeWorldIndex(self.index.load(Ordering::Relaxed))
     }
     // 原型表结构改变， 在该原型下添加一些组件，删除一些组件，得到新原型需要包含哪些组件，及移动的组件
     pub fn alter(

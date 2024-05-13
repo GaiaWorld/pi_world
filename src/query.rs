@@ -309,7 +309,13 @@ unsafe fn find_dirty_listeners(
     }
 }
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ArchetypeLocalIndex(pub u16);
+pub struct ArchetypeLocalIndex(pub(crate) u16);
+
+impl ArchetypeLocalIndex {
+    pub fn is_null(&self) -> bool {
+        self.0 == u16::MAX
+    }
+}
 
 
 
@@ -318,7 +324,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
-    pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
+    pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引 Vec<ArchetypeLocalIndex>
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
@@ -384,7 +390,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // 检查新增的原型
         for i in self.archetype_len..len {
             let ar = unsafe { world.archetype_arr.get_unchecked(i) };
-            self.add_archetype(world, ar, i as ArchetypeWorldIndex);
+            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32));
         }
         self.archetype_len = len;
         // println!("align1===={:?}", (std::any::type_name::<Self>(), len, self.archetype_len));
@@ -443,7 +449,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn len(&self) -> usize {
         let mut len = 0;
         for arqs in &self.vec {
-            len += arqs.ar.len() as usize;
+            len += arqs.ar.len().0 as usize;
         }
         len
     }
@@ -553,7 +559,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 let bitset = if F::LISTENER_COUNT == 1 {
                     FixedBitSet::new()
                 } else {
-                    FixedBitSet::with_capacity(arqs.ar.len() as usize)
+                    FixedBitSet::with_capacity(arqs.ar.len().0 as usize)
                 };
                 // 该查询有组件变化监听器， 倒序迭代所脏的原型
                 let len = arqs.listeners.len() - 1;
@@ -566,7 +572,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     ar_index: ArchetypeLocalIndex(ar_index as u16),
                     fetch,
                     e: Entity::null(),
-                    row: u32::null(),
+                    row: Row::null(),
                     dirty: DirtyIter::new(arqs.ar.get_iter(&d_index), len),
                     bitset,
                     cache_mapping: state.cache_mapping,
@@ -582,7 +588,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             ar_index: ArchetypeLocalIndex(0),
             fetch: MaybeUninit::uninit(),
             e: Entity::null(),
-            row: 0,
+            row: Row(0),
             dirty: DirtyIter::empty(),
             bitset: FixedBitSet::new(),
             cache_mapping: state.cache_mapping,
@@ -594,8 +600,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            if self.row > 0 {
-                self.row -= 1;
+            if self.row.0 > 0 {
+                self.row.0 -= 1;
                 self.e = self.ar.get(self.row);
                 // 要求条目不为空
                 if !self.e.is_null() {
@@ -689,10 +695,10 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
         loop {
             if let Some(d) = self.dirty.it.next() {
-                if self.bitset.contains(d.row as usize) {
+                if self.bitset.contains(d.row.0 as usize) {
                     continue;
                 }
-                self.bitset.set(d.row as usize, true);
+                self.bitset.set(d.row.0 as usize, true);
                 self.row = d.row;
                 if self.dirty.check_e {
                     // 如果不检查对应row的e，则是查询被标记销毁的实体
@@ -749,7 +755,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             let d_index = unsafe { arqs.listeners.get_unchecked(len) };
             let iter = arqs.ar.get_iter(&d_index);
             self.dirty = DirtyIter::new(iter, len);
-            let len = arqs.ar.len() as usize;
+            let len = arqs.ar.len().0 as usize;
             if self.bitset.len() < len {
                 self.bitset = FixedBitSet::with_capacity(len);
             } else {
@@ -761,7 +767,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     fn size_hint_normal(&self) -> (usize, Option<usize>) {
         let it = self.state.vec[0..self.ar_index.0 as usize].iter();
         let count = it.map(|arqs| arqs.ar.len()).count();
-        (self.row as usize, Some(self.row as usize + count))
+        (self.row.0 as usize, Some(self.row.0 as usize + count))
     }
     fn size_hint_dirty(&self) -> (usize, Option<usize>) {
         // 获得当前原型的当前列的脏长度
