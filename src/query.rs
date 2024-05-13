@@ -533,7 +533,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 state.last_run,
             ));
             if F::LISTENER_COUNT == 0 {
-                println!("ar_index===={:?}", (ar_index, arqs.ar.len()));
                 // 该查询没有监听组件变化，倒序迭代原型的行
                 return QueryIter {
                     world,

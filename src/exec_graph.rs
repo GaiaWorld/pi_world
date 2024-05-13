@@ -332,6 +332,7 @@ impl ExecGraph {
                                 let (alter_node_index, _) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
                                 // 该system为该原型全部组件的from
                                 inner.adjust_edge(system_index, alter_node_index);
+                                nodes.push(alter_node_index);
                             }
                         }
                     } else if depend.flag == Flags::READ {
@@ -343,7 +344,7 @@ impl ExecGraph {
                         continue;
                     } else if depend.flag.bits() != 0 {
                         // 有写或者删除，则该system为该原型的from
-                        for index in depend.reads.iter() {
+                        for index in depend.writes.iter() {
                             let node_index = ar_component_index_node_index_map[*index as usize];
                             inner.adjust_edge(system_index, node_index);
                         }
@@ -358,6 +359,7 @@ impl ExecGraph {
         for node_index in nodes {
             let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
             let old_from_count = node.from_count.fetch_sub(1, Ordering::Relaxed);
+            // println!("old_from_count======{:?}, {:?}", old_from_count, node_index.index());
             if old_from_count == 1 {
                 // 只有当其他图的某系统S1创建该原型， 而当前图中不存在S1系统是，出现此情况， 此时需要给当前图添加froms
                 // 当前图此时一定处于未运行状态，可以直接安全的修改froms
@@ -466,6 +468,7 @@ impl ExecGraph {
         node: &Node,
         index: NodeIndex,
     ) {
+        // println!("exec_end===={:?}", node.label());
         // RUN_END
         let mut status =
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed) + NODE_STATUS_STEP;
@@ -586,6 +589,7 @@ impl GraphInner {
                 return;
             }
         }
+        // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
         if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
             self.add_edge(from, NodeIndex(big_node_index));
         }
@@ -610,6 +614,10 @@ impl GraphInner {
     /// 因此，采用锁阻塞的方法，先将from节点的status锁加上，然后判断status为Wait，则可以from_len加1并链接，如果status为Over则不加from_len并链接。如果为Running，则等待status为Over后再进行链接。
     /// 因为采用status加1来锁定， 所以全局只能同时有1个原型被添加。
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
+        if from.index() == 71 && to.index() == 73 {
+            println!("add_edge======{:?}, {:?}", from, to);
+        }
+        
         // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
         // 获得from节点
@@ -1039,7 +1047,8 @@ impl NGraph {
 
     pub fn add_edge(&mut self, before: usize, after: usize) {
         if self.edges.contains(&(before, after)) {
-            panic!("边已经存在！！{:?}", (before, after));
+            return;
+            // panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
 		let before_node = self.nodes.get_mut(before).unwrap();
