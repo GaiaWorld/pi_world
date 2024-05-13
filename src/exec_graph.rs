@@ -602,12 +602,12 @@ impl GraphInner {
             }
         }
         // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
-        // if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
-        //     self.add_edge(from, NodeIndex(big_node_index));
-        // }
-        // if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
-        //     self.add_edge(NodeIndex(small_node_index as u32), from);
-        // }
+        if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
+            self.add_edge(from, NodeIndex(big_node_index));
+        }
+        if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
+            self.add_edge(NodeIndex(small_node_index as u32), from);
+        }
         // 将当前的from和to节点连起来
         self.add_edge(from, to);
     }

@@ -54,7 +54,7 @@ impl Table {
     /// Returns the number of elements in the archetype.
     #[inline(always)]
     pub fn len(&self) -> Row {
-        Row(self.entities.len() as u32) 
+        Row(self.entities.len() as u32)
     }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {

@@ -31,37 +31,37 @@ use crate::world::{ComponentIndex, SetDefault, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Row(pub(crate) u32);
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Row(pub(crate) u32) ;
 impl pi_null::Null for Row {
-    fn is_null(&self) -> bool{
-        self.0 == u32::MAX
-    }
-    
     fn null() -> Self {
-        Self(u32::MAX)
+        Self(u32::null())
+    }
+
+    fn is_null(&self) -> bool {
+       self.0 == u32::null()
     }
 }
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct  ArchetypeWorldIndex(pub(crate) u32);
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ArchetypeWorldIndex(pub(crate) u32);
 impl pi_null::Null for ArchetypeWorldIndex {
-    fn is_null(&self) -> bool{
-        self.0 == u32::MAX
-    }
-    
     fn null() -> Self {
-        Self(u32::MAX)
+        Self(u32::null())
+    }
+
+    fn is_null(&self) -> bool {
+       self.0 == u32::null()
     }
 }
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ColumnIndex(pub(crate) u16);
 impl pi_null::Null for ColumnIndex {
-    fn is_null(&self) -> bool{
-        self.0 == u16::MAX
-    }
-    
     fn null() -> Self {
-        Self(u16::MAX)
+        Self(u16::null())
+    }
+
+    fn is_null(&self) -> bool {
+       self.0 == u16::null()
     }
 }
 

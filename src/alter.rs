@@ -441,7 +441,7 @@ impl<A: Bundle> AlterState<A> {
         tick: Tick,
     ) -> Result<bool, QueryError> {
         let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index.0 as usize) };
-        if mapping.dst.len() == Row::default() {
+        if mapping.dst.len().0 == 0 {
             // 如果为空映射，则创建components，去world上查找或创建
             mapping_init(
                 world,
@@ -633,7 +633,7 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
     e: Entity,
 ) -> Result<Row, QueryError> {
-    let e = if !ar_index.is_null() {
+    let e = if !ar_index.0.is_null() {
         let e = mapping.src.mark_remove(src_row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);

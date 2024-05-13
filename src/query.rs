@@ -311,20 +311,22 @@ unsafe fn find_dirty_listeners(
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ArchetypeLocalIndex(pub(crate) u16);
 
-impl ArchetypeLocalIndex {
-    pub fn is_null(&self) -> bool {
+impl pi_null::Null for ArchetypeLocalIndex{
+    fn null() -> Self {
+        Self(u16::null())
+    }
+
+    fn is_null(&self) -> bool {
         self.0 == u16::MAX
     }
 }
-
-
 
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
-    pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引 Vec<ArchetypeLocalIndex>
+    pub(crate) map: HashMap<ArchetypeWorldIndex, ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
@@ -390,7 +392,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // 检查新增的原型
         for i in self.archetype_len..len {
             let ar = unsafe { world.archetype_arr.get_unchecked(i) };
-            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32));
+            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32) );
         }
         self.archetype_len = len;
         // println!("align1===={:?}", (std::any::type_name::<Self>(), len, self.archetype_len));
@@ -572,7 +574,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     ar_index: ArchetypeLocalIndex(ar_index as u16),
                     fetch,
                     e: Entity::null(),
-                    row: Row::null(),
+                    row:  Row::null(),
                     dirty: DirtyIter::new(arqs.ar.get_iter(&d_index), len),
                     bitset,
                     cache_mapping: state.cache_mapping,

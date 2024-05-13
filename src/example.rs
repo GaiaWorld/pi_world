@@ -267,7 +267,7 @@ mod test_mod {
         let entities = (0..10_000).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
         world.collect();
         {
-            let mut alter = world.make_alterer::<(&A), (With<A>,), (B,), ()>();
+            let mut alter = world.make_alterer::<(&A,), (With<A>,), (B,), ()>();
             let mut it = alter.iter_mut();
             while let Some(_) = it.next() {
                 let _ = it.alter((B(0),));
@@ -277,7 +277,7 @@ mod test_mod {
             assert_eq!(world.get_component::<B>(*e).is_ok(), true)
         }
         {
-            let mut alter = world.make_alterer::<(&A), (With<A>, With<B>), (), (B,)>();
+            let mut alter = world.make_alterer::<(&A,), (With<A>, With<B>), (), (B,)>();
             let mut it = alter.iter_mut();
             while let Some(_) = it.next() {
                 let _ = it.alter(());
@@ -484,10 +484,9 @@ mod test_mod {
             mut i0: Alter<&Age1, (), (), (Age3,)>,
             q0: Query<(Entity, &mut Age0, &Age1), ()>,
         ) {
-            // println!("alter1 it:{:?}", q0.iter().size_hint());
+            println!("alter1 it:{:?}", q0.iter().size_hint());
             for (e, _, _) in q0.iter() {
-                println!("alter1!! e: {:?}", e);
-                let _r = i0.alter(e, ()).unwrap();
+                let _r = i0.alter(e, ());
             }
             println!("alter1: end");
         }
@@ -496,17 +495,18 @@ mod test_mod {
             for (e, age0, _) in q0.iter() {
                 println!("e {:?}, age0: {:?}", e, age0);
             }
+        
             println!("removed_l: end");
         }
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert);
         // app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter);
-        // app.add_system(Update, removed_l);
-        // app.add_system(Update, print_info);
+        app.add_system(Update, removed_l);
+        app.add_system(Update, print_info);
         
         app.run();
-        // app.run();
+        app.run();
     }
 
     #[test]
@@ -825,40 +825,40 @@ mod test_mod {
         println!(", age1: {:?}, age3: {:?}", age1, age3);
     }
 
-    #[test]
-    fn app_alter(){
-        let mut app = SingleThreadApp::new();
-        // let mut world = &app.world;
-        pub fn insert(i0: Insert<(Age1, Age0)>) {
-            println!("insert1 is now");
-            let e = i0.insert((Age1(1), Age0(0)));
-            println!("insert1 is end, e:{:?}", e);
-        }
+    // #[test]
+    // fn app_alter(){
+    //     let mut app = SingleThreadApp::new();
+    //     // let mut world = &app.world;
+    //     pub fn insert(i0: Insert<(Age1, Age0)>) {
+    //         println!("insert1 is now");
+    //         let e = i0.insert((Age1(1), Age0(0)));
+    //         println!("insert1 is end, e:{:?}", e);
+    //     }
 
-        pub fn alter(w: &World, q: Query<(Entity, &Age1, &Age0)>) {
-           q.iter().for_each(|(e, age1, age0)|{
-            println!("alter!! e: {:?}, age1: {:?}, age0: {:?}", e, age1, age0);
-                w.alter_components(e, &[
-                    (w.init_component::<Age2>(), true), 
-                    (w.init_component::<Age1>(), false)
-                ]).unwrap();
-           });
-        }
+    //     pub fn alter(w: &World, q: Query<(Entity, &Age1, &Age0)>) {
+    //        q.iter().for_each(|(e, age1, age0)|{
+    //         println!("alter!! e: {:?}, age1: {:?}, age0: {:?}", e, age1, age0);
+    //             w.alter_components(e, &[
+    //                 (w.init_component::<Age2>(), true), 
+    //                 (w.init_component::<Age1>(), false)
+    //             ]).unwrap();
+    //        });
+    //     }
 
-        pub fn query(w: &World, q: Query<(Entity, &Age2, &Age0)>) {
-            println!("query start!!!");
-            q.iter().for_each(|(e, age2, age0)|{
-                println!("query!!! e: {:?}, age2: {:?}, age0: {:?}", e, age2, age0);
-            });
-         }
+    //     pub fn query(w: &World, q: Query<(Entity, &Age2, &Age0)>) {
+    //         println!("query start!!!");
+    //         q.iter().for_each(|(e, age2, age0)|{
+    //             println!("query!!! e: {:?}, age2: {:?}, age0: {:?}", e, age2, age0);
+    //         });
+    //      }
 
-         app.add_system(Update, insert);
-         app.add_system(Update, alter);
-         app.add_system(Update, query);
+    //      app.add_system(Update, insert);
+    //      app.add_system(Update, alter);
+    //      app.add_system(Update, query);
 
-         app.run();
-         app.run();
-    }
+    //      app.run();
+    //      app.run();
+    // }
 
     #[test]
     fn world_allow(){
