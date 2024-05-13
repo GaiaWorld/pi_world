@@ -152,13 +152,25 @@ impl ExecGraph {
         }
     }
 
-    pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> usize {
+    pub fn add_system(&self, sys_index: usize, sys_name: Cow<'static, str>) -> NodeIndex {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
         
         let index = inner.nodes.insert(Node::new(NodeType::System(sys_index, sys_name.clone())));
         // println!("find_node====={:?}", (index, inner.to_len.load(Ordering::Relaxed), &self.1, sys_name));
-        index
+        //inner.map.insert((sys_index as u128, 0), NodeIndex(index as u32));
+        NodeIndex(index as u32)
+    }
+    pub fn add_set(&self, set_name: Cow<'static, str>) -> NodeIndex {
+        let inner = self.0.as_ref();
+        inner.to_len.fetch_add(1, Ordering::Relaxed);
+        
+        let index = inner.nodes.insert(Node::new(NodeType::Set(set_name)));
+        NodeIndex(index as u32)
+    }
+    pub fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
+        let inner = self.0.as_ref();
+        inner.add_edge(from, to);
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -332,6 +344,7 @@ impl ExecGraph {
                                 let (alter_node_index, _) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
                                 // 该system为该原型全部组件的from
                                 inner.adjust_edge(system_index, alter_node_index);
+                                nodes.push(alter_node_index);
                             }
                         }
                     } else if depend.flag == Flags::READ {
@@ -343,7 +356,7 @@ impl ExecGraph {
                         continue;
                     } else if depend.flag.bits() != 0 {
                         // 有写或者删除，则该system为该原型的from
-                        for index in depend.reads.iter() {
+                        for index in depend.writes.iter() {
                             let node_index = ar_component_index_node_index_map[*index as usize];
                             inner.adjust_edge(system_index, node_index);
                         }
@@ -358,6 +371,7 @@ impl ExecGraph {
         for node_index in nodes {
             let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
             let old_from_count = node.from_count.fetch_sub(1, Ordering::Relaxed);
+            // println!("old_from_count======{:?}, {:?}", old_from_count, node_index.index());
             if old_from_count == 1 {
                 // 只有当其他图的某系统S1创建该原型， 而当前图中不存在S1系统是，出现此情况， 此时需要给当前图添加froms
                 // 当前图此时一定处于未运行状态，可以直接安全的修改froms
@@ -466,6 +480,7 @@ impl ExecGraph {
         node: &Node,
         index: NodeIndex,
     ) {
+        // println!("exec_end===={:?}", node.label());
         // RUN_END
         let mut status =
             node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed) + NODE_STATUS_STEP;
@@ -586,6 +601,7 @@ impl GraphInner {
                 return;
             }
         }
+        // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
         if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
             self.add_edge(from, NodeIndex(big_node_index));
         }
@@ -610,6 +626,10 @@ impl GraphInner {
     /// 因此，采用锁阻塞的方法，先将from节点的status锁加上，然后判断status为Wait，则可以from_len加1并链接，如果status为Over则不加from_len并链接。如果为Running，则等待status为Over后再进行链接。
     /// 因为采用status加1来锁定， 所以全局只能同时有1个原型被添加。
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
+        if from.index() == 71 && to.index() == 73 {
+            println!("add_edge======{:?}, {:?}", from, to);
+        }
+        
         // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
         // 获得from节点
@@ -824,6 +844,7 @@ pub enum NodeType {
     System(usize, Cow<'static, str>),
     ArchetypeComponent(u128, Cow<'static, str>),
     Res(Cow<'static, str>),
+    Set(Cow<'static, str>),
 }
 impl NodeType {
     // 类型的名字
@@ -833,6 +854,7 @@ impl NodeType {
             NodeType::System(_, sys_name) => &sys_name,
             NodeType::ArchetypeComponent(_, s) => &s, // 要改一下，但是先这样吧
             NodeType::Res(s) => &s,
+            NodeType::Set(s) => &s,
         }
     }
 }
@@ -843,6 +865,7 @@ impl Debug for NodeType {
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
             NodeType::ArchetypeComponent(index, s) => write!(f, "ArchetypeComponent({},{:?})", index, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
+            NodeType::Set(s) => write!(f, "Set({:?})", s),
         }
     }
 }
@@ -1040,7 +1063,8 @@ impl NGraph {
 
     pub fn add_edge(&mut self, before: usize, after: usize) {
         if self.edges.contains(&(before, after)) {
-            panic!("边已经存在！！{:?}", (before, after));
+            return;
+            // panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
 		let before_node = self.nodes.get_mut(before).unwrap();
