@@ -610,6 +610,10 @@ impl<'a, T> Ticker<'a, T> {
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
+
+    pub fn last_tick(&self) -> Tick {
+        self.c.last_run
+    }
     
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
