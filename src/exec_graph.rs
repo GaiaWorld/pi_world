@@ -601,7 +601,7 @@ impl GraphInner {
                 return;
             }
         }
-        println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
+        // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
         if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
             self.add_edge(from, NodeIndex(big_node_index));
         }

@@ -14,7 +14,7 @@ pub struct Schedule {
     system_configs: Vec<(Interned<dyn StageLabel>, SystemConfig)>,
     systems: Share<SafeVec<BoxedSystem>>,
     // graph: ExecGraph,
-    schedule_graph: HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (ExecGraph, HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool))>)>>,
+    schedule_graph: HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
     // 阶段执行顺序
     stage_sort: Vec<Interned<dyn StageLabel>>,
     action: Vec<(Row, Row)>,
@@ -122,62 +122,85 @@ impl Schedule {
         self.system_configs.push((stage_label, system_config));
     }
 
-    pub fn add_system_config(&mut self, stage_label: Interned<dyn StageLabel>, system_config: SystemConfig) -> (BaseConfig, TypeId) {
+    fn add_system_config(
+        &mut self, 
+        stage_label: Interned<dyn StageLabel>, 
+        system_config: SystemConfig, 
+        temp_map: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>)>>) -> (BaseConfig, TypeId) {
+        
         let sys = system_config.system;
         let name = sys.name().clone();
         let id =  sys.type_id();
         let index = self.systems.insert(sys);
         // 根据配置，添加到对应的派发器中
-        Self::add_system_config_inner(None, &system_config.config, &stage_label, index, &name, id, &mut self.schedule_graph, &self.set_configs);
+        Self::add_system_config_inner(None, None,&system_config.config, &stage_label, index, &name, id, &mut self.schedule_graph, temp_map, &self.set_configs);
         // 添加到主派发器中
-        Self::add_system_config_inner( None, &self.mian_config, &stage_label, index, &name, id, &mut self.schedule_graph, &self.set_configs);
+        Self::add_system_config_inner( None, None,&self.mian_config, &stage_label, index, &name, id, &mut self.schedule_graph, temp_map, &self.set_configs);
         (system_config.config, id)
     }
 
     fn add_system_config_inner(
-        _set: Option<Interned<dyn SystemSet>>,
+        set: Option<Interned<dyn SystemSet>>,
+        pre_set: Option<Interned<dyn SystemSet>>,
         config: &BaseConfig, 
         stage_label: &Interned<dyn StageLabel>, 
         index: usize, 
         system_name: &Cow<'static, str>,
         system_type_id: std::any::TypeId,
-        schedule_graph: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (ExecGraph, HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool))>)>>,
+        schedule_graph: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
+        temp_map: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>)>>,
         set_configs: &HashMap<Interned<dyn SystemSet>, BaseConfig>,
-    ) {
+    ){
+        println!("add_system_inner11====");
+        // 如果系统集配置了before或after， 则应该插入set为一个图节点
+        if let Some(set) = set {
+            for i in schedule_graph.iter_mut() {
+                
+            }
+
+            let set_map = match map.1.entry(set) {
+                std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
+                std::collections::hash_map::Entry::Vacant(r) => {
+                    let before_set_index = stage.add_set(format!("{:?}_before", set).into());
+                    let after_set_index = stage.add_set(format!("{:?}_after", set).into());
+                    println!("add_system_inner22====");
+                    r.insert(((before_set_index, false), (after_set_index, false), vec![]))
+                },
+            };
+            // 第一层系统集(递归下去不在push)
+            if pre_set.is_none() {
+                set_map.2.push(node_index);
+            }
+        }
+
         if config.schedules.len() > 0 {
             // println!("add_system_inner:{:?}", &config.schedules);
             // println!("add_system_inner11:{:?}", &schedule_graph.get(&MainSchedule.intern()).is_some());
             for schedule_label in config.schedules.iter() {
-                let schedule = schedule_graph.entry(*schedule_label);
-                let schedule = schedule.or_default();
+                let schedule = match schedule_graph.entry(*schedule_label) {
+                    std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(r) => {
+                        temp_map.insert(*schedule_label, Default::default());
+                        r.insert(Default::default())
+                    },
+                };
+                let map = temp_map.get_mut(schedule_label).unwrap();
                 
                 // let mut stage = schedule.entry(stage_label.clone());
                 let stage = match schedule.entry(stage_label.clone()) {
                     std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(r) => r.insert((
-                        ExecGraph::new(format!("{:?}&{:?}", schedule_label, stage_label)),
-                        HashMap::default(),
-                        HashMap::default(),
-                    )),
+                    std::collections::hash_map::Entry::Vacant(r) => {
+                        map.insert(stage_label.clone(), (HashMap::default(), HashMap::default()));
+                        r.insert(ExecGraph::new(format!("{:?}&{:?}", schedule_label, stage_label))) 
+                    },
                 };
+                let map = map.get_mut(stage_label).unwrap();
 
-                // 如果系统集配置了before或after， 则应该插入set为一个图节点
-                // if let Some(set) = set {
-                //     // match stage.1.entry(NodeType::Set(set)) {
-                //         //     std::collections::hash_map::Entry::Occupied(r) => r.get().clone(),
-                //         //     std::collections::hash_map::Entry::Vacant(r) => {
-                //         //         let node_index = stage.0.add_set(format!("{:?}", set).into());
-                //         //         r.insert(node_index).clone()
-                //         //     },
-                //         // };
-                // }
-                
+                // 添加节点
+                let node_index = stage.add_system(index, system_name.clone());
 
-
-                let node_index = stage.0.add_system(index, system_name.clone());
-                stage.1.insert(system_type_id, node_index);
-
-                // println!("add_system_inner:{:?}", (schedule_label, &schedule_graph.get(&MainSchedule.intern()).is_some()));
+                // system 类型id与图节点id映射
+                map.0.insert(system_type_id, node_index);
             }
         }
 
@@ -192,15 +215,52 @@ impl Schedule {
                 Some(r) => r,
                 None => continue,
             };
-            Self::add_system_config_inner(Some(*in_set),  config, &stage_label, index, &system_name, system_type_id, schedule_graph, set_configs)
+            Self::add_system_config_inner(Some(*in_set),  set, config, &stage_label, index, &system_name, system_type_id, schedule_graph, temp_map, set_configs)
         }
     }
 
-    fn link_system_config(&mut self, stage_label: Interned<dyn StageLabel>, id: TypeId,  config: BaseConfig) {
+    fn link_system_config(
+        &mut self, 
+        stage_label: Interned<dyn StageLabel>, 
+        id: TypeId, config: BaseConfig, 
+        temp_map: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>)>>
+    ) {
         // 根据配置，添加到对应的派发器中
-        Self::link_system_inner(&config, &stage_label, id, &mut self.schedule_graph);
+        Self::link_system_inner( &config, &stage_label, id, &mut self.schedule_graph, temp_map);
         // 添加到主派发器中
-        Self::link_system_inner(&self.mian_config, &stage_label, id, &mut self.schedule_graph);
+      
+        Self::link_system_inner( &self.mian_config, &stage_label, id, &mut self.schedule_graph, temp_map);
+    }
+
+    fn get_set_node(
+        set: &Interned<dyn SystemSet>, 
+        is_before: bool, 
+        map: &mut HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>,
+        graph: &mut ExecGraph,
+    ) -> Option<NodeIndex> {
+        let set_nodes = match map.get_mut(set) {
+            Some(r) => r,
+            None => return None,
+        };
+        if is_before { 
+            let r = set_nodes.0 ;
+            if !r.1 {
+                for i in set_nodes.2.drain(..) {
+                    graph.add_edge(r.0, i);
+                }
+            }
+            
+            Some(r.0)
+        } else { 
+            let r = set_nodes.1 ;
+            if !r.1 {
+                for i in set_nodes.2.drain(..) {
+                    graph.add_edge(i, r.0);
+                }
+            }
+            Some(r.0)
+        }
+        
     }
 
     // 连接system的边
@@ -208,90 +268,55 @@ impl Schedule {
         config: &BaseConfig, 
         stage_label: &Interned<dyn StageLabel>, 
         system_type_id: std::any::TypeId,
-        schedule_graph: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (ExecGraph, HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool))>)>>,
+        schedule_graph: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
+        temp_map: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>)>>
     ) {
         if (config.before.len() > 0 || config.after.len() > 0) && config.schedules.len() > 0 {
             // println!("add_system_inner:{:?}", &config.schedules);
             // println!("add_system_inner11:{:?}", &schedule_graph.get(&MainSchedule.intern()).is_some());
             for schedule_label in config.schedules.iter() {
-                let schedule = schedule_graph.entry(*schedule_label);
-                let schedule = schedule.or_default();
+                let schedule = schedule_graph.get_mut(schedule_label).unwrap();
+                let map = temp_map.get_mut(schedule_label).unwrap();
                 
                 // let mut stage = schedule.entry(stage_label.clone());
                 let stage = schedule.get_mut(stage_label).unwrap();
+                let map = map.get_mut(stage_label).unwrap();
 
-                let node_index = stage.1.get(&system_type_id).unwrap().clone();
+                // 添加该节点与其他节点的顺序关系
+                let node_index = map.0.get(&system_type_id).unwrap().clone();
                 if config.before.len() > 0 {
                     for before in config.before.iter() {
                         let before_index = match before {
-                            NodeType::Set(_set) => {
-                                panic!("暂不支持集的顺序声明")
+                            NodeType::Set(set) => match Self::get_set_node(set, true, &mut map.1, stage) {
+                                Some(r) => r,
+                                None => continue,
                             },
-                            NodeType::System(r) => stage.1.get(r).unwrap().clone(),
+                            NodeType::System(r) => match map.0.get(r) {
+                                Some(r) => r.clone(),
+                                None => continue,
+                            },
                         };
-                        stage.0.add_edge(node_index, before_index);
+                        stage.add_edge(node_index, before_index);
                     }
                 }
                 
                 if config.after.len() > 0 {
                     for after in config.after.iter() {
                         let after_index = match after {
-                            NodeType::Set(_set) => {
-                                panic!("暂不支持集的顺序声明")
+                            NodeType::Set(set) => match Self::get_set_node(set, false, &mut map.1, stage) {
+                                Some(r) => r,
+                                None => continue,
                             },
-                            NodeType::System(r) => stage.1.get(r).unwrap().clone(),
+                            NodeType::System(r) => match map.0.get(r) {
+                                Some(r) => r.clone(),
+                                None => continue,
+                            },
                         };
-                        stage.0.add_edge(after_index, node_index);
+                        stage.add_edge(after_index, node_index);
                     }
                 }
 
-                // let index = match set {
-                //     Some(set) => {
-                //         if config.before.len() > 0 || config.after.len() > 0 {
-
-                //         }
-                //         let (set_before_index, set_after_index) = stage.2.get(&set).unwrap();
-                        
-                //         if config.before.len() > 0 {
-                //             if !set_after_index.1 { // set还未与节点连接
-                //                 stage.0.add_edge(set_after_index.0, node_index);
-                //             }
-
-                //             for before in config.before.iter() {
-                //                 let before_index = match before {
-                //                     NodeType::Set(set) => {
-                //                         let r = stage.2.get(set).unwrap();
-                //                         if !r.1.1 { // set还未与节点连接
-                //                             stage.0.add_edge(r.1.0, node_index);
-                //                         }
-                //                         r.1.0
-                //                     },
-                //                     NodeType::System(r) => stage.1.get(r).unwrap().clone(),
-                //                 };
-        
-                //                 stage.0.add_edge(before_index, before_index);
-                //             }
-                //         }
-                        
-                //         if config.after.len() > 0 {
-                //             for after in config.after.iter() {
-                //                 let after_index = match stage.1.get(&NodeType::Set(set)) {
-                //                     Some(r) => *r,
-                //                     None => continue,
-                //                 };
-        
-                //                 stage.0.add_edge(set_index, after_index);
-                //             }
-                //         }
-    
-                //         stage.0.add_edge(set_index, node_index);
-                //     },
-                //     None => node_index,
-                // };
-
                 
-
-                // println!("add_system_inner:{:?}", (schedule_label, &schedule_graph.get(&MainSchedule.intern()).is_some()));
             }
         }
 
@@ -311,17 +336,80 @@ impl Schedule {
         // }
     }
 
+    // 连接set的边
+    fn link_set(
+        &mut self,
+        temp_map: &mut HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, (HashMap<TypeId, NodeIndex>, HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool), Vec<NodeIndex>)>)>>
+    ) {
+        for (set, config) in self.set_configs.iter() {
+            for in_set in config.sets.iter() {
+                for (schedule_label, schedule) in self.schedule_graph.iter_mut() {
+                    let map = temp_map.get_mut(schedule_label).unwrap();
+                    for (stage_label, stage) in schedule.iter_mut() {
+                        let map = map.get_mut(stage_label).unwrap();
+                        if !map.1.contains_key(set) || !map.1.contains_key(in_set) {
+                            continue;
+                        }
+
+                        let before = Self::get_set_node(in_set, true, &mut map.1, stage).unwrap();
+                        let after = Self::get_set_node(set, true, &mut map.1, stage).unwrap();
+                        stage.add_edge(before, after);
+
+                        if config.before.len() > 0 {
+                            for before in config.before.iter() {
+                                let before_index = match before {
+                                    NodeType::Set(set) => match Self::get_set_node(set, true, &mut map.1, stage) {
+                                        Some(r) => r,
+                                        None => continue,
+                                    },
+                                    NodeType::System(r) => map.0.get(r).unwrap().clone(),
+                                };
+                                stage.add_edge(after, before_index);
+                            }
+                        }
+
+                        let before = Self::get_set_node(set, false, &mut map.1, stage).unwrap();
+                        let after = Self::get_set_node(in_set, false, &mut map.1, stage).unwrap();
+                        stage.add_edge(before, after);
+
+                        if config.after.len() > 0 {
+                            for after in config.after.iter() {
+                                let after_index = match after {
+                                    NodeType::Set(set) => match Self::get_set_node(set, false, &mut map.1, stage) {
+                                        Some(r) => r,
+                                        None => continue,
+                                    },
+                                    NodeType::System(r) => match map.0.get(r) {
+                                        Some(r) => r.clone(),
+                                        None => continue,
+                                    },
+                                };
+                                stage.add_edge(after_index, before);
+                            }
+                        }
+                        
+                        
+                    }
+                }
+            }
+            
+        }
+    }
+
     pub fn try_initialize(&mut self, world: &mut World) {
         if self.system_configs.is_empty() {
             return;
         }
 
+        let mut temp_map = HashMap::default();
         let mut system_configs = std::mem::take(&mut self.system_configs);
         let rr = system_configs.drain(..).map(|(stage_label, system_config)| {
-            (stage_label, self.add_system_config(stage_label, system_config))
+            (stage_label, self.add_system_config(stage_label, system_config, &mut temp_map))
         }).collect::<Vec<(Interned<dyn StageLabel>, (BaseConfig, TypeId))>>();
+        
+        self.link_set(&mut temp_map);
         for (stage_label, (config, id)) in rr {
-            self.link_system_config(stage_label, id, config);
+            self.link_system_config(stage_label, id, config, &mut temp_map);
         }
         // for (stage_label
         //     self.add_system_config(stage_label, system_config), system_config) in system_configs.drain(..) {
@@ -338,7 +426,7 @@ impl Schedule {
         for (_name, schedule) in self.schedule_graph.iter_mut() {
             // println!("stage:{:?} initialize", name);
             for (_, stage) in schedule.iter_mut() {
-                stage.0.initialize(self.systems.clone(), world, self.add_listener);
+                stage.initialize(self.systems.clone(), world, self.add_listener);
             }
         }
 
@@ -367,7 +455,7 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
-                Self::run_graph(world, rt, &mut stage.0, &self.systems);
+                Self::run_graph(world, rt, stage, &self.systems);
             }
         }
 
@@ -412,7 +500,7 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
-                Self::async_run_graph(world, rt, &mut stage.0, &mut self.systems).await;
+                Self::async_run_graph(world, rt, stage, &mut self.systems).await;
             }
         }
 

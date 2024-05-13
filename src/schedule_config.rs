@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{any::TypeId, hash::Hash};
 
 use bevy_utils::{define_label, intern::Interned};
 
@@ -22,6 +22,14 @@ define_label!(
     SCHEDULE_LABEL_INTERNER
 );
 
+pub trait IntoNodeType<Marker>
+where
+    Self: Sized,
+{
+    fn into_node_type(self) -> NodeType;
+}
+
+
 /****************************系统集配置********************************/
 pub trait IntoSystemSetConfigs
 where
@@ -37,6 +45,14 @@ where
     /// 设置可在哪个日程中运行
     fn in_schedule(self, schedule: impl ScheduleLabel) -> SetConfig {
         self.into_configs().in_schedule(schedule)
+    }
+
+    fn before<M>(self, after: impl IntoNodeType<M>) -> SetConfig {
+        self.into_configs().before(after)
+    }
+
+    fn after<M>(self, before: impl IntoNodeType<M>) -> SetConfig {
+        self.into_configs().after(before)
     }
 }
 
@@ -58,6 +74,22 @@ impl IntoSystemSetConfigs for SetConfig {
     fn in_schedule(mut self, schedule: impl ScheduleLabel) -> SetConfig {
         self.config.schedules.push(schedule.intern());
         self
+    }
+
+    fn before<M>(mut self, after: impl IntoNodeType<M>) -> SetConfig {
+        self.config.before.push(after.into_node_type());
+        self
+    }
+
+    fn after<M>(mut self, before: impl IntoNodeType<M>) -> SetConfig {
+        self.config.after.push(before.into_node_type());
+        self
+    }
+}
+
+impl<T: SystemSet> IntoNodeType<()> for T {
+    fn into_node_type(self) -> NodeType {
+        NodeType::Set(self.intern())
     }
 }
 
@@ -94,12 +126,12 @@ where
         self.into_configs().in_schedule(schedule)
     }
 
-    fn before<T: IntoSystemConfigs<Marker>>(self, after: T) -> SystemConfig {
-        self.into_configs().before(after.into_configs())
+    fn before<M>(self, after: impl IntoNodeType<M>) -> SystemConfig {
+        self.into_configs().before(after)
     }
 
-    fn after<T: IntoSystemConfigs<Marker>>(self, before: T) -> SystemConfig {
-        self.into_configs().after(before.into_configs())
+    fn after<M>(self, before: impl IntoNodeType<M>) -> SystemConfig {
+        self.into_configs().after(before)
     }
 }
 
@@ -124,13 +156,13 @@ impl IntoSystemConfigs<()> for SystemConfig {
         self
     }
 
-    fn before<T: IntoSystemConfigs<()>>(mut self, after: T) -> SystemConfig {
-        self.config.before.push(NodeType::System(after.into_configs().system.type_id()));
+    fn before<M>(mut self, after: impl IntoNodeType<M>) -> SystemConfig {
+        self.config.before.push(after.into_node_type());
         self
     }
 
-    fn after<T: IntoSystemConfigs<()>>(mut self, before: T) -> SystemConfig {
-        self.config.after.push(NodeType::System(before.into_configs().system.type_id()));
+    fn after<M>(mut self, before: impl IntoNodeType<M>) -> SystemConfig {
+        self.config.after.push(before.into_node_type());
         self
     }
 }
@@ -146,6 +178,12 @@ impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
                 after: Vec::new(),
             },
         }
+    }
+}
+
+impl<Marker, T: IntoSystem<Marker> + 'static> IntoNodeType<(usize, Marker)> for T {
+    fn into_node_type(self) -> NodeType {
+        NodeType::System(TypeId::of::<Self>())
     }
 }
 
