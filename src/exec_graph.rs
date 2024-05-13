@@ -628,6 +628,7 @@ impl GraphInner {
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
         if from.index() == 71 && to.index() == 73 {
             println!("add_edge======{:?}, {:?}", from, to);
+            // panic!("add_edge======{:?}, {:?}", from, to);
         }
         
         // 获得to节点
@@ -1063,8 +1064,8 @@ impl NGraph {
 
     pub fn add_edge(&mut self, before: usize, after: usize) {
         if self.edges.contains(&(before, after)) {
-            return;
-            // panic!("边已经存在！！{:?}", (before, after));
+            // return;
+            panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
 		let before_node = self.nodes.get_mut(before).unwrap();

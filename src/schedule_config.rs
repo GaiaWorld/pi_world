@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use bevy_utils::{define_label, intern::Interned};
 
 use crate::system::{BoxedSystem, IntoSystem};
@@ -66,6 +68,8 @@ impl<T: SystemSet> IntoSystemSetConfigs for T {
             config: BaseConfig {
                 sets: Vec::new(),
                 schedules: Vec::new(),
+                before: Vec::new(),
+                after: Vec::new(),
             },
         }
         
@@ -89,6 +93,14 @@ where
     fn in_schedule(self, schedule: impl ScheduleLabel) -> SystemConfig {
         self.into_configs().in_schedule(schedule)
     }
+
+    fn before<T: IntoSystemConfigs<Marker>>(self, after: T) -> SystemConfig {
+        self.into_configs().before(after.into_configs())
+    }
+
+    fn after<T: IntoSystemConfigs<Marker>>(self, before: T) -> SystemConfig {
+        self.into_configs().after(before.into_configs())
+    }
 }
 
 pub struct SystemConfig {
@@ -111,6 +123,16 @@ impl IntoSystemConfigs<()> for SystemConfig {
         self.config.schedules.push(schedule.intern());
         self
     }
+
+    fn before<T: IntoSystemConfigs<()>>(mut self, after: T) -> SystemConfig {
+        self.config.before.push(NodeType::System(after.into_configs().system.type_id()));
+        self
+    }
+
+    fn after<T: IntoSystemConfigs<()>>(mut self, before: T) -> SystemConfig {
+        self.config.after.push(NodeType::System(before.into_configs().system.type_id()));
+        self
+    }
 }
 
 impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
@@ -120,6 +142,8 @@ impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
             config: BaseConfig {
                 sets: Vec::new(),
                 schedules: Vec::new(),
+                before: Vec::new(),
+                after: Vec::new(),
             },
         }
     }
@@ -130,4 +154,15 @@ impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
 pub struct BaseConfig {
     pub(crate) sets: Vec<Interned<dyn SystemSet>>,
     pub(crate) schedules: Vec<Interned<dyn ScheduleLabel>>, // 需要添加到哪些日程中
+    pub(crate) before: Vec<NodeType>, // 节点顺序
+    pub(crate) after: Vec<NodeType>, // 节点顺序
 }
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub enum NodeType {
+    Set(Interned<dyn SystemSet>),
+    System(std::any::TypeId),
+}
+
+
+
