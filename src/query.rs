@@ -308,8 +308,10 @@ unsafe fn find_dirty_listeners(
         }
     }
 }
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ArchetypeLocalIndex(pub u16);
 
-pub type ArchetypeLocalIndex = usize;
+
 
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
@@ -359,7 +361,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             archetype_len: 0,
             map: Default::default(),
             last_run: Tick::default(),
-            cache_mapping: (ArchetypeWorldIndex::null(), 0),
+            cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
             _k: PhantomData,
         }
     }
@@ -371,7 +373,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let mut result = ArchetypeDependResult::new();
         Q::archetype_depend(world, archetype, &mut result);
-        !result.flag.contains(Flags::WITHOUT)
+        result.flag.bits() != 0 && !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
@@ -409,7 +411,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             // }
         }
         self.map
-            .insert(index, self.vec.len() as ArchetypeLocalIndex);
+            .insert(index, ArchetypeLocalIndex(self.vec.len() as u16));
         self.vec.push(ArchetypeQueryState {
             ar: ar.clone(),
             state: Q::init_state(world, ar),
@@ -425,7 +427,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = check(world, entity, cache_mapping, &self.map)?;
         // let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
-        let arqs = unsafe { &self.vec.get_unchecked(cache_mapping.1) };
+        let arqs = unsafe { &self.vec.get_unchecked(cache_mapping.1.0 as usize) };
         // println!("get======{:?}", (entity, arqs.index, addr, cache_mapping.0, cache_mapping.1,  arch.name()));
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
@@ -539,7 +541,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     state,
                     tick,
                     ar: &arqs.ar,
-                    ar_index,
+                    ar_index: ArchetypeLocalIndex(ar_index as u16),
                     fetch,
                     e: Entity::null(),
                     row: arqs.ar.len(),
@@ -561,7 +563,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     state,
                     tick,
                     ar: &arqs.ar,
-                    ar_index,
+                    ar_index: ArchetypeLocalIndex(ar_index as u16),
                     fetch,
                     e: Entity::null(),
                     row: u32::null(),
@@ -577,7 +579,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             state,
             tick,
             ar: world.empty_archetype(),
-            ar_index: 0,
+            ar_index: ArchetypeLocalIndex(0),
             fetch: MaybeUninit::uninit(),
             e: Entity::null(),
             row: 0,
@@ -603,13 +605,13 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 continue;
             }
             // 当前的原型已经迭代完毕
-            if self.ar_index == 0 {
+            if self.ar_index.0 == 0 {
                 // 所有原型都迭代过了
                 return None;
             }
             // 下一个原型
-            self.ar_index -= 1;
-            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+            self.ar_index.0 -= 1;
+            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize) };
             self.ar = &arqs.ar;
             self.fetch = MaybeUninit::new(Q::init_fetch(
                 self.world,
@@ -651,20 +653,20 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 检查当前原型的下一个被脏组件
             if self.dirty.index > 0 {
                 let len = self.dirty.index - 1;
-                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize) };
                 let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
                 let iter = arqs.ar.get_iter(&d_index);
                 self.dirty = DirtyIter::new(iter, len);
                 continue;
             }
             // 当前的原型已经迭代完毕
-            if self.ar_index == 0 {
+            if self.ar_index.0 == 0 {
                 // 所有原型都迭代过了
                 return None;
             }
             // 下一个原型
-            self.ar_index -= 1;
-            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+            self.ar_index.0 -= 1;
+            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize ) };
             if arqs.listeners.len() == 0 {
                 continue;
             }
@@ -717,20 +719,20 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 检查当前原型的下一个被脏组件
             if self.dirty.index > 0 {
                 let len = self.dirty.index - 1;
-                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize) };
                 let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
                 let iter = arqs.ar.get_iter(&d_index);
                 self.dirty = DirtyIter::new(iter, len);
                 continue;
             }
             // 当前的原型已经迭代完毕
-            if self.ar_index == 0 {
+            if self.ar_index.0 == 0 {
                 // 所有原型都迭代过了
                 return None;
             }
             // 下一个原型
-            self.ar_index -= 1;
-            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+            self.ar_index.0 -= 1;
+            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize) };
             if arqs.listeners.len() == 0 {
                 continue;
             }
@@ -757,19 +759,19 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     }
 
     fn size_hint_normal(&self) -> (usize, Option<usize>) {
-        let it = self.state.vec[0..self.ar_index as usize].iter();
+        let it = self.state.vec[0..self.ar_index.0 as usize].iter();
         let count = it.map(|arqs| arqs.ar.len()).count();
         (self.row as usize, Some(self.row as usize + count))
     }
     fn size_hint_dirty(&self) -> (usize, Option<usize>) {
         // 获得当前原型的当前列的脏长度
         let mut c: usize = self.dirty.it.size_hint().1.unwrap_or_default();
-        c += self.size_hint_ar_dirty(self.ar_index);
+        c += self.size_hint_ar_dirty(self.ar_index.0 as usize);
         (0, Some(c))
     }
     fn size_hint_ar_dirty(&self, ar_index: usize) -> usize {
         let mut c: usize = self.dirty.it.size_hint().1.unwrap_or_default();
-        let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index) };
+        let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.0 as usize) };
         // 获得当前原型的剩余列的脏长度
         c += self.size_hint_ar_column_dirty(&arqs.ar, &arqs.listeners, self.dirty.index);
         for i in 0..ar_index {
