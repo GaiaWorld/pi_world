@@ -153,14 +153,14 @@ impl World {
     /// 批量插入
     pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
     where
-        I: Iterator<Item = <Ins as Bundle>::Item>,
+        I: Iterator<Item = Ins>,
         Ins: Bundle,
     {
         InsertBatchIter::new(self, iter.into_iter())
     }
     /// 创建一个插入器
     pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
-        let components = I::components();
+        let components = I::components(Vec::new());
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = self.find_archtype(id, components);
         let s = I::init_state(self, &ar);
@@ -210,7 +210,7 @@ impl World {
         &mut self,
     ) -> Alterer<Q, F, A, D> {
         let mut query_state = QueryState::create(self);
-        let mut alter_state = AlterState::new(A::components(), D::components());
+        let mut alter_state = AlterState::new(A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
@@ -527,7 +527,7 @@ impl World {
     pub fn add_component<T: Bundle + 'static>(
         &self,
         _e: Entity,
-        _value: T::Item,
+        _value: T,
     ) -> Result<(), QueryError> {
         todo!()
         // Ok(())

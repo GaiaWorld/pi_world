@@ -292,7 +292,7 @@ impl Schedule {
         map3: &HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
         graph: &mut ExecGraph,
     ) -> NodeIndex {
-        println!("get_set_node===={:?}", (set, is_before));
+        // println!("get_set_node===={:?}", (set, is_before));
         let set_nodes = match map.entry(set.clone()) {
             std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
             std::collections::hash_map::Entry::Vacant(r) => {

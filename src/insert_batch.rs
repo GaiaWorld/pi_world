@@ -8,7 +8,7 @@ use crate::world::{Entity, World};
 
 pub struct InsertBatchIter<'w, I, Ins>
 where
-    I: Iterator<Item = <Ins as Bundle>::Item>,
+    I: Iterator<Item = Ins>,
     Ins: Bundle,
 {
     world: &'w mut World,
@@ -23,14 +23,14 @@ where
 
 impl<'w, I, Ins> InsertBatchIter<'w, I, Ins>
 where
-    I: Iterator<Item = <Ins as Bundle>::Item>,
+    I: Iterator<Item = Ins>,
     Ins: Bundle,
 {
     #[inline]
     pub(crate) fn new(world: &'w mut World, iter: I) -> Self {
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
-        let components = Ins::components();
+        let components = Ins::components(Vec::new());
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = world.find_archtype(id, components);
         let s = Ins::init_state(world, &ar);
@@ -51,7 +51,7 @@ where
 
 impl<I, Ins> Drop for InsertBatchIter<'_, I, Ins>
 where
-    I: Iterator<Item = <Ins as Bundle>::Item>,
+    I: Iterator<Item = Ins>,
     Ins: Bundle,
 {
     fn drop(&mut self) {
@@ -61,7 +61,7 @@ where
 
 impl<I, Ins> Iterator for InsertBatchIter<'_, I, Ins>
 where
-    I: Iterator<Item = <Ins as Bundle>::Item>,
+    I: Iterator<Item = Ins>,
     Ins: Bundle,
 {
     type Item = Entity;
@@ -79,7 +79,7 @@ where
 
 impl<I, Ins> ExactSizeIterator for InsertBatchIter<'_, I, Ins>
 where
-    I: ExactSizeIterator<Item = <Ins as Bundle>::Item>,
+    I: ExactSizeIterator<Item = Ins>,
     Ins: Bundle,
 {
     fn len(&self) -> usize {
@@ -89,7 +89,7 @@ where
 
 impl<I, Ins> FusedIterator for InsertBatchIter<'_, I, Ins>
 where
-    I: FusedIterator<Item = <Ins as Bundle>::Item>,
+    I: FusedIterator<Item = Ins>,
     Ins: Bundle,
 {
 }

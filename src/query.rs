@@ -447,11 +447,12 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         entity: Entity,
         // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
+        // println!("get1======{:?}", (entity, self.map.len()));
         let (addr, _world_index, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
-        // let arch = world.archetype_arr.get(cache_mapping.0 as usize).unwrap();
+        // let arch = world.archetype_arr.get(addr.archetype_index() as usize).unwrap();
 
         let arqs = unsafe { &self.vec.get_unchecked(local_index.0 as usize) };
-        // println!("get======{:?}", (entity, arqs.index, addr, cache_mapping.0, cache_mapping.1,  arch.name()));
+        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  arch.name()));
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
     }

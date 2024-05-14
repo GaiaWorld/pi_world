@@ -1,34 +1,51 @@
 #![allow(warnings)]
 use crate::prelude::*;
 
-#[derive(Copy, Clone, Debug, Eq, Default,PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Default,PartialEq, Component)]
 pub struct Age0(usize);
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Component)]
 pub struct Age1(usize);
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Component)]
 pub struct Age2(usize);
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Component)]
 pub struct Age3(usize);
 
+#[derive(Component)]
 pub struct Age4(usize);
+#[derive(Component)]
 pub struct Age5([usize; 16]);
+#[derive(Component)]
 pub struct Age6(usize);
+#[derive(Component)]
 pub struct Age7(usize);
+#[derive(Component)]
 pub struct Age8(usize);
+#[derive(Component)]
 pub struct Age9(usize);
+#[derive(Component)]
 pub struct Age10(usize);
+#[derive(Component)]
 pub struct Age11(usize);
+#[derive(Component)]
 pub struct Age12(usize);
+#[derive(Component)]
 pub struct Age13(usize);
+#[derive(Component)]
 pub struct Age14(usize);
+#[derive(Component)]
 pub struct Age15(usize);
+#[derive(Component)]
 pub struct Age16(usize);
+#[derive(Component)]
 pub struct Age17(usize);
+#[derive(Component)]
 pub struct Age18(usize);
+#[derive(Component)]
 pub struct Age19(usize);
+#[derive(Component)]
 pub struct Age20(usize);
 
 pub fn print_info(
@@ -157,22 +174,22 @@ pub fn print_e(
     println!("print_e: end");
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
 
 struct A(u32);
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
 struct B(u32);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Component)]
 struct Transform([f32; 16]);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Component)]
 struct Position([f32; 3]);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Component)]
 struct Rotation([f32; 3]);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Component)]
 struct Velocity([f32; 3]);
 
 #[cfg(test)]
@@ -291,16 +308,16 @@ mod test_mod {
     fn bench_heavy_compute(b: &mut Bencher) {
         use cgmath::*;
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Component)]
         struct Mat(Matrix4<f32>);
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Component)]
         struct Position(Vector3<f32>);
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Component)]
         struct Rotation(Vector3<f32>);
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Component)]
         struct Velocity(Vector3<f32>);
         let mut world = World::new();
         let i = world.make_inserter::<(Mat, Position, Rotation, Velocity)>();
@@ -511,10 +528,15 @@ mod test_mod {
 
     #[test]
     fn test_schedule() {
+        #[derive(Component)]
         struct A(f32);
+        #[derive(Component)]
         struct B(f32);
+        #[derive(Component)]
         struct C(f32);
+        #[derive(Component)]
         struct D(f32);
+        #[derive(Component)]
         struct E(f32);
 
         fn ab(mut query: Query<(&mut A, &mut B)>) {
@@ -564,10 +586,15 @@ mod test_mod {
 
     #[test]
     fn test_async_schedule() {
+        #[derive(Component)]
         struct A(f32);
+        #[derive(Component)]
         struct B(f32);
+        #[derive(Component)]
         struct C(f32);
+        #[derive(Component)]
         struct D(f32);
+        #[derive(Component)]
         struct E(f32);
 
         fn ab(

@@ -421,29 +421,26 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         const _: () = {
             impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
-                type Item = Self;
-                type State = (#(#world_path::insert::TState<#tuple_types>,)*);
+                type State = (#(<#tuple_types as #world_path::insert::Bundle>::State,)*);
 
-                fn components() -> Vec<#world_path::archetype::ComponentInfo> {
-                    vec![
-                        #(
-                            #world_path::archetype::ComponentInfo::of::<#tuple_types>(),
-                        )*
-                    ]
+                fn components(c: Vec<#world_path::archetype::ComponentInfo>) -> Vec<#world_path::archetype::ComponentInfo> {
+                    #(let c = #tuple_types::components(c);)*
+                    c
                 }
                 fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
-                    (#(#world_path::insert::TState::new(_archetype.get_column(_world.init_component::<#tuple_types>()).unwrap().0),)*)
+                    (#(<#tuple_types as #world_path::insert::Bundle>::init_state(_world, _archetype),)*)
                 }
 
                 fn insert(
                     _state: &Self::State,
-                    components: Self::Item,
+                    components: Self,
                     _e: #world_path::world::Entity,
                     _row: #world_path::archetype::Row,
                     tick: #world_path::world::Tick,
                 ) {
+                    
                     #(
-                        _state.#indexs.write(_e, _row, components.#idens, tick);
+                        <#tuple_types as Bundle>::insert(&_state.#indexs, components.#idens, _e, _row, tick);
                     )*
 
                 }
@@ -465,13 +462,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         const _: () = {
             impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
-                type Item = Self;
                 type State = #world_path::insert::TState<Self>;
 
-                fn components() -> Vec<#world_path::archetype::ComponentInfo> {
-                    vec![
-                        #world_path::archetype::ComponentInfo::of::<Self>()
-                    ]
+                fn components(mut c: Vec<#world_path::archetype::ComponentInfo>) -> Vec<#world_path::archetype::ComponentInfo> {
+                    c.push(#world_path::archetype::ComponentInfo::of::<Self>());
+                    c
                 }
                 fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
                     #world_path::insert::TState::new(_archetype.get_column(_world.init_component::<Self>()).unwrap().0)
@@ -479,7 +474,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 
                 fn insert(
                     state: &Self::State,
-                    components: Self::Item,
+                    components: Self,
                     e: #world_path::world::Entity,
                     row: #world_path::archetype::Row,
                     tick: #world_path::world::Tick,

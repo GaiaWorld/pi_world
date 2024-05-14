@@ -1,4 +1,4 @@
-use std::any::TypeId;
+
 use std::marker::PhantomData;
 use std::mem::transmute;
 
@@ -32,11 +32,11 @@ impl<'world, I: Bundle> Inserter<'world, I> {
         Self { world, state, tick }
     }
     #[inline(always)]
-    pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
+    pub fn insert(&self, components: I) -> Entity {
         Insert::<I>::new(self.world, &self.state, self.tick).insert(components)
     }
     #[inline(always)]
-    pub fn batch(&self, iter: impl IntoIterator<Item = <I as Bundle>::Item>) {
+    pub fn batch(&self, iter: impl IntoIterator<Item = I>) {
         let iter = iter.into_iter();
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
@@ -73,7 +73,7 @@ impl<'world, I: Bundle> Insert<'world, I> {
         self.tick
     }
     #[inline]
-    pub fn insert(&self, components: <I as Bundle>::Item) -> Entity {
+    pub fn insert(&self, components: I) -> Entity {
         let row = self.state.1.alloc();
         let e = self.world.insert(self.state.0, row);
         I::insert(&self.state.2, components, e, row, self.tick);
@@ -88,7 +88,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        let components = I::components();
+        let components = I::components(Vec::new());
         let id = ComponentInfo::calc_id(&components);
         let (ar_index, ar) = world.find_archtype(id, components);
         let s = I::init_state(world, &ar);
@@ -101,7 +101,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         archetype: &Archetype,
         depend: &mut ArchetypeDependResult,
     ) {
-        let components = I::components();
+        let components = I::components(Vec::new());
         depend.insert(archetype, world, components);
     }
 
@@ -127,7 +127,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 
 impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
-        let components = I::components();
+        let components = I::components(Vec::new());
         let id = ComponentInfo::calc_id(&components);
 
         for component in &components{
@@ -146,15 +146,15 @@ impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
 
 
 pub trait Bundle {
-    type Item;
+    // type Item;
 
     type State: Send + Sync + Sized;
 
-    fn components() -> Vec<ComponentInfo>;
+    fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo>;
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
 
-    fn insert(state: &Self::State, components: Self::Item, e: Entity, row: Row, tick: Tick);
+    fn insert(state: &Self::State, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
 pub struct TState<T: 'static>(pub *const Column, PhantomData<T>);
@@ -177,28 +177,28 @@ macro_rules! impl_tuple_insert {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
-        impl<$($name: 'static),*> Bundle for ($($name,)*) {
-            type Item = ($($name,)*);
-            type State = ($(TState<$name>,)*);
+        impl<$($name: 'static + Bundle),*> Bundle for ($($name,)*) {
+            type State = ($(<$name as Bundle>::State,)*);
 
-            fn components() -> Vec<ComponentInfo> {
-                vec![$(ComponentInfo::of::<$name>(),)*]
+            fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo> {
+                $(let c = $name::components(c);)*
+                c
             }
             fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
-                ($(TState::new(_archetype.get_column_by_tid(_world, &TypeId::of::<$name>()).unwrap().0),)*)
+                ($(<$name as Bundle>::init_state(_world, _archetype),)*)
             }
 
             fn insert(
                 _state: &Self::State,
-                _components: Self::Item,
+                _components: Self,
                 _e: Entity,
                 _row: Row,
                 _tick: Tick,
             ) {
-                let ($($name,)*) = _components;
                 let ($($state,)*) = _state;
+                let ($($name,)*) = _components;
                 $(
-                    {$state.write(_e, _row, $name, _tick)}
+                    <$name as Bundle>::insert($state, $name, _e, _row, _tick);
                 )*
             }
         }

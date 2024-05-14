@@ -122,7 +122,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     pub fn alter(
         &mut self,
         e: Entity,
-        components: <A as Bundle>::Item,
+        components: A,
     ) -> Result<bool, QueryError> {
         let (addr, _world_index, local_index) = check(
             &self.query.world,
@@ -245,7 +245,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     pub fn alter(
         &mut self,
         e: Entity,
-        components: <A as Bundle>::Item,
+        components: A,
     ) -> Result<bool, QueryError> {
         let (addr, _world_index, local_index) = check(
             &self.query.world,
@@ -276,7 +276,7 @@ impl<
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let q = Query::init_state(world, system_meta);
-        (q, AlterState::new(A::components(), D::components()))
+        (q, AlterState::new(A::components(Vec::new()), D::components(Vec::new())))
     }
     fn archetype_depend(
         world: &World,
@@ -350,7 +350,7 @@ impl<
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
         let q = QueryState::create(world);
-        (q, AlterState::new(A::components(), D::components()))
+        (q, AlterState::new(A::components(Vec::new()), D::components(Vec::new())))
     }
 }
 impl<
@@ -445,7 +445,7 @@ impl<A: Bundle> AlterState<A> {
         ar_index: ArchetypeLocalIndex,
         e: Entity,
         row: Row,
-        components: A::Item,
+        components: A,
         tick: Tick,
     ) -> Result<bool, QueryError> {
         let mut mapping = unsafe { self.vec.get_unchecked_mut(ar_index.0 as usize) };
@@ -499,7 +499,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
         )
     }
     
-    pub fn alter(&mut self, components: <A as Bundle>::Item) -> Result<bool, QueryError> {
+    pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {
         self.state.alter(
             &self.it.world,
             self.it.ar_index,
