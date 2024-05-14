@@ -33,14 +33,14 @@ impl Table {
         let mut max = 0;
         let mut columns = Vec::with_capacity(infos.len());
         for c in infos {
-            max = max.max(c.world_index as usize + 1);
+            max = max.max(c.world_index.index() + 1);
             columns.push(Column::new(c));
         }
         assert!(max < u16::MAX as usize);
         let mut column_map = Vec::with_capacity(max);
         column_map.resize(max, ColumnIndex::null());
         for (i, c) in columns.iter().enumerate() {
-            *unsafe { column_map.get_unchecked_mut(c.info().world_index as usize) } = ColumnIndex(i as u16);
+            *unsafe { column_map.get_unchecked_mut(c.info().world_index.index()) } = i.into();
         }
         Self {
             entities: AppendVec::default(),
@@ -76,10 +76,10 @@ impl Table {
         self.get_column(world.get_component_index(tid))
     }
     pub fn get_column_index(&self, index: ComponentIndex) -> ColumnIndex {
-        self.column_map.get(index as usize).map_or(ColumnIndex::null(), |r| *r)
+        self.column_map.get(index.index()).map_or(ColumnIndex::null(), |r| *r)
     }
     pub fn get_column(&self, index: ComponentIndex) -> Option<(&Column, ColumnIndex)> {
-        if let Some(t) = self.column_map.get(index as usize) {
+        if let Some(t) = self.column_map.get(index.index()) {
             if t.is_null() {
                 return None;
             }
@@ -92,7 +92,7 @@ impl Table {
         &self,
         index: ComponentIndex,
     ) -> Option<(&mut Column, ColumnIndex)> {
-        if let Some(t) = self.column_map.get(index as usize) {
+        if let Some(t) = self.column_map.get(index.index()) {
             if t.is_null() {
                 return None;
             }
@@ -103,7 +103,7 @@ impl Table {
     }
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
         assert!(!index.is_null());
-        unsafe { self.columns.get_unchecked(index.0 as usize)}
+        unsafe { self.columns.get_unchecked(index.index())}
     }
     /// 添加changed监听器，原型刚创建时调用
     pub fn add_changed_listener(&self, index: ComponentIndex, owner: TypeId) {
@@ -160,7 +160,7 @@ impl Table {
             if !listener_index.is_null() {
                 vec.push(DirtyIndex {
                     listener_index,
-                    dtype: DirtyType::Removed(ColumnIndex(column_index as u16)),
+                    dtype: DirtyType::Removed(column_index.into()),
                 });
             }
         }
@@ -183,13 +183,13 @@ impl Table {
     pub(crate) fn find_remove_column_dirty(&self, index: ComponentIndex) -> ColumnIndex {
         let mut it = unsafe { &*self.remove_columns.get() }.iter().enumerate();
         it.find(|r| r.1 .0 == index)
-            .map_or(ColumnIndex::null(), |(column_index, _)| ColumnIndex(column_index as u16))
+            .map_or(ColumnIndex::null(), |(column_index, _)| column_index.into())
     }
     /// 寻找指定位置的组件列脏
     pub(crate) fn get_remove_column_dirty(&self, column_index: ColumnIndex) -> &Dirty {
         unsafe {
             &(&*self.remove_columns.get())
-                .get_unchecked(column_index.0 as usize)
+                .get_unchecked(column_index.index())
                 .1
         }
     }

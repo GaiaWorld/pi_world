@@ -8,8 +8,6 @@
 ## 差 代码注释
 ## 需要构建一个Component的静态依赖图-转成位图集， 如果两个system检查在该图上可以并行，则同一个原型下的两个system也是可以并行的。
 ## 需要把执行图的图部分拆成单独的crate，这样静态依赖图和渲染图都可以重用这个图，同时也好检查是否循环引用。
-## 优化SingleRes的init_state, 抽成多个函数，这样相同的T可以共用函数
-## 优化Query的CacheMapping，及alter的Mapping
 
 
 
@@ -33,3 +31,5 @@
 # v0.3
 ## ArcheypeWorldIndex ComponentIndex ColumnIndex Row 改成类型
 ## 将原型图节点拆成了原型组件节点
+## 优化Query的CacheMapping，及alter的Mapping
+## 优化SingleRes的init_state, 抽成多个函数，这样相同的T可以共用函数

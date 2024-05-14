@@ -20,19 +20,20 @@ use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
+use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
     add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
-    Archetype, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype,
+    Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype,
 };
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{ArchetypeLocalIndex, QueryError, QueryState, Queryer};
+use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
@@ -48,8 +49,31 @@ new_key_type! {
     pub struct Entity;
 }
 
-pub type ComponentIndex = u32;
-
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ComponentIndex(u32);
+impl ComponentIndex {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
+impl From <u32> for ComponentIndex {
+    fn from(index: u32) -> Self {
+        Self(index)
+    }
+}
+impl From <usize> for ComponentIndex {
+    fn from(index: usize) -> Self {
+        Self(index as u32)
+    }
+}
+impl pi_null::Null for ComponentIndex {
+    fn null() -> Self {
+        Self(u32::null())
+    }
+    fn is_null(&self) -> bool {
+       self.0 == u32::null()
+    }
+}
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(u32);
 impl Deref for Tick {
@@ -179,13 +203,13 @@ impl World {
     }
     /// 获得指定组件的索引
     pub fn get_component_info(&self, index: ComponentIndex) -> Option<&ComponentInfo> {
-        self.component_arr.get(index as usize)
+        self.component_arr.get(index.index())
     }
     /// 添加组件信息，如果重复，则返回原有的索引
     pub fn add_component_info(&self, mut info: ComponentInfo) -> ComponentIndex {
         let r = self.component_map.entry(info.type_id).or_insert_with(|| {
             let e = self.component_arr.alloc_entry();
-            let index = e.index() as ComponentIndex;
+            let index = e.index().into();
             info.world_index = index;
             e.insert(info);
             index
@@ -243,12 +267,10 @@ impl World {
     }
 
     // 如果不存在单例类型， 则注册指定的单例资源（不插入具体值，只添加类型），为了安全，必须保证不在ECS执行中调用，返回索引
-    pub fn or_register_single_res<T: 'static>(&mut self) -> usize {
-        let tid = TypeId::of::<T>();
-        let r = self.single_res_map.entry(tid).or_insert_with(|| {
-            let name = std::any::type_name::<T>().into();
+    pub fn or_register_single_res(&mut self, type_info: TypeInfo) -> usize {
+        let r = self.single_res_map.entry(type_info.type_id).or_insert_with(|| {
             let index = self.single_res_arr.insert(None);
-            (None, index, name)
+            (None, index, type_info.name)
         });
         r.value().1
     }
@@ -458,11 +480,11 @@ impl World {
             } else {
                 0
             };
-            array.insert_value(*index as usize, v);
+            array.insert_value(index.index(), v);
         }
         for index in 0..array.len() {
             if array[index] != u16::MAX{
-                if let Some(info) = self.get_component_info(index as u32){
+                if let Some(info) = self.get_component_info(index.into()){
                     if array[index] == 0{
                         sort_remove.push(info.clone());
                     } else if array[index] == 1{
@@ -510,7 +532,7 @@ impl World {
         // println!("removed_columns: {:?}", removed_columns);
 
         let mut mapping_dirtys = vec![];
-        let _ = alter_row(&mut mapping_dirtys, &mut mapping, ArchetypeLocalIndex(ar_index as u16), addr.row, e)?;
+        let _ = alter_row(&mut mapping_dirtys, &mut mapping, 0u16.into(), addr.row, e)?;
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
@@ -718,7 +740,7 @@ fn insert_columns(am: &mut ArchetypeMapping) {
             let column = am.src.get_column_index(t.info().world_index);
             if column.is_null() {
                 // add_columns.push(ColumnIndex(i as u16));
-                let dst_column = am.dst.get_column_unchecked(ColumnIndex(i as u16));
+                let dst_column = am.dst.get_column_unchecked(i.into());
                 for (_src, dst_row, _e) in am.moves.iter() {
                     let dst_data: *mut u8 = dst_column.load(*dst_row);
                     dst_column.info().default_fn.unwrap()(dst_data);

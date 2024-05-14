@@ -6,7 +6,7 @@ use std::mem::{replace, transmute};
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::Flags;
-use crate::system::SystemMeta;
+use crate::system::{SystemMeta, TypeInfo};
 use crate::system_params::SystemParam;
 use crate::world::{SingleResource, Tick, World};
 
@@ -42,10 +42,8 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
     type Item<'w> = SingleRes<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_read(tid, name);
-        (world.get_single_res_any(&tid).unwrap(), Tick::default())
+        let info = TypeInfo::of::<T>();
+        (single_resource(world, system_meta, &info, true).unwrap(), Tick::default())
     }
     fn res_depend(
         _world: &World,
@@ -117,10 +115,8 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
     type Item<'w> = SingleResMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_write(tid, name);
-        match world.get_single_res_any(&TypeId::of::<T>()) {
+        let info = TypeInfo::of::<T>();
+        match single_resource(world, system_meta, &info, false) {
             Some(r) => r,
             None => panic!("init SingleRes fail, {:?} is not exist", std::any::type_name::<T>()),
         }
@@ -178,10 +174,8 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
     type Item<'w> = Option<SingleRes<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_read(tid, name);
-        (world.or_register_single_res::<T>(), Tick::default())
+        let info = TypeInfo::of::<T>();
+        (or_single_resource(world, system_meta, info, true), Tick::default())
     }
     fn res_depend(
         _world: &World,
@@ -228,10 +222,8 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
     type Item<'w> = Option<SingleResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_write(tid, name);
-        world.or_register_single_res::<T>()
+        let info = TypeInfo::of::<T>();
+        or_single_resource(world, system_meta, info, false)
     }
     fn res_depend(
         _world: &World,
@@ -268,4 +260,21 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
+}
+
+fn single_resource(world: &World, system_meta: &mut SystemMeta, info: &TypeInfo, read: bool) -> Option<SingleResource> {
+    if read {
+        system_meta.res_read(&info);
+    }else{
+        system_meta.res_write(&info);
+    }
+    world.get_single_res_any(&info.type_id)
+}
+fn or_single_resource(world: &mut World, system_meta: &mut SystemMeta, info: TypeInfo, read: bool) -> usize {
+    if read {
+        system_meta.res_read(&info);
+    }else{
+        system_meta.res_write(&info);
+    }
+    world.or_register_single_res(info)
 }
