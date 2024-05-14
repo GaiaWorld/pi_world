@@ -260,7 +260,7 @@ impl ExecGraph {
         let _unused = inner.lock.lock();
         let id = unsafe { transmute(*tid) };
         // 如果图已经存在该节点，则返回，否则插入
-        let (node_index, is_new) = inner.find_node((id, 0), NodeType::Res(name.clone()), &self.1);
+        let (node_index, is_new) = inner.find_node((id, 0u32.into()), NodeType::Res(name.clone()), &self.1);
         if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
             sys_range.start = 0;
         }
@@ -313,7 +313,7 @@ impl ExecGraph {
             let info = c.info();
             // 查找图节点， 如果不存在将该原型组件id放入图的节点中，保存原型id到原型节点索引的对应关系
             let (node_index, _is_new) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
-            vec_set(&mut ar_component_index_node_index_map, info.world_index as usize, node_index);
+            vec_set(&mut ar_component_index_node_index_map, info.world_index.index(), node_index);
             nodes.push(node_index);
         }
         // if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
@@ -348,14 +348,14 @@ impl ExecGraph {
                     } else if depend.flag == Flags::READ {
                         // 如果只有读，则该system为该原型组件的to
                         for index in depend.reads.iter() {
-                            let node_index = ar_component_index_node_index_map[*index as usize];
+                            let node_index = ar_component_index_node_index_map[index.index()];
                             inner.add_edge(node_index, system_index);
                         }
                         continue;
                     } else if depend.flag.bits() != 0 {
                         // 有写或者删除，则该system为该原型的from
                         for index in depend.writes.iter() {
-                            let node_index = ar_component_index_node_index_map[*index as usize];
+                            let node_index = ar_component_index_node_index_map[index.index()];
                             inner.adjust_edge(system_index, node_index);
                         }
                     } else {

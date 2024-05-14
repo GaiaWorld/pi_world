@@ -32,7 +32,22 @@ use crate::world::{ComponentIndex, SetDefault, World};
 pub type ShareArchetype = Share<Archetype>;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Row(pub(crate) u32) ;
+pub struct Row(pub(crate) u32);
+impl Row {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
+impl From <u32> for Row {
+    fn from(index: u32) -> Self {
+        Self(index)
+    }
+}
+impl From <usize> for Row {
+    fn from(index: usize) -> Self {
+        Self(index as u32)
+    }
+}
 impl pi_null::Null for Row {
     fn null() -> Self {
         Self(u32::null())
@@ -44,6 +59,21 @@ impl pi_null::Null for Row {
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArchetypeWorldIndex(pub(crate) u32);
+impl ArchetypeWorldIndex {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
+impl From <u32> for ArchetypeWorldIndex {
+    fn from(index: u32) -> Self {
+        Self(index)
+    }
+}
+impl From <usize> for ArchetypeWorldIndex {
+    fn from(index: usize) -> Self {
+        Self(index as u32)
+    }
+}
 impl pi_null::Null for ArchetypeWorldIndex {
     fn null() -> Self {
         Self(u32::null())
@@ -54,7 +84,22 @@ impl pi_null::Null for ArchetypeWorldIndex {
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ColumnIndex(pub(crate) u16);
+pub struct ColumnIndex(u16);
+impl ColumnIndex {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
+impl From <u16> for ColumnIndex {
+    fn from(index: u16) -> Self {
+        Self(index)
+    }
+}
+impl From <usize> for ColumnIndex {
+    fn from(index: usize) -> Self {
+        Self(index as u16)
+    }
+}
 impl pi_null::Null for ColumnIndex {
     fn null() -> Self {
         Self(u16::null())
