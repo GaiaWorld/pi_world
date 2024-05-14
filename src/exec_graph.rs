@@ -168,7 +168,9 @@ impl ExecGraph {
     }
     pub fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
         let inner = self.0.as_ref();
-        inner.add_edge(from, to);
+        if inner.has_edge(from, to).is_some() {
+            inner.add_edge(from, to);
+        }
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -633,6 +635,9 @@ impl GraphInner {
     /// 因此，采用锁阻塞的方法，先将from节点的status锁加上，然后判断status为Wait，则可以from_len加1并链接，如果status为Over则不加from_len并链接。如果为Running，则等待status为Over后再进行链接。
     /// 因为采用status加1来锁定， 所以全局只能同时有1个原型被添加。
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
+        if self.has_edge(from, to).is_some() {
+            return;
+        }
         assert_eq!(self.has_edge(from, to), None);
         // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
