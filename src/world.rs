@@ -20,7 +20,7 @@ use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
-
+use crate::utils::VecExt;
 use crate::alter::{
     add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
@@ -451,16 +451,23 @@ impl World {
         let mut sort_remove = vec![];
 
         // TODO, 性能
-        let mut map =  std::collections::HashMap::new();
+        let mut array =  Vec::new();
         for (index, is_add) in components {
-            map.insert(index, is_add);
+            let v = if *is_add {
+                1u16
+            } else {
+                0
+            };
+            array.insert_value(*index as usize, v);
         }
-        for (index, is_add) in map {
-            if let Some(info) = self.get_component_info(*index) {
-                if *is_add {
-                    sort_add.push(info.clone());
-                } else {
-                    sort_remove.push(info.clone());
+        for index in 0..array.len() {
+            if array[index] != u16::MAX{
+                if let Some(info) = self.get_component_info(index as u32){
+                    if array[index] == 0{
+                        sort_remove.push(info.clone());
+                    } else if array[index] == 1{
+                        sort_add.push(info.clone());
+                    } 
                 }
             }
         }
@@ -483,16 +490,16 @@ impl World {
         }
         let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
         // println!("mapping1: {:?}", mapping);
-        let mut moved_columns = vec![];
-        let mut added_columns = vec![];
-        let mut removed_columns = vec![];
+        // let mut moved_columns = vec![];
+        // let mut added_columns = vec![];
+        // let mut removed_columns = vec![];
 
         mapping_init(
             self,
             &mut mapping,
-            &mut moved_columns,
-            &mut added_columns,
-            &mut removed_columns,
+            // &mut moved_columns,
+            // &mut added_columns,
+            // &mut removed_columns,
             &sort_add,
             &sort_remove,
             &mut id,
@@ -508,10 +515,10 @@ impl World {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
         //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
-        insert_columns(&mut mapping, &added_columns);
-        move_columns(&mut mapping, &moved_columns);
-        remove_columns(&mut mapping, &removed_columns);
-        add_columns(&mut mapping, &added_columns, self.tick());
+        insert_columns(&mut mapping);
+        move_columns(&mut mapping,);
+        remove_columns(&mut mapping);
+        add_columns(&mut mapping, self.tick());
         update_table_world(&self, &mut mapping);
 
         Ok(())
@@ -697,15 +704,28 @@ impl Default for World {
 }
 
 // 将需要移动的全部源组件移动到新位置上
-fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>) {
-    for i in am.add_indexs.clone().into_iter() {
-        let dst_i = unsafe { add_columns.get_unchecked(i) };
-        let dst_column = am.dst.get_column_unchecked(*dst_i);
-        for (_src, dst_row, _e) in am.moves.iter() {
-            let dst_data: *mut u8 = dst_column.load(*dst_row);
-            dst_column.info().default_fn.unwrap()(dst_data);
+fn insert_columns(am: &mut ArchetypeMapping) {
+    // for i in am.add_indexs.clone().into_iter() {
+    //     let dst_i = unsafe { add_columns.get_unchecked(i) };
+    //     let dst_column = am.dst.get_column_unchecked(*dst_i);
+    //     for (_src, dst_row, _e) in am.moves.iter() {
+    //         let dst_data: *mut u8 = dst_column.load(*dst_row);
+    //         dst_column.info().default_fn.unwrap()(dst_data);
+    //     }
+    // }
+        // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
+        for (i, t) in am.dst.get_columns().iter().enumerate() {
+            let column = am.src.get_column_index(t.info().world_index);
+            if column.is_null() {
+                // add_columns.push(ColumnIndex(i as u16));
+                let dst_column = am.dst.get_column_unchecked(ColumnIndex(i as u16));
+                for (_src, dst_row, _e) in am.moves.iter() {
+                    let dst_data: *mut u8 = dst_column.load(*dst_row);
+                    dst_column.info().default_fn.unwrap()(dst_data);
+                }
+            }
         }
-    }
+    // }
 }
 
 
