@@ -168,9 +168,7 @@ impl ExecGraph {
     }
     pub fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
         let inner = self.0.as_ref();
-        if inner.has_edge(from, to).is_some() {
-            inner.add_edge(from, to);
-        }
+        inner.add_edge(from, to);
     }
     pub fn node_references<'a>(&'a self) -> Iter<'a, Node> {
         self.0.as_ref().nodes.iter()
@@ -638,7 +636,6 @@ impl GraphInner {
         if self.has_edge(from, to).is_some() {
             return;
         }
-        assert_eq!(self.has_edge(from, to), None);
         // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
         // 获得from节点
