@@ -600,12 +600,12 @@ impl GraphInner {
             }
         }
         // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
-        if big_node_index != u32::MAX && self.has_edge(from, NodeIndex(big_node_index)).is_none() {
-            self.add_edge(from, NodeIndex(big_node_index));
-        }
-        if small_node_index >= 0 && self.has_edge(NodeIndex(small_node_index as u32), from).is_none() {
-            self.add_edge(NodeIndex(small_node_index as u32), from);
-        }
+        // if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
+        //     self.add_edge(from, NodeIndex(big_node_index));
+        // }
+        // if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
+        //     self.add_edge(NodeIndex(small_node_index as u32), from);
+        // }
         // 将当前的from和to节点连起来
         self.add_edge(from, to);
     }
@@ -1076,6 +1076,9 @@ pub struct NGraph {
 impl NGraph {
 	/// 如果parent_graph_id是Null， 表示插入到根上
     pub fn add_node(&mut self, k: usize) {
+        if self.nodes.contains(k) {
+            panic!("节点已经存在{:?}", k);
+        }
         self.nodes.insert(k, NGraphNode {
             from: Vec::new(),
             to: Vec::new(),
@@ -1085,11 +1088,6 @@ impl NGraph {
     pub fn add_edge(&mut self, before: usize, after: usize, graph: &GraphInner) {
         if self.edges.contains(&(before, after)) {
             // return;
-            let it = graph.neighbors(NodeIndex(after as u32), Direction::From);
-            println!("to len:{}, {:?}", it.size_hint().0, it);
-            let it = graph.neighbors(NodeIndex(before as u32), Direction::To);
-            println!("from len:{}, {:?}", it.size_hint().0, it);
-
             panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
@@ -1115,7 +1113,7 @@ impl NGraph {
         let nodes = &self.nodes;
         let mut topological = Vec::new();
         let mut topological_len = 0;
-        while let Some(k) = queue.pop_front() {
+        while let Some(k) = queue.pop_front() { // 遍历依赖就绪的节点
 			let node = nodes.get(k).unwrap();
 			topological.push(k);
 			topological_len += 1;
@@ -1123,10 +1121,10 @@ impl NGraph {
 			
             // 处理 from 的 下一层
            
-			// debug!("from = {:?}, to: {:?}", k, node.edges.to);
+			// println!("from = {:?}, to: {:?}", k, &node.to);
             // 遍历节点的后续节点
             for to in &node.to  {
-				// debug!("graph's each = {:?}, count = {:?}", to, counts[key_index(*to)]);
+				// println!("graph's each = {:?}, count = {:?}", to, counts[*to]);
 				counts[*to] -= 1;
                 // handle_set.insert(*to, ());
 				if counts[*to] == 0 {
@@ -1151,10 +1149,11 @@ impl NGraph {
 			return  is_not_contains;
 		}).map(|r| {r.0}).collect::<Vec<usize>>();
 
+        // println!("cycle1======{:?}", not_contains);
 		let mut iter = not_contains.into_iter();
 		while let Some(n) = iter.next() {
 			let mut cycle_keys = Vec::new();
-			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::new());
+			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::new(), HashSet::default());
 
 			if cycle_keys.len() > 0 {
 				return cycle_keys;
@@ -1165,26 +1164,43 @@ impl NGraph {
     }
 
     // 寻找循环依赖
-    fn find_cycle(map: &VecMap<NGraphNode>, node: usize, nodes: &mut Vec<usize>, mut indexs: Vec<usize>) {
+    fn find_cycle(map: &VecMap<NGraphNode>, node: usize, nodes: &mut Vec<usize>, mut indexs: Vec<usize>, mut nodes_set: HashSet<usize>) {
 		nodes.push(node.clone());
+        nodes_set.insert(node);
         indexs.push(0);
+        // println!("find_cycle======{:?}, {:?}", nodes, map.len());
+        // let mut i = 0;
         while nodes.len() > 0 {
             let index = nodes.len() - 1;
             let k = &nodes[index];
             let n = map.get(*k).unwrap();
             let to = &n.to;
             let child_index = indexs[index];
+            // if i < 500 {
+            //     //   println!("pop====={:?}", (index, k, child_index, to.len(), &n.from, to));
+            //       i += 1;
+            // }
+          
             if child_index >= to.len() {
                 nodes.pop();
                 indexs.pop();
+               
                 continue
             }
             let child = to[child_index].clone();
-            if child == node {
+            // if child == node {
+            //     break;
+            // }
+
+            if nodes_set.contains(&child) {
+                let i = nodes.iter().position(|r| {r == &child}).unwrap();
+                let r = nodes[i..].to_vec();
+                *nodes = r;
                 break;
             }
             indexs[index] += 1;
             nodes.push(child);
+            nodes_set.insert(child);
             indexs.push(0);
         }
     }
