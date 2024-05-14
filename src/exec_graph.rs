@@ -22,11 +22,9 @@ use std::mem::transmute;
 use std::sync::atomic::Ordering;
 
 use async_channel::{bounded, Receiver, RecvError, Sender};
-use bevy_utils::label;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
-use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
 use pi_arr::Iter;
 use pi_async_rt::prelude::AsyncRuntime;
@@ -142,7 +140,7 @@ impl ExecGraph {
         for edge in graph.edges.iter() {
             let from = edge.load(Direction::From).0;
             let to = edge.load(Direction::To).0;
-            ngraph.add_edge(from.index() as usize, to.index() as usize);
+            ngraph.add_edge(from.index() as usize, to.index() as usize, graph);
         }
 
         let cycle_keys = ngraph.build();
@@ -439,7 +437,7 @@ impl ExecGraph {
         node_index: NodeIndex,
         node: &Node,
     ) {
-        println!("exec, node_index: {:?}", node_index);
+        // println!("exec, node_index: {:?}", node_index);
         match node.label {
             NodeType::System(sys_index, _) => {
                 // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
@@ -602,35 +600,40 @@ impl GraphInner {
             }
         }
         // println!("adjust_edge1, from:{:?}, to:{:?}", big_node_index, small_node_index);
-        if big_node_index != u32::MAX && !self.has_edge(from, NodeIndex(big_node_index)) {
+        if big_node_index != u32::MAX && self.has_edge(from, NodeIndex(big_node_index)).is_none() {
             self.add_edge(from, NodeIndex(big_node_index));
         }
-        if small_node_index >= 0 && !self.has_edge(NodeIndex(small_node_index as u32), from) {
+        if small_node_index >= 0 && self.has_edge(NodeIndex(small_node_index as u32), from).is_none() {
             self.add_edge(NodeIndex(small_node_index as u32), from);
         }
         // 将当前的from和to节点连起来
         self.add_edge(from, to);
     }
     // 判断是否from和to已经有边
-    fn has_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
-        for old_from in self.neighbors(to, Direction::From) {
+    fn has_edge(&self, from: NodeIndex, to: NodeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        let it = self.neighbors(to, Direction::From);
+        // if from.0 == 30 {
+        //     let f = unsafe { self.nodes.load_unchecked(from.index()) };
+        //     let fe = f.edge(Direction::To);
+        //     let p = unsafe { self.nodes.load_unchecked(to.index()) };
+        //     let v = p.edge(Direction::From);
+        //     let pp = self.nodes.load(to.index());
+        //     println!("has_edge from:{}, from_p:{:p}, {:?}. to:{}, to_p:{:p}, {:?}, it: {:?}, b:{}, capacity:{}", from.0, f, fe, to.0, p, v, it.edge, pp.is_some(), self.nodes.vec_capacity());
+        // }
+        for old_from in it {
             if old_from == from {
                 // 如果已经连接了，则返回true
-                return true;
+                return Some((from, to));
             }
         }
-        false
+        None
     }
     /// 添加边，3种情况， from为sys+to为ar， from为ar+to为sys， from为sys+to为sys
     /// from节点在被link时， 有可能正在执行，如果先执行后链接，则from_count不应该被加1。 如果先链接后执行，则from_count应该被加1。但代码上没有很好的方法区分两者。
     /// 因此，采用锁阻塞的方法，先将from节点的status锁加上，然后判断status为Wait，则可以from_len加1并链接，如果status为Over则不加from_len并链接。如果为Running，则等待status为Over后再进行链接。
     /// 因为采用status加1来锁定， 所以全局只能同时有1个原型被添加。
     fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
-        if from.index() == 71 && to.index() == 73 {
-            println!("add_edge======{:?}, {:?}", from, to);
-            // panic!("add_edge======{:?}, {:?}", from, to);
-        }
-        
+        assert_eq!(self.has_edge(from, to), None);
         // 获得to节点
         let to_node = unsafe { self.nodes.load_unchecked(to.index()) };
         // 获得from节点
@@ -654,39 +657,48 @@ impl GraphInner {
 
         // 获得to节点的from边数据
         let (from_edge_len, from_next_edge) = to_node.edge(Direction::From);
-        let from_cur = encode(from_edge_len, from_next_edge.0);
-
+        // let from_cur = encode(from_edge_len, from_next_edge.0);
+        // if from.0 == 30 {
+        //     println!("add_edge: to:{}, to_p:{:p} {:?}", to.0, to_node, (from_edge_len, from_next_edge));
+        // }
         // 获得from节点的to边数据
         let (to_edge_len, to_next_edge) = from_node.edge(Direction::To);
-        let to_cur = encode(to_edge_len, to_next_edge.0);
+        // let to_cur = encode(to_edge_len, to_next_edge.0);
 
         // 设置边
         let e = Edge::new(from, from_next_edge, to, to_next_edge);
         // 设置from节点的to_edge, 线程安全的单链表操作
         let edge_index = EdgeIndex::new(self.edges.insert(e));
-        let e = unsafe { self.edges.load_unchecked(edge_index.index()) };
+        // let e = unsafe { self.edges.load_unchecked(edge_index.index()) };
 
         // 先将to节点的from和边连起来
-        let _ = self.link_edge(
-            from,
-            &to_node.edges[Direction::From.index()],
-            from_cur,
-            from_edge_len,
-            edge_index,
-            &e,
-            Direction::From,
-        );
+        to_node.edges[Direction::From.index()].store(encode(from_edge_len + 1, edge_index.0), Ordering::Relaxed);
+        // let _ = self.link_edge(
+        //     from,
+        //     &to_node.edges[Direction::From.index()],
+        //     from_cur,
+        //     from_edge_len,
+        //     edge_index,
+        //     &e,
+        //     Direction::From,
+        // );
 
         // 将from节点的to和边连起来
-        let old_to_len = self.link_edge(
-            to,
-            &from_node.edges[Direction::To.index()],
-            to_cur,
-            to_edge_len,
-            edge_index,
-            &e,
-            Direction::To,
-        );
+        from_node.edges[Direction::To.index()].store(encode(to_edge_len + 1, edge_index.0), Ordering::Relaxed);
+        // if from.0 == 30 {
+        //     let (flen, fed) = decode(from_node.edges[Direction::To.index()].load(Ordering::Relaxed));
+        //     let (len, ed) = decode(to_node.edges[Direction::From.index()].load(Ordering::Relaxed));
+        //     println!("add=====, from: {} {}, to:{} {} {}", flen, fed, to.0, len, ed);
+        // }
+        // let old_to_len = self.link_edge(
+        //     to,
+        //     &from_node.edges[Direction::To.index()],
+        //     to_cur,
+        //     to_edge_len,
+        //     edge_index,
+        //     &e,
+        //     Direction::To,
+        // );
         // status解锁
         from_node.status.fetch_sub(1, Ordering::Relaxed);
 
@@ -696,7 +708,7 @@ impl GraphInner {
         // }
 
         // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1, to_count也减1
-        if old_to_len == 0 {
+        if to_edge_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
             self.to_count.fetch_sub(1, Ordering::Relaxed);
         }
@@ -773,7 +785,7 @@ impl GraphInner {
     // 尝试run是否over
     fn run_over<A: AsyncRuntime>(&self, rt: &A) {
         let r = self.to_count.fetch_sub(1, Ordering::Relaxed);
-        println!("run_over!!! to_count: {}", r);
+        // println!("run_over!!! to_count: {}", r);
         if r == 1 {
             let s = self.sender.clone();
             let _ = rt.spawn(async move {
@@ -838,6 +850,11 @@ impl<'a> Iterator for NeighborIter<'a> {
         (self.edge.0 as usize, Some(self.edge.0 as usize))
     }
 }
+impl Debug for NeighborIter<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_list().entries(self.clone()).finish()
+    }
+}
 
 #[derive(Clone)]
 pub enum NodeType {
@@ -864,7 +881,7 @@ impl Debug for NodeType {
         match &self {
             NodeType::None => write!(f, "None"),
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
-            NodeType::ArchetypeComponent(index, s) => write!(f, "ArchetypeComponent({},{:?})", index, s),
+            NodeType::ArchetypeComponent(id, s) => write!(f, "ArchetypeComponent({},{:?})", id, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
             NodeType::Set(s) => write!(f, "Set({:?})", s),
         }
@@ -872,7 +889,13 @@ impl Debug for NodeType {
 }
 impl Display for NodeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{:#}", self.type_name())
+        match &self {
+            NodeType::None => write!(f, "None"),
+            NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
+            NodeType::ArchetypeComponent(id, s) => write!(f, "ArchetypeComponent({},{:?})", id, s),
+            NodeType::Res(s) => write!(f, "Res({:?})", s),
+            NodeType::Set(s) => write!(f, "Set({:?})", s),
+        }
     }
 }
 
@@ -911,11 +934,8 @@ impl Node {
     }
     #[inline(always)]
     pub fn edge(&self, d: Direction) -> (u32, EdgeIndex) {
-        unsafe {
-            transmute(decode(
-                self.edges.get_unchecked(d.index()).load(Ordering::Relaxed),
-            ))
-        }
+        let (len, edge) = decode(unsafe { self.edges.get_unchecked(d.index()).load(Ordering::Relaxed) });
+        (len, EdgeIndex(edge))
     }
 }
 impl Null for Node {
@@ -1029,8 +1049,8 @@ impl<'a> Listener for Notify<'a> {
     fn listen(&self, ar: Self::Event) {
         self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
         log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
-        self.0.check();
         let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
+        self.0.check();
     }
 }
 
@@ -1062,9 +1082,14 @@ impl NGraph {
         });
     }
 
-    pub fn add_edge(&mut self, before: usize, after: usize) {
+    pub fn add_edge(&mut self, before: usize, after: usize, graph: &GraphInner) {
         if self.edges.contains(&(before, after)) {
             // return;
+            let it = graph.neighbors(NodeIndex(after as u32), Direction::From);
+            println!("to len:{}, {:?}", it.size_hint().0, it);
+            let it = graph.neighbors(NodeIndex(before as u32), Direction::To);
+            println!("from len:{}, {:?}", it.size_hint().0, it);
+
             panic!("边已经存在！！{:?}", (before, after));
         }
         self.edges.insert((before, after));
