@@ -3,7 +3,7 @@ use std::{any::TypeId, borrow::Cow, future::Future, mem::transmute, pin::Pin};
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
     function_system::ParamSystem,
-    system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta},
+    system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta, TypeInfo},
     system_params::SystemParam,
     world::*,
 };
@@ -44,7 +44,7 @@ where
     fn into_async_system(self) -> Self::System {
         AsyncFunctionSystem {
             func: self,
-            param: ParamSystem::new(SystemMeta::new::<F>()),
+            param: ParamSystem::new(SystemMeta::new(TypeInfo::of::<F>())),
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::archetype::{
 };
 use crate::column::Column;
 use crate::prelude::FromWorld;
-use crate::system::SystemMeta;
+use crate::system::{SystemMeta, TypeInfo};
 use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
@@ -456,10 +456,10 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
+        let info = TypeInfo::of::<T>();
         world.add_component_info(ComponentInfo::of::<T>());
-        let name: Cow<'static, str> = std::any::type_name::<T>().into();
-        meta.res_read(TypeId::of::<T>(), name.clone());
-        meta.cur_param.reads.insert(TypeId::of::<T>(), name);
+        meta.res_read(&info);
+        meta.cur_param.reads.insert(info.type_id, info.name);
 
         world.init_single_res::<T>();
     }

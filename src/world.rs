@@ -20,6 +20,7 @@ use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
+use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
     add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
@@ -243,12 +244,10 @@ impl World {
     }
 
     // 如果不存在单例类型， 则注册指定的单例资源（不插入具体值，只添加类型），为了安全，必须保证不在ECS执行中调用，返回索引
-    pub fn or_register_single_res<T: 'static>(&mut self) -> usize {
-        let tid = TypeId::of::<T>();
-        let r = self.single_res_map.entry(tid).or_insert_with(|| {
-            let name = std::any::type_name::<T>().into();
+    pub fn or_register_single_res(&mut self, type_info: TypeInfo) -> usize {
+        let r = self.single_res_map.entry(type_info.type_id).or_insert_with(|| {
             let index = self.single_res_arr.insert(None);
-            (None, index, name)
+            (None, index, type_info.name)
         });
         r.value().1
     }

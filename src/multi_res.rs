@@ -14,7 +14,7 @@ use pi_share::{Share, ShareU32};
 
 use crate::archetype::Flags;
 use crate::single_res::{SingleRes, SingleResMut};
-use crate::system::SystemMeta;
+use crate::system::{SystemMeta, TypeInfo};
 use crate::system_params::SystemParam;
 use crate::world::*;
 
@@ -72,10 +72,8 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
     type Item<'w> = MultiRes<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_read(tid, name);
-        (world.system_read_multi_res(&tid).unwrap(), Tick::default())
+        let info = TypeInfo::of::<T>();
+        (multi_resource(&world, system_meta, &info).unwrap(), Tick::default())
     }
     fn res_depend(
         _world: &World,
@@ -137,9 +135,8 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
     type Item<'w> = MultiResMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_write(tid, name);
+        let info = TypeInfo::of::<T>();
+        system_meta.res_write(&info);
         world.system_init_write_multi_res(T::default).unwrap()
     }
     fn res_depend(
@@ -195,12 +192,8 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
     type Item<'w> = Option<MultiRes<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_read(tid, name);
-        world
-            .system_read_multi_res(&tid)
-            .map(|r| (r, Tick::default()))
+        let info = TypeInfo::of::<T>();
+        multi_resource(&world, system_meta, &info).map(|r| (r, Tick::default()))
     }
     fn res_depend(
         _world: &World,
@@ -244,9 +237,8 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
     type Item<'w> = Option<MultiResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let tid = TypeId::of::<T>();
-        let name = std::any::type_name::<T>().into();
-        system_meta.res_write(tid, name);
+        let info = TypeInfo::of::<T>();
+        system_meta.res_write(&info);
         world.system_init_write_multi_res(T::default)
     }
     fn res_depend(
@@ -284,4 +276,9 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
+}
+
+fn multi_resource(world: &World, system_meta: &mut SystemMeta, info: &TypeInfo) -> Option<MultiResource> {
+    system_meta.res_read(&info);
+    world.system_read_multi_res(&info.type_id)
 }

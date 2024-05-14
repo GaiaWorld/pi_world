@@ -5,6 +5,20 @@ use crate::{
     world::World,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeInfo {
+    pub type_id: TypeId,
+    pub name: Cow<'static, str>,
+}
+impl TypeInfo {
+    pub fn of<T: 'static>() -> Self {
+        TypeInfo {
+            type_id: TypeId::of::<T>(),
+            name: Cow::Borrowed(std::any::type_name::<T>()),
+        }
+    }
+}
+
 /// The metadata of a [`System`].
 #[derive(Clone, Debug, Default)]
 pub struct ReadWrite {
@@ -39,8 +53,7 @@ impl ReadWrite {
 /// The metadata of a [`System`].
 #[derive(Debug)]
 pub struct SystemMeta {
-    pub(crate) type_id: TypeId,
-    pub(crate) name: Cow<'static, str>,
+    pub(crate) type_info: TypeInfo,
     pub(crate) components: ReadWrite, // 该系统所有组件级读写依赖
     pub(crate) cur_param: ReadWrite,  // 当前参数的读写依赖
     pub(crate) param_set: ReadWrite,  // 参数集的读写依赖
@@ -49,10 +62,9 @@ pub struct SystemMeta {
 }
 
 impl SystemMeta {
-    pub fn new<T: 'static>() -> Self {
+    pub fn new(type_info: TypeInfo) -> Self {
         Self {
-            type_id: TypeId::of::<T>(),
-            name: std::any::type_name::<T>().into(),
+            type_info,
             components: Default::default(),
             cur_param: Default::default(),
             param_set: Default::default(),
@@ -63,13 +75,13 @@ impl SystemMeta {
     /// Returns the system's type_id
     #[inline]
     pub fn type_id(&self) -> &TypeId {
-        &self.type_id
+        &self.type_info.type_id
     }
 
     /// Returns the system's name
     #[inline]
     pub fn name(&self) -> &str {
-        &self.name
+        &self.type_info.name
     }
     /// 当前参数检查通过
     pub fn cur_param_ok(&mut self) {
@@ -119,20 +131,20 @@ impl SystemMeta {
         }
         None
     }
-    pub fn res_read(&mut self, tid: TypeId, name: Cow<'static, str>) {
-        if self.res_writes.contains_key(&tid) {
-            panic!("res_read conflict, name:{}", name);
+    pub fn res_read(&mut self, type_info: &TypeInfo) {
+        if self.res_writes.contains_key(&type_info.type_id) {
+            panic!("res_read conflict, name:{}", type_info.name);
         }
-        self.res_reads.insert(tid.clone(), name);
+        self.res_reads.insert(type_info.type_id, type_info.name.clone());
     }
-    pub fn res_write(&mut self, tid: TypeId, name: Cow<'static, str>) {
-        if self.res_reads.contains_key(&tid) {
-            panic!("res_write read conflict, name:{}", name);
+    pub fn res_write(&mut self, type_info: &TypeInfo) {
+        if self.res_reads.contains_key(&type_info.type_id) {
+            panic!("res_write read conflict, name:{}", type_info.name);
         }
-        if self.res_writes.contains_key(&tid) {
-            panic!("res_write write conflict, name:{}", name);
+        if self.res_writes.contains_key(&type_info.type_id) {
+            panic!("res_write write conflict, name:{}", type_info.name);
         }
-        self.res_writes.insert(tid.clone(), name);
+        self.res_writes.insert(type_info.type_id, type_info.name.clone());
     }
 }
 

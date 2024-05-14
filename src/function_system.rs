@@ -2,7 +2,7 @@ use std::{any::TypeId, borrow::Cow};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
-    system::{IntoSystem, RunSystem, System, SystemMeta},
+    system::{IntoSystem, RunSystem, System, SystemMeta, TypeInfo},
     system_params::SystemParam,
     world::*,
 };
@@ -46,7 +46,7 @@ where
     fn into_system(self) -> Self::System {
         FunctionSystem {
             func: self,
-            param: ParamSystem::new(SystemMeta::new::<F>()),
+            param: ParamSystem::new(SystemMeta::new(TypeInfo::of::<F>())),
         }
     }
 }
@@ -117,12 +117,12 @@ impl<P: SystemParam> ParamSystem<P> {
     }
     #[inline]
     pub(crate) fn name(&self) -> &Cow<'static, str> {
-        &self.system_meta.name
+        &self.system_meta.type_info.name
     }
 
     #[inline]
     pub(crate) fn type_id(&self) -> TypeId {
-        self.system_meta.type_id
+        self.system_meta.type_info.type_id
     }
     #[inline]
     pub(crate) fn initialize(&mut self, world: &mut World) {
