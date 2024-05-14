@@ -646,8 +646,10 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
     e: Entity,
 ) -> Result<Row, QueryError> {
+    println!("ar_index: {:?}", ar_index);
     let e = if !ar_index.is_null() {
         let e = mapping.src.mark_remove(src_row);
+        
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }

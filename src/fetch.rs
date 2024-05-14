@@ -274,7 +274,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-        result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ)
+        result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
     }
     fn init_state(world: &World, archetype: &Archetype) -> Self::State {
         archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
@@ -288,7 +288,10 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        (!state.is_null()).then_some(ColumnTick::new(
+        if state.is_null() {
+            return None
+        }
+        Some(ColumnTick::new(
             &archetype.get_column_unchecked(*state),
             tick,
             last_run,

@@ -33,7 +33,7 @@ use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{QueryError, QueryState, Queryer};
+use crate::query::{ArchetypeLocalIndex, QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
@@ -532,7 +532,13 @@ impl World {
         // println!("removed_columns: {:?}", removed_columns);
 
         let mut mapping_dirtys = vec![];
-        let _ = alter_row(&mut mapping_dirtys, &mut mapping, 0u16.into(), addr.row, e)?;
+        let local_index = if ar_index.is_null(){
+            ArchetypeLocalIndex::null()
+        }else{
+            0u16.into()
+        };
+
+        let _ = alter_row(&mut mapping_dirtys, &mut mapping, local_index, addr.row, e)?;
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {

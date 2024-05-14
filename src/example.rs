@@ -48,6 +48,12 @@ pub struct Age19(usize);
 #[derive(Component)]
 pub struct Age20(usize);
 
+#[derive(Bundle)]
+pub struct Bundle1{
+    a1: Age1,
+    a2: Age2,
+}
+
 pub fn print_info(
     q: Query<(
         Entity,

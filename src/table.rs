@@ -102,7 +102,7 @@ impl Table {
         None
     }
     pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
-        assert!(!index.is_null());
+        assert_eq!(index.is_null(), false ,"{:?}", index);
         unsafe { self.columns.get_unchecked(index.index())}
     }
     /// 添加changed监听器，原型刚创建时调用

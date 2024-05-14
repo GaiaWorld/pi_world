@@ -8,6 +8,7 @@ use std::cell::UnsafeCell;
 // use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
+use std::sync::atomic::AtomicU32;
 
 use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
@@ -37,7 +38,7 @@ pub enum QueryError {
     NoSuchRow,
     NoSuchRes,
 }
-
+static ID: AtomicU32  = AtomicU32::new(0);
 pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
     pub(crate) state: QueryState<Q, F>,
@@ -348,6 +349,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     // pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
+    id: u32,
 }
 
 impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
@@ -389,6 +391,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             last_run: Tick::default(),
             // cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
             _k: PhantomData,
+            id : ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 
