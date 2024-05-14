@@ -31,7 +31,7 @@ use smallvec::SmallVec;
 #[derive(Debug, PartialEq, Eq)]
 pub enum QueryError {
     MissingComponent,
-    NoSuchArchetype,
+    NoMatchArchetype,
     NoMatchEntity,
     NoSuchEntity,
     NoSuchRow,
@@ -139,17 +139,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     
     pub fn contains(&self, entity: Entity) -> bool {
-        if let Ok( (_addr, world_index, local_index)) = check(
-            self.world,
-            entity,
-            // unsafe { &mut *self.cache_mapping.get() },
-            &self.state.map,
-        ){
-            // unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
-            return true;
-        }else{
-            return false;
-        }
+        check(self.world, entity, &self.state.map).is_ok()
     }
     
     pub fn get(
@@ -495,7 +485,7 @@ pub(crate) fn check<'w>(
 
     let local_index  = match map.get(addr.index.0 as usize) {
         Some(v) => *v,
-        None => return Err(QueryError::NoSuchArchetype),
+        None => return Err(QueryError::NoMatchArchetype),
     };
     return Ok((addr, addr.index, local_index));
 
