@@ -75,6 +75,12 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
         &self,
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
+        // let  (_addr, world_index, local_index) = check(
+        //     self.world,
+        //     entity,
+        //     // unsafe { &mut *self.cache_mapping.get() },
+        //     &self.state.map,
+        // )?;
         self.state
             .as_readonly()
             .get(self.world, self.tick, e, /* unsafe {
@@ -108,19 +114,19 @@ pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'st
     pub(crate) state: &'world mut QueryState<Q, F>,
     pub(crate) tick: Tick,
     // 缓存上次的索引映射关系
-    pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
+    // pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
 }
 unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Send for Query<'world, Q, F> {}
 unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'world, Q, F> {}
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     
     pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
-        let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
+        // let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
         Query {
             world,
             state,
             tick,
-            cache_mapping,
+            // cache_mapping,
         }
     }
     
@@ -139,7 +145,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
             // unsafe { &mut *self.cache_mapping.get() },
             &self.state.map,
         ){
-            unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
+            // unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
             return true;
         }else{
             return false;

@@ -19,7 +19,7 @@ use std::borrow::Cow;
 // use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
-use std::ops::Range;
+// use std::ops::Range;
 
 use pi_null::Null;
 
@@ -153,9 +153,9 @@ impl<
             self.query.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
-            &self.state.moved_columns,
-            &self.state.added_columns,
-            &self.state.removed_columns,
+            // &self.state.moved_columns,
+            // &self.state.added_columns,
+            // &self.state.removed_columns,
             self.query.tick,
         );
     }
@@ -366,9 +366,9 @@ impl<
             self.query.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
-            &self.state.moved_columns,
-            &self.state.added_columns,
-            &self.state.removed_columns,
+            // &self.state.moved_columns,
+            // &self.state.added_columns,
+            // &self.state.removed_columns,
             self.query.tick,
         );
     }
@@ -378,10 +378,14 @@ pub(crate) struct ArchetypeMapping {
     pub(crate)src: ShareArchetype,            // 源原型
     pub(crate) dst: ShareArchetype,            // 映射到的目标原型
     pub(crate)dst_index: ArchetypeWorldIndex, // 目标原型在World原型数组中的位置
-    pub(crate)move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
-    pub(crate)add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
-    pub(crate)remove_indexs: Range<usize>,    // 源原型上被移除的组件的起始和结束位置
+    // pub(crate)move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
+    // pub(crate)add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
+    // pub(crate)remove_indexs: Range<usize>,    // 源原型上被移除的组件的起始和结束位置
     pub(crate)moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
+    pub(crate)moving: Vec<ComponentInfo>,
+    pub(crate)id: u128,
+    pub(crate)add_len: usize,
+    pub(crate)remove_len: usize,
 }
 
 impl ArchetypeMapping {
@@ -390,10 +394,14 @@ impl ArchetypeMapping {
             src,
             dst,
             dst_index: ArchetypeWorldIndex(0),
-            move_indexs: 0..0,
-            add_indexs: 0..0,
-            remove_indexs: 0..0,
+            // move_indexs: 0..0,
+            // add_indexs: 0..0,
+            // remove_indexs: 0..0,
             moves: Default::default(),
+            moving: Vec::new(),
+            id: u128::MAX,
+            add_len: 0,
+            remove_len: 0,
         }
     }
 }
@@ -402,9 +410,9 @@ pub struct AlterState<A: Bundle> {
     sort_remove: Vec<ComponentInfo>,
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
     state_vec: Vec<MaybeUninit<A::State>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
-    moved_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源目标原型的组件列位置映射列表
-    added_columns: Vec<ColumnIndex>,       // 目标原型的新增加的组件位置列表，主要是给Bundle用的
-    removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有对应的监听
+    // moved_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源目标原型的组件列位置映射列表
+    // added_columns: Vec<ColumnIndex>,       // 目标原型的新增加的组件位置列表，主要是给Bundle用的
+    // removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有对应的监听
     mapping_dirtys: Vec<ArchetypeLocalIndex>,         // 本次变更的原型映射在vec上的索引
     writing_archetype: u128,                                // 正在写入的原型
 }
@@ -417,9 +425,9 @@ impl<A: Bundle> AlterState<A> {
             sort_remove: remove,
             vec: Default::default(),
             state_vec: Vec::new(),
-            moved_columns: Default::default(),
-            added_columns: Default::default(),
-            removed_columns: Default::default(),
+            // moved_columns: Default::default(),
+            // added_columns: Default::default(),
+            // removed_columns: Default::default(),
             mapping_dirtys: Vec::new(),
             writing_archetype: 0,
         }
@@ -446,9 +454,9 @@ impl<A: Bundle> AlterState<A> {
             mapping_init(
                 world,
                 &mut mapping,
-                &mut self.moved_columns,
-                &mut self.added_columns,
-                &mut self.removed_columns,
+                // &mut self.moved_columns,
+                // &mut self.added_columns,
+                // &mut self.removed_columns,
                 &self.sort_add,
                 &self.sort_remove,
                 &mut self.writing_archetype,
@@ -546,9 +554,9 @@ fn destroy_row<'w>(
 pub(crate) fn mapping_init<'a>(
     world: &'a World,
     mapping: &'a mut ArchetypeMapping,
-    moved_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
-    add_columns: &'a mut Vec<ColumnIndex>,
-    removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
+    // moved_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
+    // add_columns: &'a mut Vec<ColumnIndex>,
+    // removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
     sort_add: &Vec<ComponentInfo>,
     sort_remove: &Vec<ComponentInfo>,
     writing_archetype: &mut u128,
@@ -557,21 +565,25 @@ pub(crate) fn mapping_init<'a>(
     let remove_len = sort_remove.len();
     // 如果本地没有找到，则创建components，去world上查找或创建
     let (components, moving) = mapping.src.alter(sort_add, sort_remove);
-    let id = ComponentInfo::calc_id(&components);
+    let id: u128 = ComponentInfo::calc_id(&components);
+    mapping.id = id;
+    mapping.moving = moving;
+    mapping.add_len = add_len;
+    mapping.remove_len = remove_len;
     // 有可能和本system的ar重合，由于alter是延迟的，也不会有引用被改写的问题
     if &id == mapping.src.id() {
         mapping.dst = mapping.src.clone();
         mapping.dst_index = mapping.src.index();
         // 同原型内移动
-        let start = moved_columns.len();
-        for t in moving {
-            let column_index = mapping.src.get_column_index(t.world_index);
-            moved_columns.push((column_index, column_index));
-        }
-        mapping.move_indexs = Range {
-            start,
-            end: moved_columns.len(),
-        };
+        // let start = moved_columns.len();
+        // for t in moving {
+        //     let column_index = mapping.src.get_column_index(t.world_index);
+        //     moved_columns.push((column_index, column_index));
+        // }
+        // mapping.move_indexs = Range {
+        //     start,
+        //     end: moved_columns.len(),
+        // };
         return;
     }
     *writing_archetype = id;
@@ -580,50 +592,50 @@ pub(crate) fn mapping_init<'a>(
     mapping.dst_index = dst_index;
     // 两边循环，获得相同组件的列位置映射和移除组件的列位置
     // 计算移动列
-    let start = moved_columns.len();
-    // 获得相同组件的列位置映射
-    for t in moving {
-        let src_column = mapping.src.get_column_index(t.world_index);
-        let dst_column = mapping.dst.get_column_index(t.world_index);
-        moved_columns.push((src_column, dst_column));
-    }
-    mapping.move_indexs = Range {
-        start,
-        end: moved_columns.len(),
-    };
+    // let start = moved_columns.len();
+    // // 获得相同组件的列位置映射
+    // for t in moving {
+    //     let src_column = mapping.src.get_column_index(t.world_index);
+    //     let dst_column = mapping.dst.get_column_index(t.world_index);
+    //     moved_columns.push((src_column, dst_column));
+    // }
+    // mapping.move_indexs = Range {
+    //     start,
+    //     end: moved_columns.len(),
+    // };
     // 计算新增列
-    let start = add_columns.len();
-    if add_len > 0 {
-        // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-        for (i, t) in mapping.dst.get_columns().iter().enumerate() {
-            let column = mapping.src.get_column_index(t.info().world_index);
-            if column.is_null() {
-                add_columns.push(ColumnIndex(i as u16));
-            }
-        }
-    }
-    mapping.add_indexs = Range {
-        start,
-        end: add_columns.len(),
-    };
+    // let start = add_columns.len();
+    // if add_len > 0 {
+    //     // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
+    //     for (i, t) in mapping.dst.get_columns().iter().enumerate() {
+    //         let column = mapping.src.get_column_index(t.info().world_index);
+    //         if column.is_null() {
+    //             add_columns.push(ColumnIndex(i as u16));
+    //         }
+    //     }
+    // }
+    // mapping.add_indexs = Range {
+    //     start,
+    //     end: add_columns.len(),
+    // };
     // 计算移除列
-    let start = removed_columns.len();
-    if remove_len > 0 {
-        // 移除组件的位置，源组件存在，但目标原型上没有该组件
-        for (i, t) in mapping.src.get_columns().iter().enumerate() {
-            let column = mapping.dst.get_column_index(t.info().world_index);
-            if column.is_null() {
-                // 获取被移除的组件在目标原型的移除列的脏位置，如果没有，则表示该组件无监听
-                let remove_column_dirty_index =
-                    mapping.dst.find_remove_column_dirty(t.info().world_index);
-                removed_columns.push((ColumnIndex(i as u16), remove_column_dirty_index));
-            }
-        }
-    }
-    mapping.remove_indexs = Range {
-        start,
-        end: removed_columns.len(),
-    };
+    // let start = removed_columns.len();
+    // if remove_len > 0 {
+    //     // 移除组件的位置，源组件存在，但目标原型上没有该组件
+    //     for (i, t) in mapping.src.get_columns().iter().enumerate() {
+    //         let column = mapping.dst.get_column_index(t.info().world_index);
+    //         if column.is_null() {
+    //             // 获取被移除的组件在目标原型的移除列的脏位置，如果没有，则表示该组件无监听
+    //             let remove_column_dirty_index =
+    //                 mapping.dst.find_remove_column_dirty(t.info().world_index);
+    //             removed_columns.push((ColumnIndex(i as u16), remove_column_dirty_index));
+    //         }
+    //     }
+    // }
+    // mapping.remove_indexs = Range {
+    //     start,
+    //     end: removed_columns.len(),
+    // };
 }
 
 pub(crate) fn alter_row<'w, 'a>(
@@ -657,30 +669,41 @@ pub(crate) fn clear(
     world: &World,
     vec: &mut Vec<ArchetypeMapping>,
     mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
-    moved_columns: &Vec<(ColumnIndex, ColumnIndex)>,
-    added_columns: &Vec<ColumnIndex>,
-    removed_columns: &Vec<(ColumnIndex, ColumnIndex)>,
+    // moved_columns: &Vec<(ColumnIndex, ColumnIndex)>,
+    // added_columns: &Vec<ColumnIndex>,
+    // removed_columns: &Vec<(ColumnIndex, ColumnIndex)>,
     tick: Tick,
 ) {
     // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
     for ar_index in mapping_dirtys.iter() {
         let am = unsafe { vec.get_unchecked_mut((*ar_index).0 as usize) };
-        move_columns(am, moved_columns);
-        remove_columns(am, removed_columns);
-        add_columns(am, added_columns, tick);
+        move_columns(am);
+        remove_columns(am);
+        add_columns(am, tick);
         update_table_world(world, am);
         am.moves.clear();
     }
     mapping_dirtys.clear();
 }
 // 将需要移动的全部源组件移动到新位置上
-pub(crate) fn move_columns(am: &mut ArchetypeMapping, moved_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
-    for i in am.move_indexs.clone().into_iter() {
-        let (src_i, dst_i) = unsafe { moved_columns.get_unchecked(i) };
-        let src_column = am.src.get_column_unchecked(*src_i);
-        let dst_column = am.dst.get_column_unchecked(*dst_i);
+pub(crate) fn move_columns( am: &mut ArchetypeMapping) {
+    for t in &am.moving {
+        let src_index = am.src.get_column_index(t.world_index);
+        let src_column = am.src.get_column_unchecked(src_index);
+        let dst_column = if *am.src.id() == am.id {
+            src_column
+        } else {
+            let dst_index = am.dst.get_column_index(t.world_index);
+             am.dst.get_column_unchecked(dst_index)
+        };
         move_column(src_column, dst_column, &am.moves);
     }
+    // for i in am.move_indexs.clone().into_iter() {
+    //     let (src_i, dst_i) = unsafe { moved_columns.get_unchecked(i) };
+    //     let src_column = am.src.get_column_unchecked(*src_i);
+    //     let dst_column = am.dst.get_column_unchecked(*dst_i);
+    //     move_column(src_column, dst_column, &am.moves);
+    // }
 }
 // 将源组件移动到新位置上
 pub(crate)fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(Row, Row, Entity)>) {
@@ -690,42 +713,92 @@ pub(crate)fn move_column(src_column: &Column, dst_column: &Column, moves: &Vec<(
     }
 }
 // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
-pub(crate)fn remove_columns(am: &mut ArchetypeMapping, removed_columns: &Vec<(ColumnIndex, ColumnIndex)>) {
-    for i in am.remove_indexs.clone().into_iter() {
-        let column_index = unsafe { removed_columns.get_unchecked(i) };
-        let column = am.src.get_column_unchecked(column_index.0);
-        if !column_index.1.is_null() {
-            // 如果目标原型的移除列上有对应监听，则记录移除行
-            let d = am.dst.get_remove_column_dirty(column_index.1);
-            if column.needs_drop() {
-                for (src_row, dst_row, e) in am.moves.iter() {
-                    column.drop_row_unchecked(*src_row);
-                    // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+pub(crate)fn remove_columns(am: &mut ArchetypeMapping) {
+
+    // for i in am.remove_indexs.clone().into_iter() {
+    //     let column_index = unsafe { removed_columns.get_unchecked(i) };
+    //     let column = am.src.get_column_unchecked(column_index.0);
+    //     if !column_index.1.is_null() {
+    //         // 如果目标原型的移除列上有对应监听，则记录移除行
+    //         let d = am.dst.get_remove_column_dirty(column_index.1);
+    //         if column.needs_drop() {
+    //             for (src_row, dst_row, e) in am.moves.iter() {
+    //                 column.drop_row_unchecked(*src_row);
+    //                 // 在脏列表上记录移除行
+    //                 d.record_unchecked(*e, *dst_row);
+    //             }
+    //         } else {
+    //             for (_src_row, dst_row, e) in am.moves.iter() {
+    //                 // 在脏列表上记录移除行
+    //                 d.record_unchecked(*e, *dst_row);
+    //             }
+    //         }
+    //     } else if column.needs_drop() {
+    //         for (src_row, _dst_row, _e) in am.moves.iter() {
+    //             column.drop_row_unchecked(*src_row)
+    //         }
+    //     }
+    // }
+    if am.remove_len == 0{
+        return;
+    }
+    for (i, t) in am.src.get_columns().iter().enumerate() {
+        let column = am.dst.get_column_index(t.info().world_index);
+        if column.is_null() {
+            // 获取被移除的组件在目标原型的移除列的脏位置，如果没有，则表示该组件无监听
+            let remove_column_dirty_index =
+            am.dst.find_remove_column_dirty(t.info().world_index);
+            
+            let column = am.src.get_column_unchecked(ColumnIndex(i as u16));
+            if !remove_column_dirty_index.is_null() {
+                // 如果目标原型的移除列上有对应监听，则记录移除行
+                let d = am.dst.get_remove_column_dirty(remove_column_dirty_index);
+                if column.needs_drop() {
+                    for (src_row, dst_row, e) in am.moves.iter() {
+                        column.drop_row_unchecked(*src_row);
+                        // 在脏列表上记录移除行
+                        d.record_unchecked(*e, *dst_row);
+                    }
+                } else {
+                    for (_src_row, dst_row, e) in am.moves.iter() {
+                        // 在脏列表上记录移除行
+                        d.record_unchecked(*e, *dst_row);
+                    }
                 }
-            } else {
-                for (_src_row, dst_row, e) in am.moves.iter() {
-                    // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+            } else if column.needs_drop() {
+                for (src_row, _dst_row, _e) in am.moves.iter() {
+                    column.drop_row_unchecked(*src_row)
                 }
-            }
-        } else if column.needs_drop() {
-            for (src_row, _dst_row, _e) in am.moves.iter() {
-                column.drop_row_unchecked(*src_row)
             }
         }
     }
 }
 // 通知新增的源组件
-pub(crate) fn add_columns(am: &mut ArchetypeMapping, add_columns: &Vec<ColumnIndex>, tick: Tick) {
-    for i in am.add_indexs.clone().into_iter() {
-        let column_index = unsafe { add_columns.get_unchecked(i) };
-        let column = am.dst.get_column_unchecked(*column_index);
-        if column.dirty.listener_len() == 0 {
-            continue;
-        }
-        for (_, dst_row, e) in am.moves.iter() {
-            column.add_record_unchecked(*e, *dst_row, tick);
+pub(crate) fn add_columns(am: &mut ArchetypeMapping, tick: Tick) {
+    // for i in am.add_indexs.clone().into_iter() {
+    //     let column_index = unsafe { add_columns.get_unchecked(i) };
+    //     let column = am.dst.get_column_unchecked(*column_index);
+    //     if column.dirty.listener_len() == 0 {
+    //         continue;
+    //     }
+    //     for (_, dst_row, e) in am.moves.iter() {
+    //         column.add_record_unchecked(*e, *dst_row, tick);
+    //     }
+    // }
+    if am.add_len == 0{
+        return;
+    }
+    for (i, t) in am.dst.get_columns().iter().enumerate() {
+        let column_index = am.src.get_column_index(t.info().world_index);
+        if column_index.is_null() {
+            // let column_index = unsafe { add_columns.get_unchecked(i) };
+            let column = am.dst.get_column_unchecked(ColumnIndex(i as u16));
+            if column.dirty.listener_len() == 0 {
+                continue;
+            }
+            for (_, dst_row, e) in am.moves.iter() {
+                column.add_record_unchecked(*e, *dst_row, tick);
+            }
         }
     }
 }
