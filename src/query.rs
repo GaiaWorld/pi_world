@@ -185,7 +185,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.cur_param_ok();
-        Self::State::create(world)
+        Self::State::create(world, unsafe{transmute(system_meta.type_info.type_id)})
     }
     fn archetype_depend(
         world: &World,
@@ -242,7 +242,7 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetEl
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
-        Self::State::create(world)
+        Self::State::create(world, unsafe{transmute(system_meta.type_info.type_id)})
     }
 }
 impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
@@ -252,13 +252,14 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
     }
 }
 /// 监听原型创建， 添加record
-pub struct Notify<'a, Q: FetchComponents, F: FilterComponents>(
-    Vec<ComponentIndex>,
-    SmallVec<[ListenType; 1]>,
-    PhantomData<&'a ()>,
-    PhantomData<Q>,
-    PhantomData<F>,
-);
+pub struct Notify<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
+    id: u128,
+    ticks: Vec<ComponentIndex>,
+    listeners: SmallVec<[ListenType; 1]>,
+    _a: (PhantomData<&'a ()>,PhantomData<Q>,PhantomData<F>),
+}
+
+
 impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
     for Notify<'a, Q, F>
 {
@@ -268,8 +269,8 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
             return;
         }
         unsafe {
-            add_ticks(&e.0, &self.0);
-            add_dirty_listeners(&e.0, TypeId::of::<QueryState<Q, F>>(), &self.1)
+            add_ticks(&e.0, &self.ticks);
+            add_dirty_listeners(&e.0, self.id, &self.listeners)
         };
     }
 }
@@ -286,7 +287,7 @@ pub(crate) unsafe fn add_ticks(ar: &Archetype, components: &Vec<ComponentIndex>)
 // 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
 unsafe fn add_dirty_listeners(
     ar: &Archetype,
-    owner: TypeId,
+    owner: u128,
     listeners: &SmallVec<[ListenType; 1]>,
 ) {
     for ltype in listeners.iter() {
@@ -301,7 +302,7 @@ unsafe fn add_dirty_listeners(
 // 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
 unsafe fn find_dirty_listeners(
     ar: &Archetype,
-    owner: TypeId,
+    owner: u128,
     listeners: &SmallVec<[ListenType; 1]>,
     vec: &mut SmallVec<[DirtyIndex; 1]>,
 ) {
@@ -342,6 +343,7 @@ impl pi_null::Null for ArchetypeLocalIndex{
 
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
+    pub(crate) id: u128,
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
@@ -349,14 +351,17 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     // pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
-    id: u32,
+    //id: u32,
 }
 
 impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
-    pub fn create(world: &World) -> Self {
+    pub fn create(world: &World, mut id: u128) -> Self {
+        let qid = TypeId::of::<Q>();
+        let fid = TypeId::of::<F>();
+        let mut id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)} ;
         let mut components = Default::default();
         if Q::TICK_COUNT > 0 {
             Q::init_ticks(world, &mut components);
@@ -367,23 +372,25 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         if Q::TICK_COUNT > 0 || F::LISTENER_COUNT > 0 {
             // 遍历已有的原型， 添加record
-            let notify = Notify(
-                components,
-                listeners.clone(),
-                PhantomData,
+            let notify = Notify{
+                id,
+                ticks: components,
+                listeners: listeners.clone(),
+                _a: (PhantomData,
                 PhantomData::<Q>,
-                PhantomData::<F>,
-            );
+                PhantomData::<F>),
+            };
             for r in world.archetype_arr.iter() {
                 notify.listen(ArchetypeInit(r, world))
             }
             // 监听原型创建， 添加dirty
             world.listener_mgr.register_event(Share::new(notify));
         }
-        QueryState::new(listeners)
+        QueryState::new(id, listeners)
     }
-    pub fn new(listeners: SmallVec<[ListenType; 1]>) -> Self {
+    pub fn new(id: u128, listeners: SmallVec<[ListenType; 1]>) -> Self {
         Self {
+            id,
             listeners,
             vec: Vec::new(),
             archetype_len: 0,
@@ -391,7 +398,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             last_run: Tick::default(),
             // cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
             _k: PhantomData,
-            id : ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 
@@ -416,7 +422,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32) );
         }
         self.archetype_len = len;
-        // println!("align1===={:?}", (std::any::type_name::<Self>(), len, self.archetype_len));
     }
     // 新增的原型
     pub fn add_archetype(
@@ -432,7 +437,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let mut listeners = SmallVec::new();
         if F::LISTENER_COUNT > 0 {
             unsafe {
-                find_dirty_listeners(&ar, TypeId::of::<Self>(), &self.listeners, &mut listeners)
+                find_dirty_listeners(&ar, self.id, &self.listeners, &mut listeners)
             };
             // if vec.len() == 0 {
             //     // 表示该原型没有监听的组件，本查询可以不关心该原型
@@ -503,8 +508,8 @@ pub(crate) fn check<'w>(
 
     let local_index  = match map.get(addr.index.index()) {
         Some(v) => if v.is_null() {
-            return Err(QueryError::NoMatchArchetype)
-        }else{
+            return Err(QueryError::NoMatchArchetype);
+        } else {
             *v
         },
         None => return Err(QueryError::NoMatchArchetype),
@@ -675,14 +680,14 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
-                // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
-                match self
-                    .state
-                    .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
-                {
-                    Ok(item) => return Some(item),
-                    Err(_) => (),
-                }
+                // // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
+                // match self
+                //     .state
+                //     .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
+                // {
+                //     Ok(item) => return Some(item),
+                //     Err(_) => (),
+                // }
                 continue;
             }
             // 检查当前原型的下一个被脏组件

@@ -106,14 +106,14 @@ impl Table {
         unsafe { self.columns.get_unchecked(index.index())}
     }
     /// 添加changed监听器，原型刚创建时调用
-    pub fn add_changed_listener(&self, index: ComponentIndex, owner: TypeId) {
+    pub fn add_changed_listener(&self, index: ComponentIndex, owner: u128) {
         if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
             c.is_record_tick = true;
             c.dirty.insert_listener(owner)
         }
     }
     /// 添加removed监听器，原型刚创建时调用
-    pub fn add_removed_listener(&self, index: ComponentIndex, owner: TypeId) {
+    pub fn add_removed_listener(&self, index: ComponentIndex, owner: u128) {
         if !self.get_column_index(index).is_null() {
             return;
         }
@@ -126,14 +126,14 @@ impl Table {
         }
     }
     /// 添加destroyed监听器，原型刚创建时调用
-    pub fn add_destroyed_listener(&self, owner: TypeId) {
+    pub fn add_destroyed_listener(&self, owner: u128) {
         unsafe { &mut *self.destroys.get() }.insert_listener(owner)
     }
     /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
     pub(crate) fn find_changed_listener(
         &self,
         index: ComponentIndex,
-        owner: TypeId,
+        owner: u128,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         if let Some((c, column_index)) = unsafe { self.get_column_mut(index) } {
@@ -150,7 +150,7 @@ impl Table {
     pub(crate) fn find_removed_listener(
         &self,
         index: ComponentIndex,
-        owner: TypeId,
+        owner: u128,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         let vec1 = unsafe { &*self.remove_columns.get() };
@@ -168,10 +168,11 @@ impl Table {
     /// 查询在同步到原型时，寻找自己添加的destroyed监听器，并记录监听器位置
     pub(crate) fn find_destroyed_listener(
         &self,
-        owner: TypeId,
+        owner: u128,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
-        let listener_index = unsafe { &*self.destroys.get() }.find_listener_index(owner);
+        let list = unsafe { &*self.destroys.get() };
+        let listener_index = list.find_listener_index(owner);
         if !listener_index.is_null() {
             vec.push(DirtyIndex {
                 listener_index,

@@ -7,7 +7,6 @@
 //! 整理时，如果该Column所关联的所有AddedIndex都和该AppendVec的长度一样，则所有AddedIndex和AppendVec就可以清空，否则继续保留，等下一帧再检查是否清空。 因为必须保证Row不被错误重用，只有清空的情况下，才可以做原型的Removed整理。
 //!
 use core::fmt::*;
-use std::any::TypeId;
 use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
@@ -52,13 +51,13 @@ impl Null for EntityRow {
 
 #[derive(Debug, Default)]
 pub struct Dirty {
-    listeners: Vec<(TypeId, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
+    listeners: Vec<(u128, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
     pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
 }
 unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
-    pub(crate) fn new(owner: TypeId) -> Self {
+    pub(crate) fn new(owner: u128) -> Self {
         let listeners = vec![(owner, ShareUsize::new(0))];
         Self {
             listeners,
@@ -67,15 +66,15 @@ impl Dirty {
     }
 
     /// 插入一个监听者的类型id
-    pub(crate) fn insert_listener(&mut self, owner: TypeId) {
+    pub(crate) fn insert_listener(&mut self, owner: u128) {
         self.listeners.push((owner, ShareUsize::new(0)));
     }
     /// 插入一个监听者的类型id
-    pub(crate) fn listener_list(&self) -> &Vec<(TypeId, ShareUsize)> {
+    pub(crate) fn listener_list(&self) -> &Vec<(u128, ShareUsize)> {
         &self.listeners
     }
     // 返回监听器的位置
-    pub fn find_listener_index(&self, owner: TypeId) -> u32 {
+    pub fn find_listener_index(&self, owner: u128) -> u32 {
         self.listener_list()
             .iter()
             .enumerate()

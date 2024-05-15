@@ -346,7 +346,7 @@ impl<
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
-        let q = QueryState::create(world);
+        let q = QueryState::create(world, unsafe{transmute(system_meta.type_info.type_id)});
         (q, AlterState::new(A::components(Vec::new()), D::components(Vec::new())))
     }
 }
@@ -718,6 +718,12 @@ pub(crate) fn move_column(
     for (src_row, dst_row, _) in moves.iter() {
         let src_data: *mut u8 = src_column.get_row(*src_row);
         dst_column.write_row(*dst_row, src_data);
+    }
+    if src_column.is_record_tick && dst_column.is_record_tick {
+        for (src_row, dst_row, e) in moves.iter() {
+            let tick = src_column.get_tick_unchecked(*src_row);
+            dst_column.add_record_unchecked(*e, *dst_row, tick);
+        }
     }
 }
 // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
