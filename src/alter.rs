@@ -718,6 +718,12 @@ pub(crate) fn move_column(
         let src_data: *mut u8 = src_column.get_row(*src_row);
         dst_column.write_row(*dst_row, src_data);
     }
+    if src_column.is_record_tick && dst_column.is_record_tick {
+        for (src_row, dst_row, e) in moves.iter() {
+            let tick = src_column.get_tick_unchecked(*src_row);
+            dst_column.add_record_unchecked(*e, *dst_row, tick);
+        }
+    }
 }
 // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
 pub(crate) fn remove_columns(am: &mut ArchetypeMapping) {

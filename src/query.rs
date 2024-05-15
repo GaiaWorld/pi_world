@@ -422,7 +422,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32) );
         }
         self.archetype_len = len;
-        // println!("align1===={:?}", (std::any::type_name::<Self>(), len, self.archetype_len));
     }
     // 新增的原型
     pub fn add_archetype(
@@ -681,14 +680,14 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
-                // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
-                match self
-                    .state
-                    .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
-                {
-                    Ok(item) => return Some(item),
-                    Err(_) => (),
-                }
+                // // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
+                // match self
+                //     .state
+                //     .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
+                // {
+                //     Ok(item) => return Some(item),
+                //     Err(_) => (),
+                // }
                 continue;
             }
             // 检查当前原型的下一个被脏组件
