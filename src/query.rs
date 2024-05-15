@@ -502,7 +502,11 @@ pub(crate) fn check<'w>(
     };
 
     let local_index  = match map.get(addr.index.index()) {
-        Some(v) => *v,
+        Some(v) => if v.is_null() {
+            return Err(QueryError::NoMatchArchetype)
+        }else{
+            *v
+        },
         None => return Err(QueryError::NoMatchArchetype),
     };
     return Ok((addr, addr.index, local_index));
