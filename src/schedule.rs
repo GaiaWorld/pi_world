@@ -150,6 +150,8 @@ impl Schedule {
                 let r = r.get_mut();
                 r.sets.extend_from_slice(config.config.sets.as_slice());
                 r.schedules.extend_from_slice(config.config.schedules.as_slice());
+                r.before.extend_from_slice(config.config.before.as_slice());
+                r.after.extend_from_slice(config.config.after.as_slice());
             },
             std::collections::hash_map::Entry::Vacant(r) => {
                 r.insert(config.config);
@@ -298,6 +300,7 @@ impl Schedule {
             std::collections::hash_map::Entry::Vacant(r) => {
                 let before_set_index = graph.add_set(format!("{:?}_before", set).into());
                 let after_set_index = graph.add_set(format!("{:?}_after", set).into());
+                graph.add_edge(before_set_index, after_set_index);
                 r.insert(((before_set_index, false), (after_set_index, false)))
             },
         };
@@ -305,6 +308,7 @@ impl Schedule {
         if is_before { 
             let r = set_nodes.0 ;
             if !r.1 {
+                
                 if let Some(m) =  map3.get(&set) {
                     for i in m.iter() {
                         if let Some(i) = map2.get(i) {
@@ -381,9 +385,7 @@ impl Schedule {
                         };
                         stage.add_edge(after_index, node_index);
                     }
-                }
-
-                
+                }  
             }
         }
 
@@ -424,8 +426,7 @@ impl Schedule {
                         stage.add_edge(in_set_before, set_before);
                         stage.add_edge(set_after, in_set_after);
                     }
-                   
-
+                    
                     if config.before.len() > 0 {
                         for before in config.before.iter() {
                             let before_index = match before {
