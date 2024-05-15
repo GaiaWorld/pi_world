@@ -68,7 +68,7 @@ pub mod safe_vec;
 pub mod exec_graph;
 pub mod dot;
 pub mod schedule;
-
+pub mod editor;
 pub mod commands;
 
 pub mod example;
