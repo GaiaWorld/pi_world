@@ -216,7 +216,7 @@ impl World {
         *r.value()
     }
     /// 计算所有原型信息，设置了所有组件的索引
-    pub fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
+    pub(crate) fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
         let mut id = 0;
         for c in components.iter_mut() {
             id ^= c.id();
@@ -512,6 +512,10 @@ impl World {
 
         if !addr.index.is_null() {
             ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
+            let ae = ar.mark_remove(addr.row);
+            if e != ae {
+                return Err(QueryError::NoMatchEntity(ae));
+            }
         }
 
         // println!("components: {:?}", components);
@@ -584,22 +588,6 @@ impl World {
     }
     pub fn archetype_list<'a>(&'a self) -> SafeVecIter<'a, ShareArchetype> {
         self.archetype_arr.iter()
-    }
-    // 计算原型组件信息
-    pub(crate) fn calc_infos(&self, mut components: Vec<ComponentInfo>) -> (u128, Cow<'static, str>, Vec<ComponentInfo>) {
-        // todo 用前缀树的方式，类似use pi_share::{Share, ShareU32} 方式记录为name
-        let mut id = 0;
-        let mut s = String::new();
-        for c in components.iter_mut() {
-            id ^= c.id();
-            s.push_str(&c.type_name);
-            s.push('+');
-            c.world_index = self.add_component_info(c.clone());
-        }
-        if s.len() > 0 {
-            s.pop();
-        }
-        (id, s.into(), components)
     }
     // 返回原型及是否新创建
     pub(crate) fn find_ar(

@@ -8,7 +8,6 @@ use std::cell::UnsafeCell;
 // use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
-use std::sync::atomic::AtomicU32;
 
 use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
@@ -38,7 +37,7 @@ pub enum QueryError {
     NoSuchRow,
     NoSuchRes,
 }
-static ID: AtomicU32  = AtomicU32::new(0);
+
 pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'world World,
     pub(crate) state: QueryState<Q, F>,
@@ -358,10 +357,10 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
-    pub fn create(world: &World, mut id: u128) -> Self {
+    pub fn create(world: &World, id: u128) -> Self {
         let qid = TypeId::of::<Q>();
         let fid = TypeId::of::<F>();
-        let mut id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)} ;
+        let id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)};
         let mut components = Default::default();
         if Q::TICK_COUNT > 0 {
             Q::init_ticks(world, &mut components);
@@ -408,7 +407,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let mut result = ArchetypeDependResult::new();
         Q::archetype_depend(world, archetype, &mut result);
-        result.flag.bits() != 0 && !result.flag.contains(Flags::WITHOUT)
+        !result.flag.contains(Flags::WITHOUT)
     }
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {

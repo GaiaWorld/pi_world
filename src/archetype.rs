@@ -323,7 +323,7 @@ pub(crate) struct ArchetypeInfo{
     pub(crate) components: Vec<ComponentInfo>,
 }
 impl ArchetypeInfo {
-    fn name(&self) -> Cow<'static, str> {
+    pub(crate) fn name(&self) -> Cow<'static, str> {
         let mut s = String::new();
         for info in self.components.iter() {
             s.push_str(&info.type_name);

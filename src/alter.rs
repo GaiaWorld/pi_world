@@ -293,9 +293,9 @@ impl<
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
             result.merge(ArchetypeDepend::Flag(Flags::DELETE));
             let (components, _) = archetype.alter(&state.1.sort_add, &state.1.sort_remove);
-            let infos = world.calc_infos(components);
-            if archetype.id() != &infos.0 {
-                result.merge(ArchetypeDepend::Alter(infos));
+            let info = world.archetype_info(components);
+            if archetype.id() != &info.id {
+                result.merge(ArchetypeDepend::Alter((info.id, info.name(), info.components)));
             }
         }
     }
