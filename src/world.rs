@@ -220,7 +220,7 @@ impl World {
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &self,
     ) -> Queryer<Q, F> {
-        let mut state = QueryState::create(self);
+        let mut state = QueryState::create(self, 0);
         state.align(self);
         Queryer::new(self, state)
     }
@@ -233,7 +233,7 @@ impl World {
     >(
         &mut self,
     ) -> Alterer<Q, F, A, D> {
-        let mut query_state = QueryState::create(self);
+        let mut query_state = QueryState::create(self, 0);
         let mut alter_state = AlterState::new(A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射

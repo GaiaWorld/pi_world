@@ -660,7 +660,7 @@ impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
 #[derive(Debug)]
 pub struct Mut<'a, T: 'static> {
     pub(crate) column: &'a Column,
-    pub(crate) e: Entity,
+    pub e: Entity,
     pub(crate) row: Row,
     pub(crate) tick: Tick,
     _p: PhantomData<T>,

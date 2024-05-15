@@ -346,7 +346,7 @@ impl<
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
-        let q = QueryState::create(world);
+        let q = QueryState::create(world, unsafe{transmute(system_meta.type_info.type_id)});
         (q, AlterState::new(A::components(Vec::new()), D::components(Vec::new())))
     }
 }
