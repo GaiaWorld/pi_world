@@ -57,7 +57,7 @@ pub struct Bundle1{
 pub fn print_info(
     q: Query<(
         Entity,
-        ArchetypeInfo,
+        ArchetypeName,
     )>,
 ) {
     println!("print_info it:{:?}", q.iter().size_hint());

@@ -253,7 +253,7 @@ mod test_mod {
         println!("asdf:{:?}", ppp);
         let listener_mgr = ListenerMgr::default();
         let archetype_init_key = listener_mgr.init_register_event::<ShareArchetype>();
-        let ar = Share::new(Archetype::new(vec![ComponentInfo::of::<ShareArchetype>()]));
+        let ar = Share::new(Archetype::new(Default::default()));
         listener_mgr.notify_event(archetype_init_key, ar);
     }
 }

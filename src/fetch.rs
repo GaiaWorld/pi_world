@@ -542,11 +542,11 @@ impl<T: 'static> FetchComponents for Has<T> {
 }
 
 #[derive(Debug)]
-pub struct ArchetypeInfo<'a>(pub &'a Cow<'static, str>, pub Row);
-impl FetchComponents for ArchetypeInfo<'_> {
+pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub Row);
+impl FetchComponents for ArchetypeName<'_> {
     type Fetch<'w> = &'w Cow<'static, str>;
-    type Item<'w> = ArchetypeInfo<'w>;
-    type ReadOnly = ArchetypeInfo<'static>;
+    type Item<'w> = ArchetypeName<'w>;
+    type ReadOnly = ArchetypeName<'static>;
     type State = ();
     const TICK_COUNT: usize = 0;
 
@@ -567,7 +567,7 @@ impl FetchComponents for ArchetypeInfo<'_> {
 
     
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        ArchetypeInfo(fetch, row)
+        ArchetypeName(fetch, row)
     }
 }
 

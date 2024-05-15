@@ -31,8 +31,7 @@ where
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
         let components = Ins::components(Vec::new());
-        let id = ComponentInfo::calc_id(&components);
-        let (ar_index, ar) = world.find_archtype(id, components);
+        let (ar_index, ar) = world.find_ar( components);
         let s = Ins::init_state(world, &ar);
 
         // world.entitys.reserve(length);

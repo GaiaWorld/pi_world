@@ -566,13 +566,13 @@ pub(crate) fn mapping_init<'a>(
     let remove_len = sort_remove.len();
     // 如果本地没有找到，则创建components，去world上查找或创建
     let (components, moving) = mapping.src.alter(sort_add, sort_remove);
-    let id: u128 = ComponentInfo::calc_id(&components);
-    mapping.id = id;
+    let info = world.archetype_info(components);
+    mapping.id = info.id;
     mapping.moving = moving;
     mapping.add_len = add_len;
     mapping.remove_len = remove_len;
     // 有可能和本system的ar重合，由于alter是延迟的，也不会有引用被改写的问题
-    if &id == mapping.src.id() {
+    if &info.id == mapping.src.id() {
         mapping.dst = mapping.src.clone();
         mapping.dst_index = mapping.src.index();
         // 同原型内移动
@@ -587,8 +587,8 @@ pub(crate) fn mapping_init<'a>(
         // };
         return;
     }
-    *writing_archetype = id;
-    let (dst_index, dst) = world.find_archtype(id, components);
+    *writing_archetype = info.id;
+    let (dst_index, dst) = world.find_archtype(info);
     mapping.dst = dst;
     mapping.dst_index = dst_index;
     // 两边循环，获得相同组件的列位置映射和移除组件的列位置
@@ -646,25 +646,26 @@ pub(crate) fn alter_row<'w, 'a>(
     src_row: Row,
     e: Entity,
 ) -> Result<Row, QueryError> {
-    println!("ar_index: {:?}", ar_index);
-    let e = if !ar_index.is_null() {
-        let e = mapping.src.mark_remove(src_row);
-        
-        if e.is_null() {
-            return Err(QueryError::NoSuchRow);
-        }
-        e
-    } else {
-        e
-    };
-    let dst_row = mapping.dst.alloc();
-    // 记录移动条目的源位置和目标位置
-    mapping.moves.push((src_row, dst_row, e));
+    let ae = mapping.src.mark_remove(src_row);
+    if e != ae {
+        return Err(QueryError::NoMatchEntity(ae));
+    }
+    let dst_row = alloc_row(mapping, src_row, e);
     if mapping.moves.len() == 1 {
         // 如果该映射是首次记录，则记脏该映射
         mapping_dirtys.push(ar_index);
     }
     Ok(dst_row)
+}
+pub(crate) fn alloc_row(
+    mapping: &mut ArchetypeMapping,
+    src_row: Row,
+    e: Entity,
+) -> Row {
+    let dst_row = mapping.dst.alloc();
+    // 记录移动条目的源位置和目标位置
+    mapping.moves.push((src_row, dst_row, e));
+    dst_row
 }
 
 // 系统结束后，将变更的条目移动

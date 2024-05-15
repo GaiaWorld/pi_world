@@ -220,21 +220,12 @@ impl Archetype {
     /// assert_eq!(t11, &Arc::new(1));
     /// assert_eq!(Arc::<i32>::strong_count(&t11), 0);
     /// ```
-    pub fn new(mut components: Vec<ComponentInfo>) -> Self {
-        let mut id = 0;
-        let mut s = String::new();
-        for info in components.iter_mut() {
-            id ^= info.id();
-            s.push_str(&info.type_name);
-            s.push('+');
-        }
-        if s.len() > 0 {
-            s.pop();
-        }
+    pub(crate) fn new(info: ArchetypeInfo) -> Self {
+        let name = info.name();
         Self {
-            id,
-            name: s.into(),
-            table: Table::new(components),
+            id: info.id,
+            name,
+            table: Table::new(info.components),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -324,6 +315,24 @@ impl Debug for Archetype {
             .field("table", &self.table)
             .field("index", &self.index)
             .finish()
+    }
+}
+#[derive(Debug, Default)]
+pub(crate) struct ArchetypeInfo{
+    pub(crate) id:u128,
+    pub(crate) components: Vec<ComponentInfo>,
+}
+impl ArchetypeInfo {
+    fn name(&self) -> Cow<'static, str> {
+        let mut s = String::new();
+        for info in self.components.iter() {
+            s.push_str(&info.type_name);
+            s.push('+');
+        }
+        if s.len() > 0 {
+            s.pop();
+        }
+        s.into()
     }
 }
 

@@ -33,7 +33,7 @@ use smallvec::SmallVec;
 pub enum QueryError {
     MissingComponent,
     NoMatchArchetype,
-    NoMatchEntity,
+    NoMatchEntity(Entity),
     NoSuchEntity,
     NoSuchRow,
     NoSuchRes,

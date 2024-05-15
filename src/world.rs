@@ -23,17 +23,17 @@ use std::sync::atomic::Ordering;
 use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
-    add_columns, alter_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
+    add_columns, alloc_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
-    Archetype, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype,
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype
 };
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{ArchetypeLocalIndex, QueryError, QueryState, Queryer};
+use crate::query::{QueryError, QueryState, Queryer};
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
@@ -146,7 +146,7 @@ impl World {
         let listener_mgr = ListenerMgr::default();
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
-        let empty_archetype = ShareArchetype::new(Archetype::new(vec![]));
+        let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
         let component_arr = SafeVec::with_capacity(1);
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
@@ -185,8 +185,7 @@ impl World {
     /// 创建一个插入器
     pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
         let components = I::components(Vec::new());
-        let id = ComponentInfo::calc_id(&components);
-        let (ar_index, ar) = self.find_archtype(id, components);
+        let (ar_index, ar) = self.find_archtype(self.archetype_info(components));
         let s = I::init_state(self, &ar);
         Inserter::new(self, (ar_index, ar, s), self.tick())
     }
@@ -216,7 +215,16 @@ impl World {
         });
         *r.value()
     }
-    /// 创建一个查询器
+    /// 计算所有原型信息，设置了所有组件的索引
+    pub fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
+        let mut id = 0;
+        for c in components.iter_mut() {
+            id ^= c.id();
+            c.world_index = self.add_component_info(c.clone());
+        }
+        ArchetypeInfo{id, components}
+    }
+        /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &self,
     ) -> Queryer<Q, F> {
@@ -531,14 +539,7 @@ impl World {
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
 
-        let mut mapping_dirtys = vec![];
-        let local_index = if ar_index.is_null(){
-            ArchetypeLocalIndex::null()
-        }else{
-            0u16.into()
-        };
-
-        let _ = alter_row(&mut mapping_dirtys, &mut mapping, local_index, addr.row, e)?;
+        let _ = alloc_row(&mut mapping, addr.row, e);
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
@@ -551,21 +552,7 @@ impl World {
 
         Ok(())
     }
-    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn add_component<T: Bundle + 'static>(
-        &self,
-        _e: Entity,
-        _value: T,
-    ) -> Result<(), QueryError> {
-        todo!()
-        // Ok(())
-        // 原型改变
-    }
-    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn remove_component<T: Bundle + 'static>(&self, _e: Entity) -> T {
-        todo!()
-        // 原型改变
-    }
+
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub(crate) fn get_component_ptr<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
         unsafe { transmute(self.get_component_ptr_by_tid(e, &TypeId::of::<T>())) }
@@ -615,19 +602,23 @@ impl World {
         (id, s.into(), components)
     }
     // 返回原型及是否新创建
+    pub(crate) fn find_ar(
+        &self,
+        infos: Vec<ComponentInfo>,
+    ) -> (ArchetypeWorldIndex, ShareArchetype) {
+        let info = self.archetype_info(infos);
+        self.find_archtype(info)
+    }
+    // 返回原型及是否新创建
     pub(crate) fn find_archtype(
         &self,
-        id: u128,
-        mut components: Vec<ComponentInfo>,
+        info: ArchetypeInfo,
     ) -> (ArchetypeWorldIndex, ShareArchetype) {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        let (ar, b) = match self.archetype_map.entry(id) {
+        let (ar, b) = match self.archetype_map.entry(info.id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
             Entry::Vacant(entry) => {
-                components
-                    .iter_mut()
-                    .for_each(|c| c.world_index = self.add_component_info(c.clone()));
-                let ar = Share::new(Archetype::new(components));
+                let ar = Share::new(Archetype::new(info));
                 entry.insert(ar.clone());
                 (ar, true)
             }

@@ -89,8 +89,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let components = I::components(Vec::new());
-        let id = ComponentInfo::calc_id(&components);
-        let (ar_index, ar) = world.find_archtype(id, components);
+        let (ar_index, ar) = world.find_ar(components);
         let s = I::init_state(world, &ar);
         (ar_index, ar, s)
     }
@@ -128,15 +127,13 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
         let components = I::components(Vec::new());
-        let id = ComponentInfo::calc_id(&components);
-
         for component in &components{
             system_meta.cur_param
             .writes
             .insert(component.type_id, component.type_name.clone());
         }
      
-        let (ar_index, ar) = world.find_archtype(id, components);
+        let (ar_index, ar) = world.find_ar( components);
         let s = I::init_state(world, &ar);
         system_meta.param_set_check();
 
