@@ -211,23 +211,49 @@ impl World {
     pub fn get_component_info(&self, index: ComponentIndex) -> Option<&ComponentInfo> {
         self.component_arr.get(index.index())
     }
-    /// 添加组件信息，如果重复，则返回原有的索引
-    pub fn add_component_info(&self, mut info: ComponentInfo) -> ComponentIndex {
-        let r = self.component_map.entry(info.type_id).or_insert_with(|| {
-            let e = self.component_arr.alloc_entry();
-            let index = e.index().into();
-            info.world_index = index;
-            e.insert(info);
-            index
-        });
-        *r.value()
+    /// 添加组件信息，如果重复，则返回原有的索引及是否tick变化
+    pub fn add_component_info(&self, mut info: ComponentInfo) -> (ComponentIndex, Option<u8>) {
+        let tick_removed = info.tick_removed;
+        let index = match self.component_map.entry(info.type_id) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let e = self.component_arr.alloc_entry();
+                let index = e.index().into();
+                info.world_index = index;
+                e.insert(info);
+                entry.insert(index);
+                return (index, None)
+            },
+        };
+        let info = unsafe { self.component_arr.load_unchecked_mut(index.index())};
+        let t = info.tick_removed | tick_removed;
+        if t != info.tick_removed {
+            info.tick_removed = t;
+            // 扫描当前原型，如果原型中存在该组件，则将该组件tick_removed设置为tick_removed
+            self.update_tick_removed(index, info.tick_removed);
+            return (index, Some(info.tick_removed));
+        }
+        (index, None)
+    }
+    /// 更新全部的原型的相关组件信息的tick_removed
+    pub(crate) fn update_tick_removed(&self, index: ComponentIndex, tick_removed: u8) {
+        for ar in self.archetype_arr.iter() {
+            if let Some(c) = unsafe { ar.get_column_mut(index) } {
+                c.0.info_mut().tick_removed = tick_removed;
+                // todo 将已经存在的实体修改tick
+            }
+        }
     }
     /// 计算所有原型信息，设置了所有组件的索引
     pub(crate) fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
         let mut id = 0;
         for c in components.iter_mut() {
             id ^= c.id();
-            c.world_index = self.add_component_info(c.clone());
+            let (index, change) = self.add_component_info(c.clone());
+            c.world_index = index;
+            if let Some(tick_removed) = change {
+                c.tick_removed = tick_removed;
+            }
         }
         ArchetypeInfo{id, components}
     }
@@ -722,13 +748,9 @@ impl World {
         self.entities
             .insert(EntityAddr::new(ArchetypeWorldIndex::null(), Row(0)))
     }
-    /// 销毁指定的实体
+    /// 初始化指定组件
     pub fn init_component<T: 'static>(&self) -> ComponentIndex {
-        let mut index = self.get_component_index(&std::any::TypeId::of::<T>());
-        if index.is_null() {
-            index = self.add_component_info(ComponentInfo::of::<T>());
-        }
-        index
+        self.add_component_info(ComponentInfo::of::<T>(0)).0
     }
     /// 替换Entity的原型及行
     #[inline(always)]

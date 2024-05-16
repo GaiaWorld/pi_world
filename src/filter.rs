@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
-use crate::archetype::{Archetype, ComponentInfo};
+use crate::archetype::{Archetype, ComponentInfo, COMPONENT_REMOVED, COMPONENT_TICK};
 use crate::system::SystemMeta;
 use crate::world::{ComponentIndex, World};
 
@@ -53,7 +53,7 @@ pub struct Without<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Without<T> {
     const LISTENER_COUNT: usize = 0;
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param.withouts.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_filter(world: &World, archetype: &Archetype) -> bool {
@@ -70,7 +70,7 @@ impl<T: 'static> FilterArchetype for With<T> {
 impl<T: 'static> FilterComponents for With<T> {
     const LISTENER_COUNT: usize = 0;
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param.withs.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
     }
     fn archetype_filter(world: &World, archetype: &Archetype) -> bool {
@@ -82,7 +82,7 @@ pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(world: &World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Changed(world.add_component_info(ComponentInfo::of::<T>())));
+        listeners.push(ListenType::Changed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK)).0));
     }
 }
 
@@ -90,7 +90,7 @@ pub struct Removed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Removed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(world: &World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>())));
+        listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_REMOVED)).0));
     }
 }
 pub struct Destroyed;

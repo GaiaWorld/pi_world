@@ -336,6 +336,10 @@ impl ArchetypeInfo {
     }
 }
 
+
+pub const COMPONENT_TICK: u8 = 1;
+pub const COMPONENT_REMOVED: u8 = 2;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ComponentInfo {
     pub type_id: TypeId,
@@ -344,15 +348,17 @@ pub struct ComponentInfo {
     pub default_fn: Option<fn(*mut u8)>,
     pub mem_size: usize, // 内存大小
     pub world_index: ComponentIndex, // 在world上的索引
+    pub tick_removed: u8, // 是否有tick及removed tick = 1 removed = 2
 }
 impl ComponentInfo {
-    pub fn of<T: 'static>() -> ComponentInfo {
+    pub fn of<T: 'static>(tick_removed: u8) -> ComponentInfo {
         ComponentInfo::create(
             TypeId::of::<T>(),
             std::any::type_name::<T>().into(),
             get_drop::<T>(),
             <T as SetDefault>::default_fn(),
             size_of::<T>(),
+            tick_removed,
         )
     }
     pub fn create(
@@ -361,6 +367,7 @@ impl ComponentInfo {
         drop_fn: Option<fn(*mut u8)>,
         default_fn: Option<fn(*mut u8)>,
         mem_size: usize,
+        tick_removed: u8,
     ) -> Self {
         ComponentInfo {
             type_id,
@@ -369,6 +376,7 @@ impl ComponentInfo {
             default_fn,
             mem_size,
             world_index: ComponentIndex::null(),
+            tick_removed,
         }
     }
     pub fn id(&self) -> u128 {

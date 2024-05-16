@@ -10,7 +10,6 @@ use std::mem::{replace, transmute};
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
-use pi_arr::Iter;
 use pi_null::Null;
 use smallvec::SmallVec;
 
@@ -120,7 +119,6 @@ impl Table {
     /// 添加changed监听器，原型刚创建时调用
     pub fn add_changed_listener(&self, index: ComponentIndex, owner: u128) {
         if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
-            c.is_record_tick = true;
             c.dirty.insert_listener(owner)
         }
     }

@@ -121,12 +121,10 @@ impl Dirty {
     }
     #[inline(always)]
     pub(crate) fn record_unchecked(&self, e: Entity, row: Row) {
-        println!("record_unchecked!!! e:{:?}, row: {:?}", e, row);
         self.vec.insert(EntityRow { e, row });
     }
     #[inline(always)]
     pub(crate) fn record(&self, e: Entity, row: Row) {
-        println!("record!!! e:{:?}, row: {:?}", e, row);
         if !self.listener_list().is_empty() {
             self.vec.insert(EntityRow { e, row });
         }

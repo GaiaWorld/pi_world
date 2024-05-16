@@ -200,7 +200,7 @@ struct Velocity([f32; 3]);
 
 #[cfg(test)]
 mod test_mod {
-
+ 
     use super::*;
     use crate::{
         // app::*,
@@ -217,7 +217,7 @@ mod test_mod {
 
     #[test]
     fn test_columns() {
-        let mut c = Column::new(ComponentInfo::of::<Transform>());
+        let mut c = Column::new(ComponentInfo::of::<Transform>(0));
         c.write(Row(0), Transform([0.0; 16]));
         c.write(Row(1), Transform([1.0; 16]));
         dbg!(c.get::<Transform>(Row(0)));
@@ -787,8 +787,8 @@ mod test_mod {
                 age1,
             ) in q
             {
+                println!("tick: {:?}, {:?}", age0.tick(), age0.last_tick());
                 assert!(age0.is_changed());
-                println!("tick: {:?}, {}", age1.tick(), age1.is_changed());
             }
             println!("print_changed2 over");
         }

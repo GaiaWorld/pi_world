@@ -252,35 +252,21 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
 /// 监听原型创建， 添加record
 pub struct Notify<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     id: u128,
-    ticks: Vec<ComponentIndex>,
     listeners: SmallVec<[ListenType; 1]>,
     _a: (PhantomData<&'a ()>,PhantomData<Q>,PhantomData<F>),
 }
-
 
 impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
     for Notify<'a, Q, F>
 {
     type Event = ArchetypeInit<'a>;
     fn listen(&self, e: Self::Event) {
-        unsafe {
-            add_ticks(&e.0, &self.ticks);
-        };
         if !QueryState::<Q, F>::relate(e.1, e.0) {
             return;
         }
         unsafe {
             add_dirty_listeners(&e.0, self.id, &self.listeners)
         };
-    }
-}
-
-// 根据components列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-pub(crate) unsafe fn add_ticks(ar: &Archetype, components: &Vec<ComponentIndex>) {
-    for index in components.iter() {
-        if let Some((c, _)) = ar.get_column_mut(*index) {
-            c.is_record_tick = true;
-        }
     }
 }
 
@@ -362,19 +348,14 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let qid = TypeId::of::<Q>();
         let fid = TypeId::of::<F>();
         let id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)};
-        let mut components = Default::default();
-        if Q::TICK_COUNT > 0 {
-            Q::init_ticks(world, &mut components);
-        }
         let mut listeners = Default::default();
         if F::LISTENER_COUNT > 0 {
             F::init_listeners(world, &mut listeners);
         }
-        if Q::TICK_COUNT > 0 || F::LISTENER_COUNT > 0 {
+        if F::LISTENER_COUNT > 0 {
             // 遍历已有的原型， 添加record
             let notify = Notify{
                 id,
-                ticks: components,
                 listeners: listeners.clone(),
                 _a: (PhantomData,
                 PhantomData::<Q>,
@@ -723,7 +704,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 // 要求条目不为空
                 if !self.e.is_null() {
                     // 检查tick
-                    let tick = self.dirty.ticks.unwrap().get(self.row.index()).unwrap();
+                    let vec = self.dirty.ticks.unwrap();
+                    let tick = vec.load_i(self.row.index()).unwrap();
                     if self.state.last_run < *tick {
                         if self.bitset.contains(d.row.index()) {
                             continue;
