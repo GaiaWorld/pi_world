@@ -31,6 +31,24 @@ pub(crate) struct DirtyIndex {
     pub(crate) listener_index: u32, // 在Dirty的Vec中的位置
 }
 
+pub(crate) struct DirtyIter<'a> {
+    pub(crate) it: Iter<'a, EntityRow>,
+    pub(crate) ticks: Option<&'a AppendVec<Tick>>, // 是否对entity进行校验
+}
+impl<'a> DirtyIter<'a> {
+    pub(crate) fn empty() -> Self {
+        Self {
+            it: Iter::empty(),
+            ticks: None,
+        }
+    }
+    pub(crate) fn new(it: Iter<'a, EntityRow>, ticks: Option<&'a AppendVec<Tick>>) -> Self {
+        Self {
+            it,
+            ticks,
+        }
+    }
+}
 #[derive(Debug, Default)]
 pub(crate) struct EntityRow {
     pub(crate) e: Entity,

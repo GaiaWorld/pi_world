@@ -769,12 +769,12 @@ pub(crate) fn remove_columns(am: &mut ArchetypeMapping) {
                 for (src_row, dst_row, e) in am.moves.iter() {
                     col.drop_row_unchecked(*src_row);
                     // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+                    d.1.record_unchecked(*e, *dst_row);
                 }
             } else {
                 for (_src_row, dst_row, e) in am.moves.iter() {
                     // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+                    d.1.record_unchecked(*e, *dst_row);
                 }
             }
         } else if col.needs_drop() {

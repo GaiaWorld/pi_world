@@ -19,7 +19,7 @@ use crate::{
 
 pub struct Column {
     blob: Blob,
-    ticks: AppendVec<Tick>,
+    pub(crate) ticks: AppendVec<Tick>,
     pub(crate) is_record_tick: bool,           // 是否记录tick
     pub(crate) dirty: Dirty, // Alter和Insert产生的添加脏和Query产生的修改脏，
 }

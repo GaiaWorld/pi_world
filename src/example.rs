@@ -803,7 +803,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_destroyed() {
+    fn test_destroyed() { 
         pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
             println!("insert1 is now");
             let e = i0.insert((Age3(3), Age1(1), Age0(0)));

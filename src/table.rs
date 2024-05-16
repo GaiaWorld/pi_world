@@ -17,14 +17,14 @@ use smallvec::SmallVec;
 use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
-use crate::dirty::{Dirty, DirtyIndex, DirtyType, EntityRow};
+use crate::dirty::{Dirty, DirtyIndex, DirtyIter, DirtyType, EntityRow};
 use crate::world::{ComponentIndex, Entity, World, Tick};
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
     columns: Vec<Column>,        // 每个组件
-    column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
-    remove_columns: SyncUnsafeCell<Vec<(ComponentIndex, Dirty)>>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
+    column_map: SyncUnsafeCell<Vec<i32>>, // 用全局的组件索引作为该数组的索引，方便快速查询
+    remove_columns: SyncUnsafeCell<Vec<(AppendVec<Tick>, Dirty)>>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
     pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
     removes: AppendVec<Row>,                    // 整理前被移除的实例
 }
@@ -38,14 +38,14 @@ impl Table {
         }
         assert!(max < u16::MAX as usize);
         let mut column_map = Vec::with_capacity(max);
-        column_map.resize(max, ColumnIndex::null());
+        column_map.resize(max, i32::null());
         for (i, c) in columns.iter().enumerate() {
-            *unsafe { column_map.get_unchecked_mut(c.info().world_index.index()) } = i.into();
+            *unsafe { column_map.get_unchecked_mut(c.info().world_index.index()) } = i as i32;
         }
         Self {
             entities: AppendVec::default(),
             columns,
-            column_map,
+            column_map: SyncUnsafeCell::new(column_map),
             remove_columns: Default::default(),
             destroys: SyncUnsafeCell::new(Dirty::default()),
             removes: AppendVec::default(),
@@ -69,6 +69,10 @@ impl Table {
     pub fn get_columns(&self) -> &Vec<Column> {
         &self.columns
     }
+    #[inline(always)]
+    pub fn column_map(&self) -> &mut Vec<i32> {
+        unsafe {transmute(self.column_map.get())}
+    }
     pub fn get_column_index_by_tid(&self, world: &World, tid: &TypeId) -> ColumnIndex {
         self.get_column_index(world.get_component_index(tid))
     }
@@ -76,15 +80,22 @@ impl Table {
         self.get_column(world.get_component_index(tid))
     }
     pub fn get_column_index(&self, index: ComponentIndex) -> ColumnIndex {
-        self.column_map.get(index.index()).map_or(ColumnIndex::null(), |r| *r)
+        if let Some(t) = self.column_map().get(index.index()) {
+            if t.is_null() || *t < 0 {
+                return ColumnIndex::null();
+            }
+            return (*t as usize).into();
+        }
+        ColumnIndex::null()
     }
     pub fn get_column(&self, index: ComponentIndex) -> Option<(&Column, ColumnIndex)> {
-        if let Some(t) = self.column_map.get(index.index()) {
-            if t.is_null() {
+        if let Some(t) = self.column_map().get(index.index()) {
+            if t.is_null() || *t < 0 {
                 return None;
             }
-            let c = self.get_column_unchecked(*t);
-            return Some((c, *t));
+            let t = (*t as usize).into();
+            let c = self.get_column_unchecked(t);
+            return Some((c, t));
         }
         None
     }
@@ -92,12 +103,13 @@ impl Table {
         &self,
         index: ComponentIndex,
     ) -> Option<(&mut Column, ColumnIndex)> {
-        if let Some(t) = self.column_map.get(index.index()) {
-            if t.is_null() {
+        if let Some(t) = self.column_map().get(index.index()) {
+            if t.is_null() || *t < 0 {
                 return None;
             }
-            let c = self.get_column_unchecked(*t);
-            return unsafe { transmute(Some((c, *t))) };
+            let t = (*t as usize).into();
+            let c = self.get_column_unchecked(t);
+            return unsafe { transmute(Some((c, t))) };
         }
         None
     }
@@ -114,16 +126,21 @@ impl Table {
     }
     /// 添加removed监听器，原型刚创建时调用
     pub fn add_removed_listener(&self, index: ComponentIndex, owner: u128) {
-        if !self.get_column_index(index).is_null() {
-            return;
+        let map = self.column_map();
+        // 如果映射表的长度小于index，则扩容
+        if map.len() <= index.index() {
+            map.resize(index.index() + 1, i32::null());            
         }
+        // 获取索引
+        let t = unsafe { map.get_unchecked_mut(index.index()) };
         let vec = unsafe { &mut *self.remove_columns.get() };
-        let r = vec.iter_mut().find(|(t, _)| t == &index);
-        if let Some((_, d)) = r {
-            d.insert_listener(owner);
-        }else{
-            vec.push((index, Dirty::new(owner)));
+        if t.is_null() {// 如果为空，则创建
+            *t = -(vec.len()as i32) - 1;
+            vec.push((AppendVec::default(), Dirty::new(owner)));
+        }else if *t < 0 { // 如果为负数，则说明已经创建了removed监听，添加新的监听
+            unsafe { vec.get_unchecked_mut((-*t - 1) as usize).1.insert_listener(owner) };
         }
+        // 如果为正数，则是原型上已有的组件，无需removed监听
     }
     /// 添加destroyed监听器，原型刚创建时调用
     pub fn add_destroyed_listener(&self, owner: u128) {
@@ -153,16 +170,23 @@ impl Table {
         owner: u128,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
-        let vec1 = unsafe { &*self.remove_columns.get() };
-        let r = vec1.iter().enumerate().find(|r| r.1 .0 == index);
-        if let Some((column_index, d)) = r {
-            let listener_index = d.1.find_listener_index(owner);
-            if !listener_index.is_null() {
-                vec.push(DirtyIndex {
-                    listener_index,
-                    dtype: DirtyType::Removed(column_index.into()),
-                });
+        let column_index = if let Some(t) = self.column_map().get(index.index()) {
+            if !t.is_null() && *t < 0 {
+                (-*t - 1)  as usize
+            }else{
+                return
             }
+        }else{
+            return
+        };
+        let vec1 = unsafe { &*self.remove_columns.get() };
+        let (_, d) = unsafe { vec1.get_unchecked(column_index) };
+        let listener_index = d.find_listener_index(owner);
+        if !listener_index.is_null() {
+            vec.push(DirtyIndex {
+                listener_index,
+                dtype: DirtyType::Removed(column_index.into()),
+            });
         }
     }
     /// 查询在同步到原型时，寻找自己添加的destroyed监听器，并记录监听器位置
@@ -182,26 +206,35 @@ impl Table {
     }
     /// 寻找指定组件列的脏位置
     pub(crate) fn find_remove_column_dirty(&self, index: ComponentIndex) -> ColumnIndex {
-        let mut it = unsafe { &*self.remove_columns.get() }.iter().enumerate();
-        it.find(|r| r.1 .0 == index)
-            .map_or(ColumnIndex::null(), |(column_index, _)| column_index.into())
+        if let Some(t) = self.column_map().get(index.index()) {
+            if !t.is_null() && *t < 0 {
+                return ((-*t - 1)  as usize).into()
+            }
+        }
+        ColumnIndex::null()
     }
     /// 寻找指定位置的组件列脏
-    pub(crate) fn get_remove_column_dirty(&self, column_index: ColumnIndex) -> &Dirty {
+    pub(crate) fn get_remove_column_dirty(&self, column_index: ColumnIndex) -> &(AppendVec<Tick>, Dirty) {
         unsafe {
             &(&*self.remove_columns.get())
                 .get_unchecked(column_index.index())
-                .1
         }
     }
     /// 获得对应的脏列表, 及是否不检查entity是否存在
-    pub(crate) fn get_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> (Iter<'a, EntityRow>, bool) {
-        let (r, b) = match dirty_index.dtype {
-            DirtyType::Destroyed => (unsafe { &*self.destroys.get() }, true),
-            DirtyType::Changed(column_index) => (&self.get_column_unchecked(column_index).dirty, false),
-            DirtyType::Removed(column_index) => (self.get_remove_column_dirty(column_index), false),
-        };
-        (r.get_iter(dirty_index.listener_index, tick), b)
+    pub(crate) fn get_dirty_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> DirtyIter<'a> {
+         match dirty_index.dtype {
+            DirtyType::Destroyed => {
+                let r = unsafe { &*self.destroys.get() };
+                DirtyIter::new(r.get_iter(dirty_index.listener_index, tick), None)},
+            DirtyType::Changed(column_index) => {
+                let r = self.get_column_unchecked(column_index);
+                DirtyIter::new(r.dirty.get_iter(dirty_index.listener_index, tick), Some(&r.ticks))
+            },
+            DirtyType::Removed(column_index) => {
+                let r = self.get_remove_column_dirty(column_index);
+                DirtyIter::new(r.1.get_iter(dirty_index.listener_index, tick), Some(&r.0))
+            },
+        }
     }
 
     /// 扩容
