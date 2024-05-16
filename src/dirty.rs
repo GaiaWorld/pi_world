@@ -101,8 +101,8 @@ impl Dirty {
 
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
-        self.listeners.push(ListenerInfo::new(owner));
-    }
+		self.listeners.push(ListenerInfo::new(owner));
+}
     /// 插入一个监听者的类型id
     pub(crate) fn listener_list(&self) -> &Vec<ListenerInfo> {
         &self.listeners
@@ -121,10 +121,12 @@ impl Dirty {
     }
     #[inline(always)]
     pub(crate) fn record_unchecked(&self, e: Entity, row: Row) {
+        println!("record_unchecked!!! e:{:?}, row: {:?}", e, row);
         self.vec.insert(EntityRow { e, row });
     }
     #[inline(always)]
     pub(crate) fn record(&self, e: Entity, row: Row) {
+        println!("record!!! e:{:?}, row: {:?}", e, row);
         if !self.listener_list().is_empty() {
             self.vec.insert(EntityRow { e, row });
         }
@@ -144,6 +146,7 @@ impl Dirty {
         }
     }
     pub(crate) fn get_iter<'a>(&'a self, listener_index: u32, tick: Tick) -> Iter<'a, EntityRow> {
+        println!("get_iter!!! listener_index: {}", listener_index);
         let end = self.vec.len();
         // 从上次读取到的位置开始读取
         let info = unsafe {

@@ -20,6 +20,7 @@ use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
+use crate::prelude::Mut;
 use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
@@ -28,7 +29,7 @@ use crate::alter::{
 use crate::archetype::{
     Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype
 };
-use crate::fetch::FetchComponents;
+use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
@@ -438,8 +439,30 @@ impl World {
         unsafe { transmute(self.get_component_ptr::<T>(e)) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
-        self.get_component_ptr::<T>(e)
+    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
+    //    self.get_component_info(index)
+       let index  = self.init_component::<T>();
+       self.get_component_mut_index_impl(e, index)
+    }
+
+    pub(crate) fn get_component_mut_index_impl<T: 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<Mut<'static, T>, QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
+
+        if let Some((c, _)) = ar.get_column(index) {
+            let t =self.tick();
+            let value: Mut<T> = Mut::new(
+                &ColumnTick::new(c, t, t),
+                e,
+                addr.row,
+            );
+            return Ok(unsafe { transmute(value) }); 
+        } else {
+            return Err(QueryError::MissingComponent)
+        }
     }
 
     fn get_component_ptr_by_index(
@@ -472,8 +495,8 @@ impl World {
         &mut self,
         e: Entity,
         index: ComponentIndex,
-    ) -> Result<&mut T, QueryError> {
-        unsafe { transmute(self.get_component_ptr_by_index(e, index))}
+    ) -> Result<Mut<'static, T>, QueryError> {
+        self.get_component_mut_index_impl(e, index)
     }
 
     /// 增加和删除实体
@@ -549,13 +572,18 @@ impl World {
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
 
-        let _ = alloc_row(&mut mapping, addr.row, e);
+        let dst_row = alloc_row(&mut mapping, addr.row, e);
+        let (_add_index, add)  = self.find_ar(sort_add);
+       
+        for col in add.get_columns().iter() {
+            col.add_record(e, dst_row, self.tick());
+        }
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
         //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
         insert_columns(&mut mapping);
-        move_columns(&mut mapping,);
+        move_columns(&mut mapping);
         remove_columns(&mut mapping);
         add_columns(&mut mapping, self.tick());
         update_table_world(&self, &mut mapping);
@@ -663,6 +691,20 @@ impl World {
     }
     /// 销毁指定的实体
     pub fn destroy_entity(&mut self, e: Entity) -> Result<(), QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => *v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
+        let e = ar.mark_destroy(addr.row);
+        if e.is_null() {
+            return Err(QueryError::NoSuchRow);
+        }
+        self.entities.remove(e).unwrap();
+        Ok(())
+    }
+     /// 销毁指定的实体
+     pub(crate) fn destroy_entity2(&self, e: Entity) -> Result<(), QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity),

@@ -1049,10 +1049,10 @@ impl<'a> Listener for Notify<'a> {
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
-        log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
-        let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
-        self.0.check();
+        // self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
+        // log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
+        // let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
+        // self.0.check();
     }
 }
 

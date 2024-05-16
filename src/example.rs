@@ -954,4 +954,61 @@ mod test_mod {
         //  app.run();
     }
 
+    #[test]
+    fn test_changed2(){
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(w: &World) {
+            let e = w.alloc_entity();
+            println!("alter_add!! e: {:?}", e);
+            w.alter_components(e, &[
+                (w.init_component::<Age0>(), true), 
+                (w.init_component::<Age1>(), true)
+            ]).unwrap();
+
+            println!("alter_add end");
+         }
+
+         pub fn alter_add2(w: &World, q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>) {
+            // let e = w.alloc_entity();
+            println!("alter_add2 start!!");
+            // assert_eq!(q.len(), 1); 
+            q.iter().for_each(|(e, age1, age0)|{
+                println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
+                w.alter_components(e, &[
+                    (w.init_component::<Age2>(), true), 
+                ]).unwrap()
+            });
+            println!("alter_add2 end");
+         }
+
+        //  pub fn edit(w: &mut World, q: Query<(Entity, &Age1), (Changed<Age1>)>) {
+        //     // let e = w.alloc_entity();
+        //     println!("alter_add2 start!! ");
+        //     // assert_eq!(q.len(), 1); 
+        //     q.iter().for_each(|(e, age1)|{
+        //         println!("alter_add2!! e: {:?}, age1: {:?}", e, age1);
+        //        let mut r = w.get_component_by_index_mut::<Age0>(e, w.init_component::<Age0>()).unwrap();
+        //         r.0 = 5;
+        //     });
+        //     println!("alter_add2 end");
+        //  }
+
+        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age2>)>) {
+            println!("query start!!!");
+            // assert_eq!(q.len(), 1); 
+            q.iter().for_each(|(e, age0, age2)|{
+                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
+            });
+            println!("query end!!!");
+         }
+         
+         app.add_system(Update, alter_add2);
+         app.add_system(Update, alter_add);
+         app.add_system(Update, query);
+
+         app.run();
+
+        app.run();
+    }
+
 }

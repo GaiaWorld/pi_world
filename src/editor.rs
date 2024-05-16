@@ -9,41 +9,83 @@ use crate::{
     world::ComponentIndex,
 };
 
-pub struct Editor<'w>(&'w World);
+pub struct EntityEditor<'w>(&'w World);
 
-impl<'w> Editor<'w> {
+impl<'w> EntityEditor<'w> {
     pub fn new(w: &'w World) -> Self {
         Self(w)
     }
 
-    pub fn add_components(&self, e: Entity, components: &[ComponentIndex]) -> Result<(), QueryError> {
-        Ok(())
+    pub fn add_components(
+        &self,
+        e: Entity,
+        components: &[ComponentIndex],
+    ) -> Result<(), QueryError> {
+        let mut add_components = Vec::with_capacity(components.len());
+        for component in components{
+            add_components.push((*component, true));
+        }
+        self.0.alter_components(e, &add_components)
     }
 
-    pub fn remove_components(&self, e: Entity, components: &[ComponentIndex]) -> Result<(), QueryError> {
-        Ok(())
+    pub fn remove_components(
+        &self,
+        e: Entity,
+        components: &[ComponentIndex],
+    ) -> Result<(), QueryError> {
+        let mut add_components = Vec::with_capacity(components.len());
+        for component in components{
+            add_components.push((*component, false));
+        }
+        self.0.alter_components(e, &add_components)
     }
 
-    pub fn insert_components(&self, e: Entity, components: &[ComponentIndex]) -> Result<(), QueryError> {
-        Ok(())
+    pub fn alter_components(
+        &self,
+        e: Entity,
+        components: &[(ComponentIndex, bool)],
+    ) -> Result<(), QueryError> {
+        self.0.alter_components(e, components)
     }
 
-    pub fn delete_entity(&self, e: Entity) -> Result<(), QueryError> {
-        Ok(())
-    }
-
-    pub fn get< B: Bundle>(&self, e: Entity) -> &'w B {
+    pub fn insert_components(
+        &self,
+        e: Entity,
+        components: &[ComponentIndex],
+    ) -> Result<(), QueryError> {
+        // self.0.i.alter_components(e, components)
         todo!()
     }
 
-    pub fn get_mut< B: Bundle>(&self, e: Entity) -> &'w mut B {
+    pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
+        self.0.destroy_entity2(e)
+    }
+
+    pub fn alloc(&self) -> Entity {
+        self.0.alloc_entity()
+    }
+
+    pub fn get<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
+        self.0.get_component::<B>(e)
+    }
+
+    pub fn get_mut<B: Bundle + 'static>(&self, e: Entity) -> Result<&mut B, QueryError> {
+        // self.0.get_component_mut::<B>(e)
+        todo!()
+    }
+
+    pub fn get_unchecked<B: Bundle>(&self, e: Entity) -> &'w B {
+        todo!()
+    }
+
+    pub fn get_unchecked_mut<B: Bundle>(&self, e: Entity) -> &'w mut B {
         todo!()
     }
 }
 
-impl SystemParam for Editor<'_> {
+impl SystemParam for EntityEditor<'_> {
     type State = ();
-    type Item<'w> = Editor<'w>;
+    type Item<'w> = EntityEditor<'w>;
 
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
@@ -72,7 +114,7 @@ impl SystemParam for Editor<'_> {
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        Editor::new(world)
+        EntityEditor::new(world)
     }
     #[inline]
     fn get_self<'world>(

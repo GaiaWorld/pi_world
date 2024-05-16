@@ -578,7 +578,7 @@ pub struct ColumnTick<'a> {
     pub(crate) last_run: Tick,
 }
 impl<'a> ColumnTick<'a> {
-    fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
+    pub(crate) fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
         Self {
             column,
             tick,
