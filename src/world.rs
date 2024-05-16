@@ -42,7 +42,7 @@ use pi_key_alloter::new_key_type;
 // use pi_map::hashmap::HashMap;
 // use pi_map::Map;
 use pi_null::Null;
-use pi_share::{Share, ShareU32};
+use pi_share::{Share, ShareUsize};
 use pi_slot::{Iter, SlotMap};
 
 new_key_type! {
@@ -76,6 +76,11 @@ impl pi_null::Null for ComponentIndex {
 }
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(u32);
+impl Tick {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
 impl Deref for Tick {
     type Target = u32;
     fn deref(&self) -> &Self::Target {
@@ -95,11 +100,12 @@ impl From<u32> for Tick {
         Self(v)
     }
 }
-impl From<Tick> for u32 {
-    fn from(value: Tick) -> Self {
-        value.0
+impl From<usize> for Tick {
+    fn from(v: usize) -> Self {
+        Self(v as u32)
     }
 }
+
 
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
@@ -139,7 +145,7 @@ pub struct World {
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
     // 世界当前的tick
-    tick: ShareU32,
+    tick: ShareUsize,
 }
 impl World {
     pub fn new() -> Self {
@@ -163,7 +169,7 @@ impl World {
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
-            tick: ShareU32::new(1),
+            tick: ShareUsize::new(1),
         }
     }
     // 获得世界当前的tick
@@ -385,7 +391,7 @@ impl World {
     pub(crate) fn system_init_write_multi_res<T: 'static, F>(
         &mut self,
         f: F,
-    ) -> Option<(SingleResource, Share<ShareU32>)>
+    ) -> Option<(SingleResource, Share<ShareUsize>)>
     where
         F: FnOnce() -> T,
     {
@@ -770,14 +776,14 @@ unsafe impl Sync for SingleResource {}
 #[derive(Debug, Clone)]
 pub struct MultiResource(
     Share<SyncUnsafeCell<Vec<SingleResource>>>,
-    pub(crate) Share<ShareU32>,
+    pub(crate) Share<ShareUsize>,
     Cow<'static, str>,
 );
 impl MultiResource {
     fn new<T: 'static>() -> Self {
         Self(
             Share::new(SyncUnsafeCell::new(Vec::new())),
-            Share::new(ShareU32::new(0)),
+            Share::new(ShareUsize::new(0)),
             std::any::type_name::<T>().into(),
         )
     }

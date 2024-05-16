@@ -18,7 +18,7 @@ use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
 use crate::dirty::{Dirty, DirtyIndex, DirtyType, EntityRow};
-use crate::world::{ComponentIndex, Entity, World};
+use crate::world::{ComponentIndex, Entity, World, Tick};
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
@@ -195,13 +195,13 @@ impl Table {
         }
     }
     /// 获得对应的脏列表, 及是否不检查entity是否存在
-    pub(crate) fn get_iter<'a>(&'a self, dirty_index: &DirtyIndex) -> (Iter<'a, EntityRow>, bool) {
+    pub(crate) fn get_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> (Iter<'a, EntityRow>, bool) {
         let (r, b) = match dirty_index.dtype {
             DirtyType::Destroyed => (unsafe { &*self.destroys.get() }, true),
             DirtyType::Changed(column_index) => (&self.get_column_unchecked(column_index).dirty, false),
             DirtyType::Removed(column_index) => (self.get_remove_column_dirty(column_index), false),
         };
-        (r.get_iter(dirty_index.listener_index), b)
+        (r.get_iter(dirty_index.listener_index, tick), b)
     }
 
     /// 扩容
