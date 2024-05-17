@@ -52,11 +52,13 @@ impl Column {
         if !self.is_record_tick {
             return;
         }
+        // println!("add_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
         *self.ticks.load_alloc(row.0 as usize) = tick;
         self.dirty.record(e, row);
     }
     #[inline]
     pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
+        // println!("change_record===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
         if !self.is_record_tick {
             return;
         }
@@ -69,6 +71,7 @@ impl Column {
     }
     #[inline]
     pub fn add_record_unchecked(&self, e: Entity, row: Row, tick: Tick) {
+        // println!("change_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
         *self.ticks.load_alloc(row.0 as usize) = tick;
         self.dirty.record_unchecked(e, row);
     }
@@ -102,7 +105,7 @@ impl Column {
     pub fn write_row(&self, row: Row, data: *mut u8) {
         unsafe {
             let dst = self.blob.load(row);
-            data.copy_to_nonoverlapping(dst, self.info().mem_size)
+            data.copy_to_nonoverlapping(dst, self.info().mem_size);
         }
     }
     #[inline(always)]

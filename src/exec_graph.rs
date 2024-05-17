@@ -714,7 +714,7 @@ impl GraphInner {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
             self.to_count.fetch_sub(1, Ordering::Relaxed);
         }
-        // 该to节点的from_count已经为0，表示正在执行或未执行
+        // 该to节点的from_count已经为0，表示正在执行（本身依赖为0的节点， 一定已经将任务派发出去了， 可以认为是正在执行的状态）
         if old_from == 0 {
             // 则添加状态2锁定原型， 使得还未进行原型对齐的to执行时不进行原型对齐；
             // 不进行原型对齐的原因： 
@@ -1049,10 +1049,10 @@ impl<'a> Listener for Notify<'a> {
 
     #[inline(always)]
     fn listen(&self, ar: Self::Event) {
-        self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
-        log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
-        let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
-        self.0.check();
+        // self.0.add_archetype_node(&self.1, 0..self.1.len(), &ar.0, &ar.1);
+        // log::trace!("{:?}", Dot::with_config(&self.0, Config::empty()));
+        // let _ = std::fs::write("system_graph".to_string() + self.0.1.as_str() + ".dot", Dot::with_config(&self.0, Config::empty()).to_string());
+        // self.0.check();
     }
 }
 
@@ -1184,7 +1184,9 @@ impl NGraph {
             // }
           
             if child_index >= to.len() {
-                nodes.pop();
+                if let Some(r) = nodes.pop() {
+                    nodes_set.remove(&r);
+                }
                 indexs.pop();
                
                 continue
@@ -1195,7 +1197,7 @@ impl NGraph {
             // }
 
             if nodes_set.contains(&child) {
-                let i = nodes.iter().position(|r| {r == &child}).unwrap();
+                let i = nodes.iter().position(|r| {*r == child}).unwrap();
                 let r = nodes[i..].to_vec();
                 *nodes = r;
                 break;

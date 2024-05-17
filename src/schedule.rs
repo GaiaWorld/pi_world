@@ -106,7 +106,7 @@ impl Schedule {
     // }
 
     pub fn configure_set(&mut self, config: SetConfig) {
-        println!("configure_set {:?}", (&config.set, &config.config.sets, &config.config.before, &config.config.after));
+        log::debug!("configure_set {:?}", (&config.set, &config.config.sets, &config.config.before, &config.config.after));
         for in_set in config.config.sets.iter() {
             if !self.set_configs.contains_key(in_set) {
                 self.set_configs.insert(*in_set, BaseConfig {
