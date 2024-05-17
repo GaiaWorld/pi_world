@@ -59,74 +59,19 @@ impl Schedule {
         }
     }
 
-
-    pub fn get_systems(&self) -> &Share<SafeVec<BoxedSystem>> {
-        &self.systems
-    }
-    // pub fn get_graph(&self) -> &ExecGraph {
-    //     &self.graph
-    // }
-    // pub fn get_stage_graph(&self, name: &Interned<dyn StageLabel>) -> Option<&ExecGraph> {
-    //     self.stage_graph.get(name)
-    // }
-    // pub fn add_system<M>(&mut self, stage: Interned<dyn StageLabel>, system: BoxedSystem) -> usize {
-    //     self.add_box_system(system, stages)
-    // }
-    // pub fn add_system_stages<M>(
-    //     &mut self,
-    //     system: impl IntoSystem<M>,
-    //     stages: &[&'static str],
-    // ) -> usize {
-    //     let s = Box::new(IntoSystem::into_system(system));
-    //     self.add_box_system(BoxedSystem::Sync(s), stages)
-    // }
-    // pub fn add_async_system<M>(&mut self, system: impl IntoAsyncSystem<M>) -> usize {
-    //     self.add_async_system_stages(system, &[])
-    // }
-    // pub fn add_async_system_stages<M>(
-    //     &mut self,
-    //     system: impl IntoAsyncSystem<M>,
-    //     stages: &[&'static str],
-    // ) -> usize {
-    //     let s = Box::new(IntoAsyncSystem::into_async_system(system));
-    //     self.add_box_system(BoxedSystem::Async(s), stages)
-    // }
-
-    // pub fn add_system(&mut self, system: BoxedSystem) -> usize {
-    //     todo!()
-    //     // let name = system.name().clone();
-    //     // let index = self.systems.insert(system);
-    //     // // self.graph.add_system(index, name.clone());
-    //     // for stage in stages {
-    //     //     let e = self.stage_graph.entry(*stage);
-    //     //     let g = e.or_default();
-    //     //     g.add_system(index, name.clone());
-    //     // }
-    //     // index
-    // }
-
+    /// 配置系统集
     pub fn configure_set(&mut self, config: SetConfig) {
         log::debug!("configure_set {:?}", (&config.set, &config.config.sets, &config.config.before, &config.config.after));
         for in_set in config.config.sets.iter() {
             if !self.set_configs.contains_key(in_set) {
-                self.set_configs.insert(*in_set, BaseConfig {
-                    sets: Default::default(),
-                    schedules: Default::default(),
-                    before: Default::default(),
-                    after: Default::default(),
-                });
+                self.set_configs.insert(*in_set, BaseConfig::default());
             }
         }
 
         for set in config.config.after.iter() {
             if let NodeType::Set(set) = set {
                 if !self.set_configs.contains_key(set) {
-                    self.set_configs.insert(*set, BaseConfig {
-                        sets: Default::default(),
-                        schedules: Default::default(),
-                        before: Default::default(),
-                        after: Default::default(),
-                    });
+                    self.set_configs.insert(*set, BaseConfig::default());
                 }
             }
             
@@ -135,12 +80,7 @@ impl Schedule {
         for set in config.config.before.iter() {
             if let NodeType::Set(set) = set {
                 if !self.set_configs.contains_key(set) {
-                    self.set_configs.insert(*set, BaseConfig {
-                        sets: Default::default(),
-                        schedules: Default::default(),
-                        before: Default::default(),
-                        after: Default::default(),
-                    });
+                    self.set_configs.insert(*set, BaseConfig::default());
                 }
             }
         }
@@ -159,21 +99,136 @@ impl Schedule {
         }
     }
 
-    pub fn insert_set(config: &BaseConfig, set_configs: &mut HashMap<Interned<dyn SystemSet>, BaseConfig>) {
-        for in_set in config.sets.iter() {
-            if !set_configs.contains_key(in_set) {
-                set_configs.insert(*in_set, BaseConfig {
-                    sets: Default::default(),
-                    schedules: Default::default(),
-                    before: Default::default(),
-                    after: Default::default(),
-                });
-            }
-        }
+    /// 添加系统
+    pub fn add_system(&mut self, stage_label: Interned<dyn StageLabel>, system_config: SystemConfig) {
+        // 添加到系统配置列表中， 延迟处理（在try_initialize中处理）
+        self.system_configs.push((stage_label, system_config));
     }
 
-    pub fn add_system(&mut self, stage_label: Interned<dyn StageLabel>, system_config: SystemConfig) {
-        self.system_configs.push((stage_label, system_config));
+    pub fn run<A: AsyncRuntime + AsyncRuntimeExt>(
+        &mut self,
+        world: &mut World,
+        rt: &A,
+        schedule: &Interned<dyn ScheduleLabel>,
+    ) {
+        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some(), self.schedule_graph.len()));
+        self.try_initialize(world);
+
+        let g = match self.schedule_graph.get_mut(schedule) {
+            Some(r) => r,
+            None => return,
+        };
+
+        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some()));
+        // let g = self.schedule_graph.get_mut(schedule).unwrap();
+        // 每次运行，增加1次tick
+        world.increment_tick();
+        // 按顺序运行stage
+        for stage in self.stage_sort.iter() {
+            if let Some(stage) = g.get_mut(stage) {
+                Self::run_graph(world, rt, stage, &self.systems);
+            }
+        }
+
+        if schedule == &MainSchedule.intern() {
+            world.collect_by(&mut self.action, &mut self.set);
+        }
+    }
+    fn run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
+        world: &mut World,
+        rt: &A,
+        g: &mut ExecGraph,
+        systems: &Share<SafeVec<BoxedSystem>>
+    ) {
+        let w: &'static World = unsafe { std::mem::transmute(world) };
+        let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
+        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(systems) };
+        let rt1 = rt.clone();
+        let _ = rt.block_on(async move {
+            let rt2 = rt1;
+            g.run(s, &rt2, w).await.unwrap();
+            g.collect();
+        });
+    }
+    // pub async fn async_run<A: AsyncRuntime + AsyncRuntimeExt>(
+    //     &mut self,
+    //     world: &mut World,
+    //     rt: &A,
+    // ) {
+    //     let g = self.graph.clone();
+    //     self.async_run_graph(world, rt, g).await;
+    // }
+    pub async fn async_run<A: AsyncRuntime + AsyncRuntimeExt>(
+        &mut self,
+        world: &mut World,
+        rt: &A,
+        schedule: &Interned<dyn ScheduleLabel>,
+    ) {
+        self.try_initialize(world);
+
+        // println!("async_run_stage, stage:{:?}", stage);
+        let g = self.schedule_graph.get_mut(schedule).unwrap();
+        // 按顺序运行stage
+        for stage in self.stage_sort.iter() {
+            if let Some(stage) = g.get_mut(stage) {
+                Self::async_run_graph(world, rt, stage, &mut self.systems).await;
+            }
+        }
+
+        if schedule == &MainSchedule.intern() {
+            world.collect_by(&mut self.action, &mut self.set);
+        }
+    }
+    async fn async_run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
+        world: &mut World,
+        rt: &A,
+        g: &mut ExecGraph,
+        systems: &Share<SafeVec<BoxedSystem>>,
+    ) { 
+        let w: &'static World = unsafe { std::mem::transmute(world) };
+        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
+        g.run(s, rt, w).await.unwrap();
+      
+        g.collect();
+    }
+
+    fn try_initialize(&mut self, world: &mut World) {
+        if self.system_configs.is_empty() {
+            return;
+        }
+
+        let mut temp_map = HashMap::default();
+        let mut temp_map2 = HashMap::default();
+        let mut system_configs = std::mem::take(&mut self.system_configs);
+        let rr = system_configs.drain(..).map(|(stage_label, system_config)| {
+            (stage_label, self.add_system_config(stage_label, system_config, &mut temp_map, &mut temp_map2))
+        }).collect::<Vec<(Interned<dyn StageLabel>, (BaseConfig, TypeId))>>();
+        
+        self.link_set(&mut temp_map, &mut temp_map2);
+        for (stage_label, (config, id)) in rr {
+            self.link_system_config(stage_label, id, config, &mut temp_map, &mut temp_map2);
+        }
+        // for (stage_label
+        //     self.add_system_config(stage_label, system_config), system_config) in system_configs.drain(..) {
+        //     self.add_system_config(stage_label, system_config);
+        // }
+        
+        Share::get_mut(&mut self.systems).unwrap().collect();
+        // 首先初始化所有的system，有Insert的会产生对应的原型
+        // for sys in self.systems.iter() {
+        //     sys.initialize(world);
+        // }
+        
+        // 初始化图
+        for (_name, schedule) in self.schedule_graph.iter_mut() {
+            // println!("stage:{:?} initialize", name);
+            for (_, stage) in schedule.iter_mut() {
+                stage.initialize(self.systems.clone(), world, self.add_listener);
+            }
+        }
+
+
+        self.dirty_mark = false;
     }
 
     fn add_system_config(
@@ -455,132 +510,6 @@ impl Schedule {
             }
             
         }
-    }
-
-    pub fn try_initialize(&mut self, world: &mut World) {
-        if self.system_configs.is_empty() {
-            return;
-        }
-
-        let mut temp_map = HashMap::default();
-        let mut temp_map2 = HashMap::default();
-        let mut system_configs = std::mem::take(&mut self.system_configs);
-        let rr = system_configs.drain(..).map(|(stage_label, system_config)| {
-            (stage_label, self.add_system_config(stage_label, system_config, &mut temp_map, &mut temp_map2))
-        }).collect::<Vec<(Interned<dyn StageLabel>, (BaseConfig, TypeId))>>();
-        
-        self.link_set(&mut temp_map, &mut temp_map2);
-        for (stage_label, (config, id)) in rr {
-            self.link_system_config(stage_label, id, config, &mut temp_map, &mut temp_map2);
-        }
-        // for (stage_label
-        //     self.add_system_config(stage_label, system_config), system_config) in system_configs.drain(..) {
-        //     self.add_system_config(stage_label, system_config);
-        // }
-        
-        Share::get_mut(&mut self.systems).unwrap().collect();
-        // 首先初始化所有的system，有Insert的会产生对应的原型
-        // for sys in self.systems.iter() {
-        //     sys.initialize(world);
-        // }
-        
-        // 初始化图
-        for (_name, schedule) in self.schedule_graph.iter_mut() {
-            // println!("stage:{:?} initialize", name);
-            for (_, stage) in schedule.iter_mut() {
-                stage.initialize(self.systems.clone(), world, self.add_listener);
-            }
-        }
-
-
-        self.dirty_mark = false;
-    }
-
-    pub fn run<A: AsyncRuntime + AsyncRuntimeExt>(
-        &mut self,
-        world: &mut World,
-        rt: &A,
-        schedule: &Interned<dyn ScheduleLabel>,
-    ) {
-        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some(), self.schedule_graph.len()));
-        self.try_initialize(world);
-
-        let g = match self.schedule_graph.get_mut(schedule) {
-            Some(r) => r,
-            None => return,
-        };
-
-        // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some()));
-        // let g = self.schedule_graph.get_mut(schedule).unwrap();
-        // 每次运行，增加1次tick
-        world.increment_tick();
-        // 按顺序运行stage
-        for stage in self.stage_sort.iter() {
-            if let Some(stage) = g.get_mut(stage) {
-                Self::run_graph(world, rt, stage, &self.systems);
-            }
-        }
-
-        if schedule == &MainSchedule.intern() {
-            world.collect_by(&mut self.action, &mut self.set);
-        }
-    }
-    fn run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
-        world: &mut World,
-        rt: &A,
-        g: &mut ExecGraph,
-        systems: &Share<SafeVec<BoxedSystem>>
-    ) {
-        let w: &'static World = unsafe { std::mem::transmute(world) };
-        let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
-        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(systems) };
-        let rt1 = rt.clone();
-        let _ = rt.block_on(async move {
-            let rt2 = rt1;
-            g.run(s, &rt2, w).await.unwrap();
-            g.collect();
-        });
-    }
-    // pub async fn async_run<A: AsyncRuntime + AsyncRuntimeExt>(
-    //     &mut self,
-    //     world: &mut World,
-    //     rt: &A,
-    // ) {
-    //     let g = self.graph.clone();
-    //     self.async_run_graph(world, rt, g).await;
-    // }
-    pub async fn async_run<A: AsyncRuntime + AsyncRuntimeExt>(
-        &mut self,
-        world: &mut World,
-        rt: &A,
-        schedule: &Interned<dyn ScheduleLabel>,
-    ) {
-        self.try_initialize(world);
-
-        // println!("async_run_stage, stage:{:?}", stage);
-        let g = self.schedule_graph.get_mut(schedule).unwrap();
-        // 按顺序运行stage
-        for stage in self.stage_sort.iter() {
-            if let Some(stage) = g.get_mut(stage) {
-                Self::async_run_graph(world, rt, stage, &mut self.systems).await;
-            }
-        }
-
-        if schedule == &MainSchedule.intern() {
-            world.collect_by(&mut self.action, &mut self.set);
-        }
-    }
-    async fn async_run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
-        world: &mut World,
-        rt: &A,
-        g: &mut ExecGraph,
-        systems: &Share<SafeVec<BoxedSystem>>,
-    ) { 
-        let w: &'static World = unsafe { std::mem::transmute(world) };
-        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
-        g.run(s, rt, w).await.unwrap();
-      
-        g.collect();
     }
 }
 
