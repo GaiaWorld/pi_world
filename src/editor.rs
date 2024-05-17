@@ -1,9 +1,8 @@
 use std::mem::transmute;
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult},
     insert::Bundle,
-    prelude::{Entity, QueryError, Tick, World},
+    prelude::{Entity, Mut, QueryError, Tick, World},
     system::SystemMeta,
     system_params::SystemParam,
     world::ComponentIndex,
@@ -21,11 +20,12 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
-        let mut add_components = Vec::with_capacity(components.len());
-        for component in components{
-            add_components.push((*component, true));
-        }
-        self.0.alter_components(e, &add_components)
+        let components = components
+            .iter()
+            .filter_map(|v| Some((*v, false)))
+            .collect::<Vec<(ComponentIndex, bool)>>();
+
+        self.0.alter_components(e, &components)
     }
 
     pub fn remove_components(
@@ -33,11 +33,12 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
-        let mut add_components = Vec::with_capacity(components.len());
-        for component in components{
-            add_components.push((*component, false));
-        }
-        self.0.alter_components(e, &add_components)
+        let components = components
+            .iter()
+            .filter_map(|v| Some((*v, false)))
+            .collect::<Vec<(ComponentIndex, bool)>>();
+
+        self.0.alter_components(e, &components)
     }
 
     pub fn alter_components(
@@ -48,13 +49,15 @@ impl<'w> EntityEditor<'w> {
         self.0.alter_components(e, components)
     }
 
-    pub fn insert_components(
-        &self,
-        e: Entity,
-        components: &[ComponentIndex],
-    ) -> Result<(), QueryError> {
+    pub fn insert_components(&self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+        let e = self.0.alloc_entity();
+        let components = components
+            .iter()
+            .filter_map(|v| Some((*v, true)))
+            .collect::<Vec<(ComponentIndex, bool)>>();
         // self.0.i.alter_components(e, components)
-        todo!()
+        self.alter_components(e, &components)?;
+        Ok(e)
     }
 
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
@@ -69,17 +72,20 @@ impl<'w> EntityEditor<'w> {
         self.0.get_component::<B>(e)
     }
 
-    pub fn get_mut<B: Bundle + 'static>(&self, e: Entity) -> Result<&mut B, QueryError> {
-        // self.0.get_component_mut::<B>(e)
-        todo!()
+    pub fn get_mut<B: Bundle + 'static>(&self, e: Entity) -> Result<Mut<B>, QueryError> {
+        self.0.get_component_mut1::<B>(e)
     }
 
-    pub fn get_unchecked<B: Bundle>(&self, e: Entity) -> &'w B {
-        todo!()
+    pub fn get_unchecked<B: Bundle + 'static>(&self, e: Entity) -> &'w B {
+        self.0.get_component::<B>(e).unwrap()
     }
 
-    pub fn get_unchecked_mut<B: Bundle>(&self, e: Entity) -> &'w mut B {
-        todo!()
+    pub fn get_unchecked_mut<B: Bundle + 'static>(&self, e: Entity) -> Mut<B> {
+        self.0.get_component_mut1::<B>(e).unwrap()
+    }
+
+    pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
+        self.0.init_component::<B>()
     }
 }
 
@@ -87,32 +93,17 @@ impl SystemParam for EntityEditor<'_> {
     type State = ();
     type Item<'w> = EntityEditor<'w>;
 
-    fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        // let components = I::components(Vec::new());
-        // let id = ComponentInfo::calc_id(&components);
-        // let (ar_index, ar) = world.find_archtype(id, components);
-        // let s = I::init_state(world, &ar);
-        // (ar_index, ar, s)
         ()
-    }
-    fn archetype_depend(
-        world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        archetype: &Archetype,
-        depend: &mut ArchetypeDependResult,
-    ) {
-        // let components = I::components(Vec::new());
-        // depend.insert(archetype, world, components);
     }
 
     #[inline]
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
-        tick: Tick,
+        _state: &'world mut Self::State,
+        _tick: Tick,
     ) -> Self::Item<'world> {
         EntityEditor::new(world)
     }

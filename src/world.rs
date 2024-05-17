@@ -471,7 +471,13 @@ impl World {
        self.get_component_mut_index_impl(e, index)
     }
 
-    pub(crate) fn get_component_mut_index_impl<T: 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<Mut<'static, T>, QueryError> {
+     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub(crate) fn get_component_mut1<T: 'static>(&self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
+        let index  = self.init_component::<T>();
+        self.get_component_mut_index_impl(e, index)
+    }
+
+    pub(crate) fn get_component_mut_index_impl<T: 'static>(&self, e: Entity, index: ComponentIndex) -> Result<Mut<'static, T>, QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -531,6 +537,21 @@ impl World {
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        
+        let ar_index = addr.archetype_index();
+        let mut ar = self.empty_archetype();
+
+        if !addr.index.is_null() {
+            ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
+            let ae = ar.mark_remove(addr.row);
+            if e != ae {
+                return Err(QueryError::NoMatchEntity(ae));
+            }
+        }
         
         let mut sort_add = vec![];
         let mut sort_remove = vec![];
@@ -543,7 +564,10 @@ impl World {
             } else {
                 0
             };
-            array.insert_value(index.index(), v);
+            let column = ar.get_column_index(*index);
+            if *is_add == column.is_null() {
+                array.insert_value(index.index(), v);
+            } 
         }
         for index in 0..array.len() {
             if array[index] != u16::MAX{
@@ -551,27 +575,14 @@ impl World {
                     if array[index] == 0{
                         sort_remove.push(info.clone());
                     } else if array[index] == 1{
+                        // if ar.get(row)
                         sort_add.push(info.clone());
                     } 
                 }
             }
         }
-        // let components = T::components();
-        let addr = match self.entities.get(e) {
-            Some(v) => v,
-            None => return Err(QueryError::NoSuchEntity),
-        };
-        let mut id = ComponentInfo::calc_id(&sort_add);
-        let ar_index = addr.archetype_index();
-        let mut ar = self.empty_archetype();
 
-        if !addr.index.is_null() {
-            ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
-            let ae = ar.mark_remove(addr.row);
-            if e != ae {
-                return Err(QueryError::NoMatchEntity(ae));
-            }
-        }
+        let mut id = ComponentInfo::calc_id(&sort_add);
 
         // println!("components: {:?}", components);
         if sort_add.len() > 0{
@@ -790,18 +801,18 @@ fn insert_columns(am: &mut ArchetypeMapping) {
     //         dst_column.info().default_fn.unwrap()(dst_data);
     //     }
     // }
-        // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-        for (i, t) in am.dst.get_columns().iter().enumerate() {
-            let column = am.src.get_column_index(t.info().world_index);
-            if column.is_null() {
-                // add_columns.push(ColumnIndex(i as u16));
-                let dst_column = am.dst.get_column_unchecked(i.into());
-                for (_src, dst_row, _e) in am.moves.iter() {
-                    let dst_data: *mut u8 = dst_column.load(*dst_row);
-                    dst_column.info().default_fn.unwrap()(dst_data);
-                }
+    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
+    for (i, t) in am.dst.get_columns().iter().enumerate() {
+        let column = am.src.get_column_index(t.info().world_index);
+        if column.is_null() {
+            // add_columns.push(ColumnIndex(i as u16));
+            let dst_column = am.dst.get_column_unchecked(i.into());
+            for (_src, dst_row, _e) in am.moves.iter() {
+                let dst_data: *mut u8 = dst_column.load(*dst_row);
+                dst_column.info().default_fn.unwrap()(dst_data);
             }
         }
+    }
     // }
 }
 
