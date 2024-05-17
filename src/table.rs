@@ -19,6 +19,12 @@ use crate::column::Column;
 use crate::dirty::{Dirty, DirtyIndex, DirtyIter, DirtyType, EntityRow};
 use crate::world::{ComponentIndex, Entity, World, Tick};
 
+pub struct RemovedColumn {
+    pub(crate) ticks: AppendVec<Tick>,
+    pub(crate) dirty: Dirty,
+    pub(crate) index: ComponentIndex,
+}
+
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
     columns: Vec<Column>,        // 每个组件
@@ -359,10 +365,10 @@ impl Table {
         for row in ones {
             // 找到最后一个未被移除的
             loop {
-                end -= 1;
                 if row >= end {
-                    return end + 1;
+                    return end;
                 }
+                end -= 1;
                 if !set.contains(end) {
                     // 放入移动对
                     action.push((Row(end as u32), Row(row as u32)));

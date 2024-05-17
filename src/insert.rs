@@ -100,6 +100,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         archetype: &Archetype,
         depend: &mut ArchetypeDependResult,
     ) {
+        // todo 似乎可以使用state上的ShareArchetype
         let components = I::components(Vec::new());
         depend.insert(archetype, world, components);
     }
@@ -127,6 +128,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
         let components = I::components(Vec::new());
+        // todo 移到system_meta，减少泛型代码
         for component in &components{
             system_meta.cur_param
             .writes

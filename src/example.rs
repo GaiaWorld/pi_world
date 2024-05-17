@@ -206,10 +206,12 @@ mod test_mod {
         // app::*,
         archetype::{ComponentInfo, Row}, column::Column, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
+    use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
     use pi_append_vec::AppendVec;
     // use pi_async_rt::rt::single_thread::SingleTaskRuntime;
     use pi_null::Null;
+    use rand::Rng;
     use test::Bencher;
 
     #[derive(ScheduleLabel, Hash, Eq, PartialEq, Clone, Debug)]
@@ -226,6 +228,29 @@ mod test_mod {
         c.collect(2, &mut action);
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
+    }
+    #[test]
+    fn test_removes_action() {
+        let mut action = Default::default();
+        let mut set: FixedBitSet = Default::default();
+        let mut removes: AppendVec<Row> = Default::default();
+        
+        let mut rng = rand::thread_rng();
+        let size = 20;
+        set.grow(size);
+        let range = rng.gen_range(0..size);
+        for _ in 0..range {
+            let x= rng.gen_range(0..size);
+            if set.contains(x) {
+                continue;
+            }
+            set.set(x, true);
+            removes.insert(x.into());
+        }
+        let asset_len = size - removes.len();
+        let len = Table::removes_action(&removes, removes.len(), size, &mut action, &mut set);
+        assert_eq!(len, asset_len, "{:?}", action);
+        println!("action: {:?}", action)
     }
 
     #[test]
