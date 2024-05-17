@@ -13,7 +13,7 @@ use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
     ShareArchetype,
 };
-use crate::dirty::{DirtyIndex, EntityRow};
+use crate::dirty::{DirtyIndex, DirtyIter};
 use crate::fetch::FetchComponents;
 use crate::filter::{FilterComponents, ListenType};
 use crate::listener::Listener;
@@ -23,7 +23,6 @@ use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
-use pi_arr::Iter;
 use pi_null::*;
 use pi_share::Share;
 use smallvec::SmallVec;
@@ -253,11 +252,9 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
 /// 监听原型创建， 添加record
 pub struct Notify<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     id: u128,
-    ticks: Vec<ComponentIndex>,
     listeners: SmallVec<[ListenType; 1]>,
     _a: (PhantomData<&'a ()>,PhantomData<Q>,PhantomData<F>),
 }
-
 
 impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
     for Notify<'a, Q, F>
@@ -268,18 +265,8 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
             return;
         }
         unsafe {
-            add_ticks(&e.0, &self.ticks);
             add_dirty_listeners(&e.0, self.id, &self.listeners)
         };
-    }
-}
-
-// 根据components列表，添加tick，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-pub(crate) unsafe fn add_ticks(ar: &Archetype, components: &Vec<ComponentIndex>) {
-    for index in components.iter() {
-        if let Some((c, _)) = ar.get_column_mut(*index) {
-            c.is_record_tick = true;
-        }
     }
 }
 
@@ -361,19 +348,14 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let qid = TypeId::of::<Q>();
         let fid = TypeId::of::<F>();
         let id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)};
-        let mut components = Default::default();
-        if Q::TICK_COUNT > 0 {
-            Q::init_ticks(world, &mut components);
-        }
         let mut listeners = Default::default();
         if F::LISTENER_COUNT > 0 {
             F::init_listeners(world, &mut listeners);
         }
-        if Q::TICK_COUNT > 0 || F::LISTENER_COUNT > 0 {
+        if F::LISTENER_COUNT > 0 {
             // 遍历已有的原型， 添加record
             let notify = Notify{
                 id,
-                ticks: components,
                 listeners: listeners.clone(),
                 _a: (PhantomData,
                 PhantomData::<Q>,
@@ -517,27 +499,6 @@ pub(crate) fn check<'w>(
 
     // Ok(addr)
 }
-struct DirtyIter<'a> {
-    it: Iter<'a, EntityRow>,
-    check_e: bool, // 是否对entity进行校验
-    index: usize,  // 所在原型的脏监听索引
-}
-impl<'a> DirtyIter<'a> {
-    fn empty() -> Self {
-        Self {
-            it: Iter::empty(),
-            check_e: true,
-            index: 0,
-        }
-    }
-    fn new(it: (Iter<'a, EntityRow>, bool), index: usize) -> Self {
-        Self {
-            it: it.0,
-            check_e: it.1,
-            index,
-        }
-    }
-}
 
 pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) world: &'w World,
@@ -552,6 +513,8 @@ pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'st
     pub(crate) row: Row,
     // 脏迭代器，监听多个组件变化，可能entity相同，需要进行去重
     dirty: DirtyIter<'w>,
+    // 所在原型的脏监听索引
+    dirty_index: usize,
     // 用来脏查询时去重row
     bitset: FixedBitSet,
     // 缓存上次的索引映射关系
@@ -585,18 +548,16 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     e: Entity::null(),
                     row: arqs.ar.len(),
                     dirty: DirtyIter::empty(),
+                    dirty_index: 0,
                     bitset: FixedBitSet::new(),
                     // cache_mapping: state.cache_mapping,
                 };
             } else if arqs.listeners.len() > 0 {
-                let bitset = if F::LISTENER_COUNT == 1 {
-                    FixedBitSet::new()
-                } else {
-                    FixedBitSet::with_capacity(arqs.ar.len().index())
-                };
+                let bitset = FixedBitSet::with_capacity(arqs.ar.len().index());
                 // 该查询有组件变化监听器， 倒序迭代所脏的原型
-                let len = arqs.listeners.len() - 1;
-                let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
+                let dirty_index = arqs.listeners.len() - 1;
+                let d_index = unsafe { *arqs.listeners.get_unchecked(dirty_index) };
+                let dirty = arqs.ar.get_dirty_iter(&d_index, tick);
                 return QueryIter {
                     world,
                     state,
@@ -606,9 +567,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     fetch,
                     e: Entity::null(),
                     row:  Row::null(),
-                    dirty: DirtyIter::new(arqs.ar.get_iter(&d_index), len),
+                    dirty,
+                    dirty_index,
                     bitset,
-                    // cache_mapping: state.cache_mapping,
                 };
             }
         }
@@ -623,8 +584,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             e: Entity::null(),
             row: Row(0),
             dirty: DirtyIter::empty(),
+            dirty_index: 0,
             bitset: FixedBitSet::new(),
-            // cache_mapping: state.cache_mapping,
         }
     }
     pub fn entity(&self) -> Entity {
@@ -663,23 +624,98 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         }
     }
 
-    fn iter_dirty(&mut self) -> Option<Q::Item<'w>> {
+    // fn iter_dirty(&mut self) -> Option<Q::Item<'w>> {
+    //     loop {
+    //         if let Some(d) = self.dirty.it.next() {
+    //             self.row = d.row;
+    //             if self.dirty.check_e {
+    //                 // 如果不检查对应row的e，则是查询被标记销毁的实体
+    //                 self.e = d.e;
+    //                 let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
+    //                 return Some(item);
+    //             }
+    //             self.e = self.ar.get(self.row);
+    //             // 要求条目不为空
+    //             if !self.e.is_null() {
+    //                 let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
+    //                 return Some(item);
+    //             }
+    //             // // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
+    //             // match self
+    //             //     .state
+    //             //     .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
+    //             // {
+    //             //     Ok(item) => return Some(item),
+    //             //     Err(_) => (),
+    //             // }
+    //             continue;
+    //         }
+    //         // 检查当前原型的下一个被脏组件
+    //         if self.dirty.index > 0 {
+    //             let len = self.dirty.index - 1;
+    //             let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
+    //             let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
+    //             let iter = arqs.ar.get_iter(&d_index, self.tick);
+    //             self.dirty = DirtyIter::new(iter, len);
+    //             continue;
+    //         }
+    //         // 当前的原型已经迭代完毕
+    //         if self.ar_index.0 == 0 {
+    //             // 所有原型都迭代过了
+    //             return None;
+    //         }
+    //         // 下一个原型
+    //         self.ar_index.0 -= 1;
+    //         let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
+    //         if arqs.listeners.len() == 0 {
+    //             continue;
+    //         }
+    //         self.ar = &arqs.ar;
+    //         self.fetch = MaybeUninit::new(Q::init_fetch(
+    //             self.world,
+    //             self.ar,
+    //             &arqs.state,
+    //             self.tick,
+    //             self.state.last_run,
+    //         ));
+    //         // 监听被脏组件
+    //         let len = arqs.listeners.len() - 1;
+    //         let d_index = unsafe { arqs.listeners.get_unchecked(len) };
+    //         let iter = arqs.ar.get_iter(&d_index, self.tick);
+    //         self.dirty = DirtyIter::new(iter, len);
+    //     }
+    // }
+
+    fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
         loop {
             if let Some(d) = self.dirty.it.next() {
                 self.row = d.row;
-                if self.dirty.check_e {
+                if self.dirty.ticks.is_none() {
                     // 如果不检查对应row的e，则是查询被标记销毁的实体
                     self.e = d.e;
-                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
+                    if self.bitset.contains(d.row.index()) {
+                        continue;
+                    }
+                    self.bitset.set(d.row.index(), true);
+                        let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
                     return Some(item);
                 }
                 self.e = self.ar.get(self.row);
                 // 要求条目不为空
                 if !self.e.is_null() {
-                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
-                    return Some(item);
+                    // 检查tick
+                    let vec = self.dirty.ticks.unwrap();
+                    let tick = vec.load_i(self.row.index()).unwrap();
+                    if self.state.last_run < *tick {
+                        if self.bitset.contains(d.row.index()) {
+                            continue;
+                        }
+                        self.bitset.set(d.row.index(), true);
+                        let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
+                        return Some(item);
+                    }
                 }
-                // // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
+                // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
                 // match self
                 //     .state
                 //     .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
@@ -690,12 +726,11 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 continue;
             }
             // 检查当前原型的下一个被脏组件
-            if self.dirty.index > 0 {
-                let len = self.dirty.index - 1;
+            if self.dirty_index > 0 {
+                self.dirty_index -= 1;
                 let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-                let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
-                let iter = arqs.ar.get_iter(&d_index);
-                self.dirty = DirtyIter::new(iter, len);
+                let d_index = unsafe { *arqs.listeners.get_unchecked(self.dirty_index) };
+                self.dirty = arqs.ar.get_dirty_iter(&d_index, self.tick);
                 continue;
             }
             // 当前的原型已经迭代完毕
@@ -718,76 +753,9 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 self.state.last_run,
             ));
             // 监听被脏组件
-            let len = arqs.listeners.len() - 1;
-            let d_index = unsafe { arqs.listeners.get_unchecked(len) };
-            let iter = arqs.ar.get_iter(&d_index);
-            self.dirty = DirtyIter::new(iter, len);
-        }
-    }
-
-    fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
-        loop {
-            if let Some(d) = self.dirty.it.next() {
-                if self.bitset.contains(d.row.index()) {
-                    continue;
-                }
-                self.bitset.set(d.row.index(), true);
-                self.row = d.row;
-                if self.dirty.check_e {
-                    // 如果不检查对应row的e，则是查询被标记销毁的实体
-                    self.e = d.e;
-                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
-                    return Some(item);
-                }
-                self.e = self.ar.get(self.row);
-                // 要求条目不为空
-                if !self.e.is_null() {
-                    let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, self.row, self.e);
-                    return Some(item);
-                }
-                // 如果为null，则用d.e去查，e是否存在，所在的原型是否在本查询范围内
-                match self
-                    .state
-                    .get(self.world, self.tick, d.e, /* &mut self.cache_mapping */)
-                {
-                    Ok(item) => return Some(item),
-                    Err(_) => (),
-                }
-                continue;
-            }
-            // 检查当前原型的下一个被脏组件
-            if self.dirty.index > 0 {
-                let len = self.dirty.index - 1;
-                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-                let d_index = unsafe { *arqs.listeners.get_unchecked(len) };
-                let iter = arqs.ar.get_iter(&d_index);
-                self.dirty = DirtyIter::new(iter, len);
-                continue;
-            }
-            // 当前的原型已经迭代完毕
-            if self.ar_index.0 == 0 {
-                // 所有原型都迭代过了
-                return None;
-            }
-            // 下一个原型
-            self.ar_index.0 -= 1;
-            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-            if arqs.listeners.len() == 0 {
-                continue;
-            }
-            self.ar = &arqs.ar;
-            self.fetch = MaybeUninit::new(Q::init_fetch(
-                self.world,
-                self.ar,
-                &arqs.state,
-                self.tick,
-                self.state.last_run,
-            ));
-            // 监听被脏组件
-            let len = arqs.listeners.len() - 1;
-            let d_index = unsafe { arqs.listeners.get_unchecked(len) };
-            let iter = arqs.ar.get_iter(&d_index);
-            self.dirty = DirtyIter::new(iter, len);
+            self.dirty_index = arqs.listeners.len() - 1;
+            let d_index = unsafe { arqs.listeners.get_unchecked(self.dirty_index) };
+            self.dirty = arqs.ar.get_dirty_iter(&d_index, self.tick);
             let len = arqs.ar.len().index();
             if self.bitset.len() < len {
                 self.bitset = FixedBitSet::with_capacity(len);
@@ -812,7 +780,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         let mut c: usize = self.dirty.it.size_hint().1.unwrap_or_default();
         let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
         // 获得当前原型的剩余列的脏长度
-        c += self.size_hint_ar_column_dirty(&arqs.ar, &arqs.listeners, self.dirty.index);
+        c += self.size_hint_ar_column_dirty(&arqs.ar, &arqs.listeners, self.dirty_index);
         for i in 0..ar_index {
             let arqs = unsafe { &self.state.vec.get_unchecked(i) };
             // 获得剩余原型的全部列的脏长度
@@ -829,8 +797,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         let mut c: usize = 0;
         for i in 0..len {
             let d_index = unsafe { vec.get_unchecked(i) };
-            let iter = ar.get_iter(d_index);
-            c += iter.0.size_hint().1.unwrap_or_default();
+            let iter = ar.get_dirty_iter(d_index, self.tick);
+            c += iter.it.size_hint().1.unwrap_or_default();
         }
         c
     }
@@ -842,8 +810,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, 
     fn next(&mut self) -> Option<Self::Item> {
         if F::LISTENER_COUNT == 0 {
             self.iter_normal()
-        } else if F::LISTENER_COUNT == 1 {
-            self.iter_dirty()
+        // } else if F::LISTENER_COUNT == 1 {
+        //     self.iter_dirty()
         } else {
             self.iter_dirtys()
         }

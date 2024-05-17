@@ -683,7 +683,7 @@ pub(crate) fn clear(
         let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
         move_columns(am);
         remove_columns(am);
-        add_columns(am, tick);
+        // add_columns(am, tick);
         update_table_world(world, am);
         am.moves.clear();
     }
@@ -719,7 +719,7 @@ pub(crate) fn move_column(
         let src_data: *mut u8 = src_column.get_row(*src_row);
         dst_column.write_row(*dst_row, src_data);
     }
-    if src_column.is_record_tick && dst_column.is_record_tick {
+    if src_column.info().tick_removed & COMPONENT_TICK != 0 {
         for (src_row, dst_row, e) in moves.iter() {
             let tick = src_column.get_tick_unchecked(*src_row);
             dst_column.add_record_unchecked(*e, *dst_row, tick);
@@ -763,18 +763,22 @@ pub(crate) fn remove_columns(am: &mut ArchetypeMapping) {
         let remove_column_dirty_index = am.dst.find_remove_column_dirty(col.info().world_index);
 
         if !remove_column_dirty_index.is_null() {
-            // 如果目标原型的移除列上有对应监听，则记录移除行
+            // 如果目标原型的移除列上有对应监听，则记录移除行及tick
             let d = am.dst.get_remove_column_dirty(remove_column_dirty_index);
             if col.needs_drop() {
                 for (src_row, dst_row, e) in am.moves.iter() {
                     col.drop_row_unchecked(*src_row);
-                    // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+                    // 在脏列表上记录移除行及tick
+                    let tick = col.get_tick_unchecked(*src_row);
+                    *d.0.load_alloc(dst_row.index()) = tick;
+                    d.1.record_unchecked(*e, *dst_row);
                 }
             } else {
-                for (_src_row, dst_row, e) in am.moves.iter() {
-                    // 在脏列表上记录移除行
-                    d.record_unchecked(*e, *dst_row);
+                for (src_row, dst_row, e) in am.moves.iter() {
+                    // 在脏列表上记录移除行及tick
+                    let tick = col.get_tick_unchecked(*src_row);
+                    *d.0.load_alloc(dst_row.index()) = tick;
+                    d.1.record_unchecked(*e, *dst_row);
                 }
             }
         } else if col.needs_drop() {

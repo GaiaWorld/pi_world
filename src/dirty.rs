@@ -15,7 +15,7 @@ use pi_null::Null;
 use pi_share::ShareUsize;
 
 use crate::archetype::{ColumnIndex, Row};
-use crate::world::Entity;
+use crate::world::{Entity, Tick};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub enum DirtyType {
@@ -31,6 +31,24 @@ pub(crate) struct DirtyIndex {
     pub(crate) listener_index: u32, // 在Dirty的Vec中的位置
 }
 
+pub(crate) struct DirtyIter<'a> {
+    pub(crate) it: Iter<'a, EntityRow>,
+    pub(crate) ticks: Option<&'a AppendVec<Tick>>, // 是否对entity进行校验
+}
+impl<'a> DirtyIter<'a> {
+    pub(crate) fn empty() -> Self {
+        Self {
+            it: Iter::empty(),
+            ticks: None,
+        }
+    }
+    pub(crate) fn new(it: Iter<'a, EntityRow>, ticks: Option<&'a AppendVec<Tick>>) -> Self {
+        Self {
+            it,
+            ticks,
+        }
+    }
+}
 #[derive(Debug, Default)]
 pub(crate) struct EntityRow {
     pub(crate) e: Entity,
@@ -49,16 +67,32 @@ impl Null for EntityRow {
     }
 }
 
+// 监听器信息
+#[derive(Debug, Default)]
+pub struct ListenerInfo {
+    owner: u128, // 监听器id，由system::id和Query::id组成
+    read_len: ShareUsize, // 已读取的长度
+    tick: ShareUsize, // 读取时的tick
+}
+impl ListenerInfo {
+    pub fn new(owner: u128) -> Self {
+        Self {
+            owner,
+            read_len: ShareUsize::new(0),
+            tick: ShareUsize::new(0),
+        }
+    }
+}
 #[derive(Debug, Default)]
 pub struct Dirty {
-    listeners: Vec<(u128, ShareUsize)>, // 每个监听器的TypeId和当前读取的长度
+    listeners: Vec<ListenerInfo>, // 每个监听器的TypeId和当前读取的长度
     pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
 }
 unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
     pub(crate) fn new(owner: u128) -> Self {
-        let listeners = vec![(owner, ShareUsize::new(0))];
+        let listeners = vec![ListenerInfo::new(owner)];
         Self {
             listeners,
             vec: AppendVec::default(),
@@ -67,10 +101,10 @@ impl Dirty {
 
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
-        self.listeners.push((owner, ShareUsize::new(0)));
-    }
+		self.listeners.push(ListenerInfo::new(owner));
+}
     /// 插入一个监听者的类型id
-    pub(crate) fn listener_list(&self) -> &Vec<(u128, ShareUsize)> {
+    pub(crate) fn listener_list(&self) -> &Vec<ListenerInfo> {
         &self.listeners
     }
     // 返回监听器的位置
@@ -78,7 +112,7 @@ impl Dirty {
         self.listener_list()
             .iter()
             .enumerate()
-            .find(|r| r.1 .0 == owner)
+            .find(|r| r.1.owner == owner)
             .map_or(u32::null(), |r| r.0 as u32)
     }
     #[inline(always)]
@@ -95,23 +129,32 @@ impl Dirty {
             self.vec.insert(EntityRow { e, row });
         }
     }
+    /// 最小的tick，如果记录的数据tick小于该tick，则可以忽略
+    pub(crate) fn record_tick(&self) -> Tick {
+        let mut t = usize::MAX;
+        for l in self.listener_list().iter() {
+            t = t.min(l.tick.load(Ordering::Relaxed));
+        }
+        t.into()
+    }
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
         if self.listener_len() > 0 {
             self.vec.reserve(additional);
         }
     }
-    pub(crate) fn get_iter<'a>(&'a self, listener_index: u32) -> Iter<'a, EntityRow> {
+    pub(crate) fn get_iter<'a>(&'a self, listener_index: u32, tick: Tick) -> Iter<'a, EntityRow> {
+        println!("get_iter!!! listener_index: {}", listener_index);
         let end = self.vec.len();
         // 从上次读取到的位置开始读取
-        let len = unsafe {
+        let info = unsafe {
             &self
                 .listener_list()
                 .get_unchecked(listener_index as usize)
-                .1
         };
-        let start = len.load(Ordering::Relaxed);
-        len.store(end, Ordering::Relaxed);
+        let start = info.read_len.load(Ordering::Relaxed);
+        info.read_len.store(end, Ordering::Relaxed);
+        info.tick.store(tick.index(), Ordering::Relaxed);
         self.vec.slice(start..end)
     }
     /// 判断是否能够清空脏列表
@@ -120,8 +163,8 @@ impl Dirty {
         if len == 0 {
             return Some(0);
         }
-        for (_, read_len) in self.listeners.iter_mut() {
-            if *read_len.get_mut() < len {
+        for info in self.listeners.iter_mut() {
+            if *info.read_len.get_mut() < len {
                 return None;
             }
         }
@@ -134,8 +177,8 @@ impl Dirty {
         if self.vec.vec_capacity() < len {
             unsafe { self.vec.vec_reserve(len - self.vec.vec_capacity()) };
         }
-        for (_, read_len) in self.listeners.iter_mut() {
-            *read_len.get_mut() = 0;
+        for info in self.listeners.iter_mut() {
+            *info.read_len.get_mut() = 0;
         }
     }
     // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表

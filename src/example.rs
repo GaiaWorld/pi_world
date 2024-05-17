@@ -217,7 +217,7 @@ mod test_mod {
 
     #[test]
     fn test_columns() {
-        let mut c = Column::new(ComponentInfo::of::<Transform>());
+        let mut c = Column::new(ComponentInfo::of::<Transform>(0));
         c.write(Row(0), Transform([0.0; 16]));
         c.write(Row(1), Transform([1.0; 16]));
         dbg!(c.get::<Transform>(Row(0)));
@@ -787,8 +787,8 @@ mod test_mod {
                 age1,
             ) in q
             {
+                println!("tick: {:?}, {:?}", age0.tick(), age0.last_tick());
                 assert!(age0.is_changed());
-                println!("tick: {:?}, {}", age1.tick(), age1.is_changed());
             }
             println!("print_changed2 over");
         }
@@ -803,7 +803,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_destroyed() {
+    fn test_destroyed() { 
         pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
             println!("insert1 is now");
             let e = i0.insert((Age3(3), Age1(1), Age0(0)));
@@ -952,6 +952,63 @@ mod test_mod {
 
          app.run();
         //  app.run();
+    }
+
+    #[test]
+    fn test_changed2(){
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(w: &World) {
+            let e = w.alloc_entity();
+            println!("alter_add!! e: {:?}", e);
+            w.alter_components(e, &[
+                (w.init_component::<Age0>(), true), 
+                (w.init_component::<Age1>(), true)
+            ]).unwrap();
+
+            println!("alter_add end");
+         }
+
+         pub fn alter_add2(w: &World, q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>) {
+            // let e = w.alloc_entity();
+            println!("alter_add2 start!!");
+            // assert_eq!(q.len(), 1); 
+            q.iter().for_each(|(e, age1, age0)|{
+                println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
+                w.alter_components(e, &[
+                    (w.init_component::<Age2>(), true), 
+                ]).unwrap()
+            });
+            println!("alter_add2 end");
+         }
+
+        //  pub fn edit(w: &mut World, q: Query<(Entity, &Age1), (Changed<Age1>)>) {
+        //     // let e = w.alloc_entity();
+        //     println!("alter_add2 start!! ");
+        //     // assert_eq!(q.len(), 1); 
+        //     q.iter().for_each(|(e, age1)|{
+        //         println!("alter_add2!! e: {:?}, age1: {:?}", e, age1);
+        //        let mut r = w.get_component_by_index_mut::<Age0>(e, w.init_component::<Age0>()).unwrap();
+        //         r.0 = 5;
+        //     });
+        //     println!("alter_add2 end");
+        //  }
+
+        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age2>)>) {
+            println!("query start!!!");
+            // assert_eq!(q.len(), 1); 
+            q.iter().for_each(|(e, age0, age2)|{
+                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
+            });
+            println!("query end!!!");
+         }
+         
+         app.add_system(Update, alter_add2);
+         app.add_system(Update, alter_add);
+         app.add_system(Update, query);
+
+         app.run();
+
+        app.run();
     }
 
 }

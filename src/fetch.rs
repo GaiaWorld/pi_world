@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{
-    Archetype, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row
+    Archetype, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row, COMPONENT_TICK
 };
 use crate::column::Column;
 use crate::prelude::FromWorld;
@@ -25,11 +25,6 @@ pub trait FetchComponents {
     /// so it is best to move as much data / computation here as possible to reduce the cost of
     /// constructing [`Self::Fetch`](crate::query::FetchComponents::Fetch).
     type State: Send + Sync + Sized;
-
-    const TICK_COUNT: usize;
-
-    /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(_world: &World, _ticks: &mut Vec<ComponentIndex>) {}
 
     /// initializes ReadWrite for this [`FetchComponents`] type.
     fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {}
@@ -81,7 +76,6 @@ impl FetchComponents for Entity {
     type Item<'w> = Entity;
     type ReadOnly = Entity;
     type State = ();
-    const TICK_COUNT: usize = 0;
 
     fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {}
 
@@ -107,10 +101,9 @@ impl<T: 'static> FetchComponents for &T {
     type Item<'w> = &'w T;
     type ReadOnly = &'static T;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -144,10 +137,9 @@ impl<T: 'static> FetchComponents for &mut T {
     type Item<'w> = Mut<'w, T>;
     type ReadOnly = &'static T;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -181,14 +173,9 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     type Item<'w> = Ticker<'w, &'w T>;
     type ReadOnly = Ticker<'static, &'static T>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 1;
 
-    /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
-        ticks.push(world.get_component_index(&TypeId::of::<T>()));
-    }
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK));
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -222,14 +209,9 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     type Item<'w> = Ticker<'w, &'w mut T>;
     type ReadOnly = Ticker<'static, &'static T>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 1;
 
-    /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
-        ticks.push(world.get_component_index(&TypeId::of::<T>()));
-    }
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK));
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -261,14 +243,9 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
     type Item<'w> = Option<Ticker<'w, &'w T>>;
     type ReadOnly = Option<Ticker<'static, &'static T>>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 1;
 
-    /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
-        ticks.push(world.get_component_index(&TypeId::of::<T>()));
-    }
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK));
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -312,14 +289,9 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     type Item<'w> = Option<Ticker<'w, &'w mut T>>;
     type ReadOnly = Option<Ticker<'static, &'static T>>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 1;
 
-    /// initializes tick for this [`FetchComponents`] type
-    fn init_ticks(world: &World, ticks: &mut Vec<ComponentIndex>) {
-        ticks.push(world.get_component_index(&TypeId::of::<T>()));
-    }
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK));
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -364,10 +336,9 @@ impl<T: 'static> FetchComponents for Option<&T> {
     type Item<'w> = Option<&'w T>;
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param
             .reads
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -405,10 +376,9 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     type Item<'w> = Option<Mut<'w, T>>;
     type ReadOnly = Option<&'static T>;
     type State = ColumnIndex;
-    const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.cur_param
             .writes
             .insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
@@ -456,11 +426,10 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     type Item<'w> = &'w T;
     type ReadOnly = OrDefault<T>;
     type State = Result<ColumnIndex, SingleResource>;
-    const TICK_COUNT: usize = 0;
 
     fn init_read_write(world: &mut World, meta: &mut SystemMeta) {
         let info = TypeInfo::of::<T>();
-        world.add_component_info(ComponentInfo::of::<T>());
+        world.add_component_info(ComponentInfo::of::<T>(0));
         meta.res_read(&info);
         meta.cur_param.reads.insert(info.type_id, info.name);
 
@@ -518,7 +487,6 @@ impl<T: 'static> FetchComponents for Has<T> {
     type Item<'w> = bool;
     type ReadOnly = Has<T>;
     type State = bool;
-    const TICK_COUNT: usize = 0;
 
     fn init_state(world: &World, archetype: &Archetype) -> Self::State {
         !archetype.get_column_index_by_tid(&world, &TypeId::of::<T>()).is_null()
@@ -548,7 +516,6 @@ impl FetchComponents for ArchetypeName<'_> {
     type Item<'w> = ArchetypeName<'w>;
     type ReadOnly = ArchetypeName<'static>;
     type State = ();
-    const TICK_COUNT: usize = 0;
 
     fn init_state(_world: &World, _: &Archetype) -> Self::State {
         ()
@@ -578,7 +545,7 @@ pub struct ColumnTick<'a> {
     pub(crate) last_run: Tick,
 }
 impl<'a> ColumnTick<'a> {
-    fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
+    pub(crate) fn new(column: &'a Column, tick: Tick, last_run: Tick) -> Self {
         Self {
             column,
             tick,
@@ -716,11 +683,7 @@ macro_rules! impl_tuple_fetch {
             type Item<'w> = ($($name::Item<'w>,)*);
             type ReadOnly = ($($name::ReadOnly,)*);
             type State = ($($name::State,)*);
-            const TICK_COUNT: usize = $($name::TICK_COUNT + )* 0;
 
-            fn init_ticks(_world: &World, _ticks: &mut Vec<ComponentIndex>) {
-                ($($name::init_ticks(_world, _ticks),)*);
-            }
             fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {
                 ($($name::init_read_write(_world, _meta),)*);
             }

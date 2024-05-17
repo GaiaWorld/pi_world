@@ -20,6 +20,7 @@ use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
+use crate::prelude::Mut;
 use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
@@ -28,7 +29,7 @@ use crate::alter::{
 use crate::archetype::{
     Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype
 };
-use crate::fetch::FetchComponents;
+use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
 use crate::insert_batch::InsertBatchIter;
@@ -42,7 +43,7 @@ use pi_key_alloter::new_key_type;
 // use pi_map::hashmap::HashMap;
 // use pi_map::Map;
 use pi_null::Null;
-use pi_share::{Share, ShareU32};
+use pi_share::{Share, ShareUsize};
 use pi_slot::{Iter, SlotMap};
 
 new_key_type! {
@@ -76,6 +77,11 @@ impl pi_null::Null for ComponentIndex {
 }
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(u32);
+impl Tick {
+    pub fn index(&self) -> usize {
+        self.0 as usize
+    }
+}
 impl Deref for Tick {
     type Target = u32;
     fn deref(&self) -> &Self::Target {
@@ -95,11 +101,12 @@ impl From<u32> for Tick {
         Self(v)
     }
 }
-impl From<Tick> for u32 {
-    fn from(value: Tick) -> Self {
-        value.0
+impl From<usize> for Tick {
+    fn from(v: usize) -> Self {
+        Self(v as u32)
     }
 }
+
 
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
@@ -139,7 +146,7 @@ pub struct World {
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
     // 世界当前的tick
-    tick: ShareU32,
+    tick: ShareUsize,
 }
 impl World {
     pub fn new() -> Self {
@@ -163,7 +170,7 @@ impl World {
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
-            tick: ShareU32::new(1),
+            tick: ShareUsize::new(1),
         }
     }
     // 获得世界当前的tick
@@ -204,23 +211,49 @@ impl World {
     pub fn get_component_info(&self, index: ComponentIndex) -> Option<&ComponentInfo> {
         self.component_arr.get(index.index())
     }
-    /// 添加组件信息，如果重复，则返回原有的索引
-    pub fn add_component_info(&self, mut info: ComponentInfo) -> ComponentIndex {
-        let r = self.component_map.entry(info.type_id).or_insert_with(|| {
-            let e = self.component_arr.alloc_entry();
-            let index = e.index().into();
-            info.world_index = index;
-            e.insert(info);
-            index
-        });
-        *r.value()
+    /// 添加组件信息，如果重复，则返回原有的索引及是否tick变化
+    pub fn add_component_info(&self, mut info: ComponentInfo) -> (ComponentIndex, Option<u8>) {
+        let tick_removed = info.tick_removed;
+        let index = match self.component_map.entry(info.type_id) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let e = self.component_arr.alloc_entry();
+                let index = e.index().into();
+                info.world_index = index;
+                e.insert(info);
+                entry.insert(index);
+                return (index, None)
+            },
+        };
+        let info = unsafe { self.component_arr.load_unchecked_mut(index.index())};
+        let t = info.tick_removed | tick_removed;
+        if t != info.tick_removed {
+            info.tick_removed = t;
+            // 扫描当前原型，如果原型中存在该组件，则将该组件tick_removed设置为tick_removed
+            self.update_tick_removed(index, info.tick_removed);
+            return (index, Some(info.tick_removed));
+        }
+        (index, None)
+    }
+    /// 更新全部的原型的相关组件信息的tick_removed
+    pub(crate) fn update_tick_removed(&self, index: ComponentIndex, tick_removed: u8) {
+        for ar in self.archetype_arr.iter() {
+            if let Some(c) = unsafe { ar.get_column_mut(index) } {
+                c.0.info_mut().tick_removed = tick_removed;
+                // todo 将已经存在的实体修改tick
+            }
+        }
     }
     /// 计算所有原型信息，设置了所有组件的索引
     pub(crate) fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
         let mut id = 0;
         for c in components.iter_mut() {
             id ^= c.id();
-            c.world_index = self.add_component_info(c.clone());
+            let (index, change) = self.add_component_info(c.clone());
+            c.world_index = index;
+            if let Some(tick_removed) = change {
+                c.tick_removed = tick_removed;
+            }
         }
         ArchetypeInfo{id, components}
     }
@@ -385,7 +418,7 @@ impl World {
     pub(crate) fn system_init_write_multi_res<T: 'static, F>(
         &mut self,
         f: F,
-    ) -> Option<(SingleResource, Share<ShareU32>)>
+    ) -> Option<(SingleResource, Share<ShareUsize>)>
     where
         F: FnOnce() -> T,
     {
@@ -432,8 +465,30 @@ impl World {
         unsafe { transmute(self.get_component_ptr::<T>(e)) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<&mut T, QueryError> {
-        self.get_component_ptr::<T>(e)
+    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
+    //    self.get_component_info(index)
+       let index  = self.init_component::<T>();
+       self.get_component_mut_index_impl(e, index)
+    }
+
+    pub(crate) fn get_component_mut_index_impl<T: 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<Mut<'static, T>, QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
+
+        if let Some((c, _)) = ar.get_column(index) {
+            let t =self.tick();
+            let value: Mut<T> = Mut::new(
+                &ColumnTick::new(c, t, t),
+                e,
+                addr.row,
+            );
+            return Ok(unsafe { transmute(value) }); 
+        } else {
+            return Err(QueryError::MissingComponent)
+        }
     }
 
     fn get_component_ptr_by_index(
@@ -466,8 +521,8 @@ impl World {
         &mut self,
         e: Entity,
         index: ComponentIndex,
-    ) -> Result<&mut T, QueryError> {
-        unsafe { transmute(self.get_component_ptr_by_index(e, index))}
+    ) -> Result<Mut<'static, T>, QueryError> {
+        self.get_component_mut_index_impl(e, index)
     }
 
     /// 增加和删除实体
@@ -543,13 +598,18 @@ impl World {
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
 
-        let _ = alloc_row(&mut mapping, addr.row, e);
+        let dst_row = alloc_row(&mut mapping, addr.row, e);
+        let (_add_index, add)  = self.find_ar(sort_add);
+       
+        for col in add.get_columns().iter() {
+            col.add_record(e, dst_row, self.tick());
+        }
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
         //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
         insert_columns(&mut mapping);
-        move_columns(&mut mapping,);
+        move_columns(&mut mapping);
         remove_columns(&mut mapping);
         add_columns(&mut mapping, self.tick());
         update_table_world(&self, &mut mapping);
@@ -669,18 +729,28 @@ impl World {
         self.entities.remove(e).unwrap();
         Ok(())
     }
+     /// 销毁指定的实体
+     pub(crate) fn destroy_entity2(&self, e: Entity) -> Result<(), QueryError> {
+        let addr = match self.entities.get(e) {
+            Some(v) => *v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
+        let e = ar.mark_destroy(addr.row);
+        if e.is_null() {
+            return Err(QueryError::NoSuchRow);
+        }
+        self.entities.remove(e).unwrap();
+        Ok(())
+    }
     /// 创建一个新的实体
     pub fn alloc_entity(&self) -> Entity {
         self.entities
             .insert(EntityAddr::new(ArchetypeWorldIndex::null(), Row(0)))
     }
-    /// 销毁指定的实体
+    /// 初始化指定组件
     pub fn init_component<T: 'static>(&self) -> ComponentIndex {
-        let mut index = self.get_component_index(&std::any::TypeId::of::<T>());
-        if index.is_null() {
-            index = self.add_component_info(ComponentInfo::of::<T>());
-        }
-        index
+        self.add_component_info(ComponentInfo::of::<T>(0)).0
     }
     /// 替换Entity的原型及行
     #[inline(always)]
@@ -770,14 +840,14 @@ unsafe impl Sync for SingleResource {}
 #[derive(Debug, Clone)]
 pub struct MultiResource(
     Share<SyncUnsafeCell<Vec<SingleResource>>>,
-    pub(crate) Share<ShareU32>,
+    pub(crate) Share<ShareUsize>,
     Cow<'static, str>,
 );
 impl MultiResource {
     fn new<T: 'static>() -> Self {
         Self(
             Share::new(SyncUnsafeCell::new(Vec::new())),
-            Share::new(ShareU32::new(0)),
+            Share::new(ShareUsize::new(0)),
             std::any::type_name::<T>().into(),
         )
     }

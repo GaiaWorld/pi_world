@@ -10,7 +10,7 @@ use std::mem::{replace, transmute};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 
-use pi_share::{Share, ShareU32};
+use pi_share::{Share, ShareUsize};
 
 use crate::archetype::Flags;
 use crate::single_res::{SingleRes, SingleResMut};
@@ -111,14 +111,14 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
 
 pub struct MultiResMut<'w, T: Default + 'static> {
     pub(crate) value: SingleResMut<'w, T>,
-    changed_tick: &'w Share<ShareU32>,
+    changed_tick: &'w Share<ShareUsize>,
     tick: Tick,
 }
 unsafe impl<T: Default> Send for MultiResMut<'_, T> {}
 unsafe impl<T: Default> Sync for MultiResMut<'_, T> {}
 impl<'w, T: Default + 'static> MultiResMut<'w, T> {
     #[inline]
-    fn new(state: &'w mut (SingleResource, Share<ShareU32>), tick: Tick) -> Self {
+    fn new(state: &'w mut (SingleResource, Share<ShareUsize>), tick: Tick) -> Self {
         MultiResMut {
             value: SingleResMut::new(&mut state.0, tick),
             changed_tick: &state.1,
@@ -131,7 +131,7 @@ impl<'w, T: Default + 'static> MultiResMut<'w, T> {
     }
 }
 impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
-    type State = (SingleResource, Share<ShareU32>);
+    type State = (SingleResource, Share<ShareUsize>);
     type Item<'w> = MultiResMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -182,7 +182,7 @@ impl<'w, T: Default + Sync + Send + 'static> Deref for MultiResMut<'w, T> {
 impl<'w, T: Default + Sync + Send + 'static> DerefMut for MultiResMut<'w, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.changed_tick.store(self.tick.into(), Ordering::Relaxed);
+        self.changed_tick.store(self.tick.index(), Ordering::Relaxed);
         &mut self.value
     }
 }
@@ -233,7 +233,7 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
 }
 
 impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
-    type State = Option<(SingleResource, Share<ShareU32>)>;
+    type State = Option<(SingleResource, Share<ShareUsize>)>;
     type Item<'w> = Option<MultiResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {

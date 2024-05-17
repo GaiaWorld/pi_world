@@ -11,7 +11,7 @@ use pi_arr::{Arr, Location, BUCKETS};
 use pi_null::Null;
 
 use crate::{
-    archetype::{ComponentInfo, Row},
+    archetype::{ComponentInfo, Row, COMPONENT_TICK},
     dirty::Dirty,
     prelude::Entity,
     world::Tick,
@@ -19,8 +19,7 @@ use crate::{
 
 pub struct Column {
     blob: Blob,
-    ticks: AppendVec<Tick>,
-    pub(crate) is_record_tick: bool,           // 是否记录tick
+    pub(crate) ticks: AppendVec<Tick>,
     pub(crate) dirty: Dirty, // Alter和Insert产生的添加脏和Query产生的修改脏，
 }
 
@@ -30,13 +29,16 @@ impl Column {
         Self {
             blob: Blob::new(info),
             ticks: Default::default(),
-            is_record_tick: false,
             dirty: Default::default(),
         }
     }
     #[inline(always)]
     pub fn info(&self) -> &ComponentInfo {
         &self.blob.info
+    }
+    #[inline(always)]
+    pub fn info_mut(&mut self) -> &mut ComponentInfo {
+        &mut self.blob.info
     }
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
@@ -49,7 +51,7 @@ impl Column {
     }
     #[inline]
     pub fn add_record(&self, e: Entity, row: Row, tick: Tick) {
-        if !self.is_record_tick {
+        if self.info().tick_removed & COMPONENT_TICK == 0 {
             return;
         }
         // println!("add_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
@@ -58,8 +60,7 @@ impl Column {
     }
     #[inline]
     pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
-        // println!("change_record===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
-        if !self.is_record_tick {
+        if self.info().tick_removed & COMPONENT_TICK == 0 {
             return;
         }
         let old = self.ticks.load_alloc(row.0 as usize);
@@ -71,9 +72,8 @@ impl Column {
     }
     #[inline]
     pub fn add_record_unchecked(&self, e: Entity, row: Row, tick: Tick) {
-        // println!("change_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
-        *self.ticks.load_alloc(row.0 as usize) = tick;
-        self.dirty.record_unchecked(e, row);
+        *self.ticks.load_alloc(row.index()) = tick;
+        self.dirty.record(e, row);
     }
     #[inline(always)]
     pub fn get<T>(&self, row: Row) -> &T {
@@ -125,14 +125,14 @@ impl Column {
     /// 扩容
     pub fn reserve(&mut self, len: usize, additional: usize) {
         self.blob.reserve(len, additional);
-        if self.is_record_tick {
+        if self.info().tick_removed & COMPONENT_TICK != 0 {
             self.ticks.reserve(additional);
         }
         self.dirty.reserve(additional);
     }
     /// 整理合并空位
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
-        if self.is_record_tick {
+        if self.info().tick_removed & COMPONENT_TICK != 0 {
             for (src, dst) in action.iter() {
                 self.collect_key(src, dst);
                 unsafe {

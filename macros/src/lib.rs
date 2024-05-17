@@ -465,7 +465,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 type State = #world_path::insert::TState<Self>;
 
                 fn components(mut c: Vec<#world_path::archetype::ComponentInfo>) -> Vec<#world_path::archetype::ComponentInfo> {
-                    c.push(#world_path::archetype::ComponentInfo::of::<Self>());
+                    c.push(#world_path::archetype::ComponentInfo::of::<Self>(0));
                     c
                 }
                 fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
