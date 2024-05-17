@@ -1077,8 +1077,9 @@ mod test_mod {
         }
 
         pub fn alter(e: SingleResMut<EntityRes>, w: &World, /* mut a: Alter<(), (), (Age0, Age1)> */) {
+            println!("alter start!!!");
             w.alter_components(e.0, &[(w.init_component::<Age0>(), true), (w.init_component::<Age1>(), true)]);
-
+            println!("alter end!!!");
         }
          
         app.add_system(Update, query);

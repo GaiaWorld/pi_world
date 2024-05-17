@@ -16,6 +16,7 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
+use std::iter::Map;
 use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
@@ -564,6 +565,7 @@ impl World {
             } else {
                 0
             };
+            // 去除已经有了需要添加的和没有需要删除的组件
             let column = ar.get_column_index(*index);
             if *is_add == column.is_null() {
                 array.insert_value(index.index(), v);
@@ -581,7 +583,8 @@ impl World {
                 }
             }
         }
-
+        sort_add.sort();
+        sort_remove.sort();
         let mut id = ComponentInfo::calc_id(&sort_add);
 
         // println!("components: {:?}", components);
@@ -617,8 +620,6 @@ impl World {
         }
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        // for ar_index in mapping_dirtys.iter() {
-        //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
         insert_columns(&mut mapping);
         move_columns(&mut mapping);
         remove_columns(&mut mapping);
@@ -802,11 +803,13 @@ fn insert_columns(am: &mut ArchetypeMapping) {
     //     }
     // }
     // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-    for (i, t) in am.dst.get_columns().iter().enumerate() {
-        let column = am.src.get_column_index(t.info().world_index);
-        if column.is_null() {
-            // add_columns.push(ColumnIndex(i as u16));
-            let dst_column = am.dst.get_column_unchecked(i.into());
+    for (_, dst_column) in am.dst.get_columns().iter().enumerate() {
+        // am.moving.binary_search_by(||)
+        // 性能
+        let r = am.moving.iter().find(|i|{i.world_index == dst_column.info().world_index});
+        // am.dst.get_column_index(am.moving[0].world_index)
+        // let column = am.src.get_column_index(t.info().world_index);
+        if r.is_null() {
             for (_src, dst_row, _e) in am.moves.iter() {
                 let dst_data: *mut u8 = dst_column.load(*dst_row);
                 dst_column.info().default_fn.unwrap()(dst_data);

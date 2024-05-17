@@ -566,6 +566,10 @@ pub(crate) fn mapping_init<'a>(
     let remove_len = sort_remove.len();
     // 如果本地没有找到，则创建components，去world上查找或创建
     let (components, moving) = mapping.src.alter(sort_add, sort_remove);
+    println!("mapping.src: {:?}", mapping.src);
+    println!("sort_add: {:?}, ", sort_add);
+    println!("sort_remove:{:?}", sort_remove);
+    println!("moving:{:?}", moving);
     let info = world.archetype_info(components);
     mapping.id = info.id;
     mapping.moving = moving;
@@ -809,6 +813,7 @@ pub(crate) fn add_columns(am: &mut ArchetypeMapping, tick: Tick) {
 pub(crate) fn update_table_world(world: &World, am: &mut ArchetypeMapping) {
     for (_, dst_row, e) in am.moves.iter() {
         am.dst.set(*dst_row, *e);
+        println!("e: {:?}, am.dst_index: {:?}, *dst_row: {:?}", e,am.dst_index, *dst_row);
         world.replace(*e, am.dst_index, *dst_row);
     }
 }
