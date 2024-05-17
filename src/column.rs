@@ -177,11 +177,18 @@ struct Blob {
 impl Blob {
     #[inline(always)]
     pub fn new(info: ComponentInfo) -> Self {
+        let (vec_capacity, vec) = if info.mem_size == 0 {
+            let mut vec = Vec::with_capacity(1);
+            unsafe { vec.set_len(1) };
+            (std::usize::MAX, vec)
+        } else {
+            (0, Vec::new())
+        };
         Self {
-            vec: Vec::new(),
+            vec: vec,
             arr: Arr::new(),
             info,
-            vec_capacity: 0,
+            vec_capacity,
         }
     }
     #[inline(always)]
@@ -194,6 +201,7 @@ impl Blob {
         }
         let mut loc = Location::of(row - self.vec_capacity);
         loc.entry *= self.info.mem_size;
+        // println!("======{:p}, {:?}", self, (row, &loc, self.info.mem_size));
         // todo get_unchecked()
         transmute(self.arr.get(&loc).unwrap())
     }
@@ -207,6 +215,7 @@ impl Blob {
         let mut loc = Location::of(row - self.vec_capacity);
         loc.entry *= self.info.mem_size;
         loc.len *= self.info.mem_size;
+        // println!("load======{:p}, {:?}", self, (row, &loc, self.info.mem_size));
         transmute(self.arr.load_alloc(&loc))
     }
     #[inline(always)]
@@ -218,6 +227,10 @@ impl Blob {
     /// 扩容additional，并将arr的内容移动到vec上，让内存连续，并且没有原子操作
     #[inline(always)]
     pub fn reserve(&mut self, len: usize, additional: usize) {
+        if self.info.mem_size == 0 {
+            return;
+        }
+
         if len <= self.vec_capacity {
             return self.vec_reserve(additional);
         }

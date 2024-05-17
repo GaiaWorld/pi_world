@@ -144,7 +144,7 @@ impl Dirty {
         }
     }
     pub(crate) fn get_iter<'a>(&'a self, listener_index: u32, tick: Tick) -> Iter<'a, EntityRow> {
-        println!("get_iter!!! listener_index: {}", listener_index);
+        // println!("get_iter!!! listener_index: {}", listener_index);
         let end = self.vec.len();
         // 从上次读取到的位置开始读取
         let info = unsafe {

@@ -188,7 +188,7 @@ impl<Marker, T: IntoSystem<Marker> + 'static> IntoNodeType<(usize, Marker)> for 
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BaseConfig {
     pub(crate) sets: Vec<Interned<dyn SystemSet>>,
     pub(crate) schedules: Vec<Interned<dyn ScheduleLabel>>, // 需要添加到哪些日程中
