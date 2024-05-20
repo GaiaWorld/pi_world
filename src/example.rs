@@ -924,15 +924,20 @@ mod test_mod {
         // std::thread::sleep_ms(1000 * 5);
         let mut world = World::new();
         let e = world.alloc_entity();
-        world.alter_components(e, &mut [
-            (world.init_component::<Age0>(), true), 
+        let mut sort_components = [
+            (world.init_component::<Age0>(), true),
             (world.init_component::<Age1>(), true)
-        ]).unwrap();
+        ];
+        sort_components.sort_by(|a, b| a.cmp(&b));
 
-        let age0 = world.get_component_mut::<Age0>(e);
-        println!("age0: {:?}", age0);
-        let age1 = world.get_component_mut::<Age1>(e);
-        println!("age1: {:?}", age1);
+        world.alter_components(e, &sort_components).unwrap();
+
+        let age0 = world.get_component::<Age0>(e);
+        assert_eq!(age0.is_ok(), true);
+        println!("age0: {:?}", age0.unwrap());
+        let age1 = world.get_component::<Age1>(e);
+        assert_eq!(age1.is_ok(), true);
+        println!("age1: {:?}", age1.unwrap());
     }
 
     #[test]
@@ -941,10 +946,14 @@ mod test_mod {
         pub fn alter_add(w: &mut World) {
             let e = w.alloc_entity();
             println!("alter_add!! e: {:?}", e);
-            w.alter_components(e, &mut [
+
+            let mut sort_components = [
                 (w.init_component::<Age0>(), true), 
                 (w.init_component::<Age1>(), true)
-            ]).unwrap();
+            ];
+            sort_components.sort_by(|a, b| a.cmp(&b));
+    
+            w.alter_components(e, &sort_components).unwrap();
 
             println!("alter_add end");
          }
@@ -952,21 +961,31 @@ mod test_mod {
          pub fn alter_remove(w: &mut World, q: Query<(Entity, &Age1, &Age0)>) {
             // let e = w.alloc_entity();
             println!("alter_remove start!! ");
-            q.iter().for_each(|(e, age2, age0)|{
-                println!("alter_remove!! e: {:?}", e);
-                w.alter_components(e, &mut [
-                    (w.init_component::<Age2>(), true), 
-                    (w.init_component::<Age1>(), false)
-                ]).unwrap()
-            });
+            let item =  q.iter().next();
+            assert_eq!(item.is_some(), true);
+            let (e, age2, age0) = item.unwrap();
+
+            println!("alter_remove!! e: {:?}", e);
+            let mut sort_components = [
+                (w.init_component::<Age2>(), true), 
+                (w.init_component::<Age1>(), false)
+            ];
+            sort_components.sort_by(|a, b| a.cmp(&b));
+
+            w.alter_components(e, &sort_components).unwrap();
+
             println!("alter_remove end");
          }
 
         pub fn query(w: &World, q: Query<(Entity, &Age0, &Age2)>) {
             println!("query start!!!");
-            q.iter().for_each(|(e, age0, age2)|{
-                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
-            });
+
+            let item =  q.iter().next();
+            assert_eq!(item.is_some(), true);
+
+            let (e, age0, age2) = item.unwrap();
+            println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
+            
             println!("query end!!!");
          }
          
@@ -980,111 +999,105 @@ mod test_mod {
     }
 
     #[test]
-    fn test_changed2(){
+    fn test_changed2() {
         let mut app = SingleThreadApp::new();
         pub fn alter_add(w: &mut World) {
             let e = w.alloc_entity();
             println!("alter_add!! e: {:?}", e);
-            let a = 
-            w.alter_components(e, &mut [
-                (w.init_component::<Age0>(), true), 
-                (w.init_component::<Age1>(), true)
-            ]).unwrap();
+            let mut sort_components = [
+                (w.init_component::<Age0>(), true),
+                (w.init_component::<Age1>(), true),
+            ];
+            sort_components.sort_by(|a, b| a.0.cmp(&b.0));
+
+            w.alter_components(e, &sort_components).unwrap();
 
             println!("alter_add end");
-         }
+        }
 
-         pub fn alter_add2(w: &mut World, q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>) {
+        pub fn alter_add2(w: &mut World, q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>) {
             // let e = w.alloc_entity();
             println!("alter_add2 start!!");
-            assert_eq!(q.len(), 1); 
-            q.iter().for_each(|(e, age1, age0)|{
-                println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-                w.alter_components(e, &mut [
-                    (w.init_component::<Age2>(), true), 
-                ]).unwrap()
-            });
-            println!("alter_add2 end");
-         }
+            // assert_eq!(q.len(), 1);
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age0) = iter.unwrap();
+            let mut sort_components = [(w.init_component::<Age2>(), true)];
+            println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
+            w.alter_components(e, &sort_components).unwrap();
 
-        //  pub fn edit(w: &mut World, q: Query<(Entity, &Age1), (Changed<Age1>)>) {
-        //     // let e = w.alloc_entity();
-        //     println!("alter_add2 start!! ");
-        //     // assert_eq!(q.len(), 1); 
-        //     q.iter().for_each(|(e, age1)|{
-        //         println!("alter_add2!! e: {:?}, age1: {:?}", e, age1);
-        //        let mut r = w.get_component_by_index_mut::<Age0>(e, w.init_component::<Age0>()).unwrap();
-        //         r.0 = 5;
-        //     });
-        //     println!("alter_add2 end");
-        //  }
-
-        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age2>)>) {
-            println!("query start!!!");
-            assert_eq!(q.len(), 1); 
-            q.iter().for_each(|(e, age0, age2)|{
-                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
-            });
-            println!("query end!!!");
-         }
-         app.add_system(Update, alter_add);
-         app.add_system(Update, alter_add2);
-         app.add_system(Update, query);
-
-         app.run();
-
-        // app.run();
-    }
-
-    #[test]
-    fn test_editor(){
-        let mut app = SingleThreadApp::new();
-        pub fn alter_add(mut edit: EntityEditor) {
-            let _ = edit.insert_components(&[edit.init_component::<Age0>(), edit.init_component::<Age1>()]);
-         }
-
-        pub fn alter_add2(mut edit: EntityEditor, q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>) {
-            println!("alter_add2 start!!");
-            assert_eq!(q.is_empty(), false);
-            q.iter().for_each(|(e, age1, age0)| {
-                println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-                edit.alter_components(e, &mut [(edit.init_component::<Age2>(), true)])
-                    .unwrap()
-            });
             println!("alter_add2 end");
         }
 
-        //  pub fn edit(w: &mut World, q: Query<(Entity, &Age1), (Changed<Age1>)>) {
-        //     // let e = w.alloc_entity();
-        //     println!("alter_add2 start!! ");
-        //     // assert_eq!(q.len(), 1); 
-        //     q.iter().for_each(|(e, age1)|{
-        //         println!("alter_add2!! e: {:?}, age1: {:?}", e, age1);
-        //        let mut r = w.get_component_by_index_mut::<Age0>(e, w.init_component::<Age0>()).unwrap();
-        //         r.0 = 5;
-        //     });
-        //     println!("alter_add2 end");
-        //  }
-
-        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age10>)>) {
+        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age2>)>) {
             println!("query start!!!");
-            // assert_eq!(q.is_empty(), true); 
-            q.iter().for_each(|(e, age0, age2)|{
-                println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
-            });
-            println!("query end!!!");
-         }
-         app.add_system(Update, alter_add);
-         app.add_system(Update, alter_add2);
-         app.add_system(Update, query);
 
-         app.run();
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age0, age2) = iter.unwrap();
+            println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
+
+            println!("query end!!!");
+        }
+        app.add_system(Update, alter_add);
+        app.add_system(Update, alter_add2);
+        app.add_system(Update, query);
+
+        app.run();
 
         // app.run();
     }
 
     #[test]
-    fn test_alter3(){
+    fn test_editor() {
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(mut edit: EntityEditor) {
+            let mut sort_components = [
+                edit.init_component::<Age0>(), 
+                edit.init_component::<Age1>()
+            ];
+            sort_components.sort_by(|a, b| a.cmp(&b));
+
+            let _ = edit
+                .insert_components(&sort_components);
+        }
+
+        pub fn alter_add2(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>,
+        ) {
+            println!("alter_add2 start!!");
+            // assert_eq!(q.is_empty(), false);
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age0) = iter.unwrap();
+
+            println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
+            edit.alter_components(e, &mut [(edit.init_component::<Age2>(), true)])
+                .unwrap();
+ 
+            println!("alter_add2 end");
+        }
+
+
+        pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age10>)>) {
+            println!("query start!!!");
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+            println!("query end!!!");
+        }
+
+        app.add_system(Update, alter_add);
+        app.add_system(Update, alter_add2);
+        app.add_system(Update, query);
+
+        app.run();
+
+        // app.run();
+    }
+
+    #[test]
+    fn test_alter3() {
         pub struct EntityRes(Entity);
 
         let mut app = SingleThreadApp::new();
@@ -1093,27 +1106,34 @@ mod test_mod {
         println!("========== e: {:?}", e);
         app.world.insert_single_res(EntityRes(e));
 
-        pub fn query(q: Query<(Entity, &Age0, &Age1, &Age2)>) {
+        pub fn query(q: Query<(Entity, &Age0, &Age1, &Age2), (Changed<Age0>)>) {
             println!("query start!!!");
-            // assert_eq!(q.is_empty(), true); 
-            q.iter().for_each(|(e, age0, age1, age2)|{
-                println!("query!!! e: {:?}, age0: {:?} age1: {:?}, age2: {:?}", e, age0, age1, age2);
-            });
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
             println!("query end!!!");
         }
 
-        pub fn alter(e: SingleResMut<EntityRes>, w: &mut World, /* mut a: Alter<(), (), (Age0, Age1)> */) {
-            w.alter_components(e.0, &mut [(w.init_component::<Age0>(), true), (w.init_component::<Age1>(), true)]);
-
+        pub fn alter(
+            e: SingleResMut<EntityRes>,
+            w: &mut World, /* mut a: Alter<(), (), (Age0, Age1)> */
+        ) {
+            println!("alter start!!");
+            let mut sort_components = [
+                (w.init_component::<Age0>(), true),
+                (w.init_component::<Age1>(), true),
+            ];
+            sort_components.sort_by(|a, b|a.0.cmp(&b.0));
+            
+            w.alter_components(e.0,&sort_components,);
+            println!("alter end!!");
         }
-         
+
         app.add_system(Update, query);
         app.add_system(Update, alter);
 
-         for _ in 0..50 {
+        for _ in 0..2 {
             app.run();
-         }
-         
+        }
 
         // app.run();
     }

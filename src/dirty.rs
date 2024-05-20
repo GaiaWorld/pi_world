@@ -93,6 +93,7 @@ unsafe impl Send for Dirty {}
 impl Dirty {
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
+        // println!("insert_listener!!! self: {:p}", self);
 		self.listeners.push(ListenerInfo::new(owner));
 }
     /// 插入一个监听者的类型id
@@ -117,8 +118,8 @@ impl Dirty {
     }
     #[inline(always)]
     pub(crate) fn record(&self, e: Entity, row: Row) {
-        // println!("record!!! listener_index: {:?}", (e, row, self.listener_list().len()));
-            if !self.listener_list().is_empty() {
+        // println!("record!!! self: {:p}, listener_index: {:?}", self, (e, row, self.listener_list().len()));
+        if !self.listener_list().is_empty() {
             self.vec.insert(EntityRow { e, row });
         }
     }
@@ -137,7 +138,7 @@ impl Dirty {
         }
     }
     pub(crate) fn get_iter<'a>(&'a self, listener_index: u32, tick: Tick) -> Iter<'a, EntityRow> {
-        // println!("get_iter!!! listener_index: {:?}", (listener_index, self.listener_list().len(), self.vec.len()));
+        // println!("get_iter!!! self: {:p}, listener_index: {:?}", self, (listener_index, self.listener_list().len(), self.vec.len()));
         let end = self.vec.len();
         // 从上次读取到的位置开始读取
         let info = unsafe {

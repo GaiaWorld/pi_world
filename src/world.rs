@@ -564,43 +564,43 @@ impl World {
             }
         }
         
-        let mut sort_add = vec![];
-        let mut sort_remove = vec![];
+        // let mut sort_add = vec![];
+        // let mut sort_remove = vec![];
 
         // TODO, 性能
-        let mut array =  Vec::new();
-        for (index, is_add) in components.iter() {
-            let v = if *is_add {
-                1u16
-            } else {
-                0
-            };
-            // 去除已经有了需要添加的和没有需要删除的组件
-            let column = ar.get_column_index(*index);
-            if *is_add == column.is_null() {
-                array.insert_value(index.index(), v);
-            } 
-        }
-        for index in 0..array.len() {
-            if array[index] != u16::MAX{
-                if let Some(info) = self.get_component_info(index.into()){
-                    if array[index] == 0{
-                        sort_remove.push(info.clone());
-                    } else if array[index] == 1{
-                        // if ar.get(row)
-                        sort_add.push(info.clone());
-                    } 
-                }
-            }
-        }
+        // let mut array =  Vec::new();
+        // for (index, is_add) in components.iter() {
+        //     let v = if *is_add {
+        //         1u16
+        //     } else {
+        //         0
+        //     };
+        //     // 去除已经有了需要添加的和没有需要删除的组件
+        //     let column = ar.get_column_index(*index);
+        //     if *is_add == column.is_null() {
+        //         array.insert_value(index.index(), v);
+        //     } 
+        // }
+        // for index in 0..array.len() {
+        //     if array[index] != u16::MAX{
+        //         if let Some(info) = self.get_component_info(index.into()){
+        //             if array[index] == 0{
+        //                 sort_remove.push(info.clone());
+        //             } else if array[index] == 1{
+        //                 // if ar.get(row)
+        //                 sort_add.push(info.clone());
+        //             } 
+        //         }
+        //     }
+        // }
         // sort_add.sort();
         // sort_remove.sort();
-        let mut id = ComponentInfo::calc_id(&sort_add);
+        // let mut id = ComponentInfo::calc_id(&sort_add);
 
         // println!("components: {:?}", components);
-        if sort_add.len() > 0{
+        // if sort_add.len() > 0{
             
-        }
+        // }
         let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
         // println!("mapping1: {:?}", mapping);
         // let mut moved_columns = vec![];
@@ -612,6 +612,7 @@ impl World {
         let mut removed_columns = Default::default();
         let mut move_removed_columns = Default::default();
 
+        let mut id = 0;
         mapping_init(
             self,
             &mut mapping,
@@ -623,22 +624,25 @@ impl World {
             &mut move_removed_columns,
             &mut id,
         );
-        println!("mapping2: {:?}", mapping);
+        println!("e: {:?}, src: {:?}, dst: {:?}", e, mapping.src.name(), mapping.dst.name());
         // println!("moved_columns: {:?}", moved_columns);
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
 
-        let dst_row = alloc_row(&mut mapping, addr.row, e);
-        let (_add_index, add)  = self.find_ar(sort_add);
+        let _ = alloc_row(&mut mapping, addr.row, e);
+        // let (_add_index, add)  = self.find_ar(sort_add);
        
-        for col in add.get_columns().iter() {
-            col.add_record(e, dst_row, self.tick());
-        }
+        // for col in add.get_columns().iter() {
+        //     col.add_record(e, dst_row, self.tick());
+        // }
         // println!("mapping3: {:?}", mapping);
+        // println!("adding: {:?}", adding);
+        // println!("mapping.moves: {:?}", mapping.moves);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        insert_columns(&mut mapping, &adding);
+        let tick = self.tick();
+        insert_columns(&mut mapping, &adding, tick.clone());
         move_columns(&mut mapping, &moving);
-        remove_columns(&mut mapping, &removed_columns, self.tick());
+        remove_columns(&mut mapping, &removed_columns, tick);
         move_remove_columns(&mut mapping, &move_removed_columns);
         // add_columns(&mut mapping, self.tick());
         update_table_world(&self, &mut mapping);
@@ -810,13 +814,14 @@ impl Default for World {
 }
 
 // 将需要移动的全部源组件移动到新位置上
-fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, ColumnIndex)>) {
+fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, ColumnIndex)>,  tick: Tick) {
     for i in am.add_indexs.clone().into_iter() {
         let (_, dst_i) = unsafe { add_columns.get_unchecked(i) };
         let dst_column = am.dst.get_column_unchecked(*dst_i);
-        for (_src, dst_row, _e) in am.moves.iter() {
+        for (_src, dst_row, e) in am.moves.iter() {
             let dst_data: *mut u8 = dst_column.load(*dst_row);
             dst_column.info().default_fn.unwrap()(dst_data);
+            dst_column.add_record(*e, *dst_row, tick)
         }
     }
     // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
