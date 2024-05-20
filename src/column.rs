@@ -230,7 +230,6 @@ impl Blob {
         if self.info.mem_size == 0 {
             return;
         }
-
         if len <= self.vec_capacity {
             return self.vec_reserve(additional);
         }

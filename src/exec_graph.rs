@@ -270,7 +270,7 @@ impl ExecGraph {
             let system_index = NodeIndex::new(system_index);
             match &node.label {
                 NodeType::System(sys_index, _) if sys_range.start <= *sys_index && *sys_index < sys_range.end => {
-                    let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                    let sys = unsafe { systems.load_unchecked(*sys_index) };
                     let mut result = Flags::empty();
                     sys.res_depend(world, tid, name, single, &mut result);
                     if result == Flags::READ {
@@ -325,7 +325,7 @@ impl ExecGraph {
             let system_index = NodeIndex::new(system_index);
             match &node.label {
                 NodeType::System(sys_index, _) => {
-                    let sys = unsafe { systems.load_unchecked_mut(*sys_index) };
+                    let sys = unsafe { systems.load_unchecked(*sys_index) };
                     depend.clear();
                     sys.archetype_depend(world, archetype, &mut depend);
                     if depend.flag.contains(Flags::WITHOUT) {
@@ -446,7 +446,7 @@ impl ExecGraph {
                 let _ = rt.spawn(async move {
                     let inner = g.0.as_ref();
                     let node = unsafe { inner.nodes.load_unchecked(node_index.index()) };
-                    let sys = unsafe { systems.load_unchecked_mut(sys_index) };
+                    let sys = unsafe { systems.load_unchecked(sys_index) };
                     let old_status = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
                     // 如果node为要执行的system，并且未被锁定原型，则执行对齐原型
