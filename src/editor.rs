@@ -22,7 +22,7 @@ impl<'w> EntityEditor<'w> {
     ) -> Result<(), QueryError> {
         let mut components = components
             .iter()
-            .filter_map(|v| Some((*v, false)))
+            .filter_map(|v| Some((*v, true)))
             .collect::<Vec<(ComponentIndex, bool)>>();
 
         self.0.alter_components(e, &mut components)
