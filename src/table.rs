@@ -116,6 +116,7 @@ impl Table {
     }
     /// 添加changed监听器，原型刚创建时调用
     pub fn add_changed_listener(&self, index: ComponentIndex, owner: u128) {
+        // println!("add_changed_listener!! self: {:p}, index: {:?}", self, index);
         if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
             c.dirty.insert_listener(owner)
         }
