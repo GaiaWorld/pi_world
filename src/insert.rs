@@ -204,23 +204,3 @@ macro_rules! impl_tuple_insert {
     };
 }
 all_tuples!(impl_tuple_insert, 0, 32, F, S);
-
-// impl<T: 'static> Bundle for T {
-//     type Item = T;
-//     type State = TState<T>;
-//     fn components() -> Vec<ComponentInfo> {
-//         vec![(ComponentInfo::of::<T>())]
-//     }
-//     fn init_item(_world: &World, archetype: &Archetype) -> Self::State {
-//         TState::new(archetype.get_column(&TypeId::of::<T>()).unwrap())
-//     }
-
-//     fn insert(
-//         state: &Self::State,
-//         components: Self::Item,
-//         e: Entity,
-//         row: Row,
-//     ) {
-//         state.write(e, row, components);
-//     }
-// }

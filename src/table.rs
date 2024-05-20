@@ -492,3 +492,16 @@ impl RemovedColumn {
         self.ticks.clear();
     }
 }
+
+/// 整理合并空位
+pub(crate) fn collect_tick(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
+    for (src, dst) in action.iter() {
+        if let Some(tick) = ticks.get_i(src.index()) {
+            *ticks.load_alloc(dst.index()) = *tick;
+        }
+    }
+    if entity_len <= ticks.vec_capacity() {
+        return;
+    }
+    ticks.collect_raw(entity_len, 0);
+}

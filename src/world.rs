@@ -28,7 +28,7 @@ use crate::alter::{
     alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype
 };
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
@@ -197,7 +197,7 @@ impl World {
     pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
         let components = I::components(Vec::new());
         let (ar_index, ar) = self.find_ar(components);
-        let s = I::init_state(self, &ar);
+        let s = I::init_item(self, &ar);
         Inserter::new(self, (ar_index, ar, s), self.tick())
     }
 
@@ -636,7 +636,7 @@ impl World {
         }
         // println!("mapping3: {:?}", mapping);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        insert_columns(&mut mapping);
+        insert_columns(&mut mapping, &adding);
         move_columns(&mut mapping, &moving);
         remove_columns(&mut mapping, &removed_columns, self.tick());
         move_remove_columns(&mut mapping, &move_removed_columns);
@@ -810,29 +810,29 @@ impl Default for World {
 }
 
 // 将需要移动的全部源组件移动到新位置上
-fn insert_columns(am: &mut ArchetypeMapping) {
-    // for i in am.add_indexs.clone().into_iter() {
-    //     let dst_i = unsafe { add_columns.get_unchecked(i) };
-    //     let dst_column = am.dst.get_column_unchecked(*dst_i);
-    //     for (_src, dst_row, _e) in am.moves.iter() {
-    //         let dst_data: *mut u8 = dst_column.load(*dst_row);
-    //         dst_column.info().default_fn.unwrap()(dst_data);
-    //     }
-    // }
-    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-    for (_, dst_column) in am.dst.get_columns().iter().enumerate() {
-        // am.moving.binary_search_by(||)
-        // 性能
-        let r = am.moving.iter().find(|i|{i.world_index == dst_column.info().world_index});
-        // am.dst.get_column_index(am.moving[0].world_index)
-        // let column = am.src.get_column_index(t.info().world_index);
-        if r.is_null() {
-            for (_src, dst_row, _e) in am.moves.iter() {
-                let dst_data: *mut u8 = dst_column.load(*dst_row);
-                dst_column.info().default_fn.unwrap()(dst_data);
-            }
+fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, ColumnIndex)>) {
+    for i in am.add_indexs.clone().into_iter() {
+        let (_, dst_i) = unsafe { add_columns.get_unchecked(i) };
+        let dst_column = am.dst.get_column_unchecked(*dst_i);
+        for (_src, dst_row, _e) in am.moves.iter() {
+            let dst_data: *mut u8 = dst_column.load(*dst_row);
+            dst_column.info().default_fn.unwrap()(dst_data);
         }
     }
+    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
+    // for (_, dst_column) in am.dst.get_columns().iter().enumerate() {
+    //     // am.moving.binary_search_by(||)
+    //     // 性能
+    //     let r = am.moving.iter().find(|i|{i.world_index == dst_column.info().world_index});
+    //     // am.dst.get_column_index(am.moving[0].world_index)
+    //     // let column = am.src.get_column_index(t.info().world_index);
+    //     if r.is_null() {
+    //         for (_src, dst_row, _e) in am.moves.iter() {
+    //             let dst_data: *mut u8 = dst_column.load(*dst_row);
+    //             dst_column.info().default_fn.unwrap()(dst_data);
+    //         }
+    //     }
+    // }
     // }
 }
 
