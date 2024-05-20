@@ -15,7 +15,7 @@ use pi_async_rt::lock::spin_lock::SpinLock;
 use pi_null::Null;
 use smallvec::SmallVec;
 
-use crate::archetype::ComponentInfo;
+use crate::archetype::{ComponentInfo, COMPONENT_TICK};
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
 use crate::dirty::{Dirty, DirtyIndex, DirtyIter, DirtyType, EntityRow};
@@ -423,6 +423,16 @@ impl Table {
             // 整理合并空位
             c.collect(new_entity_len, &action);
         }
+        // 整理全部的列ticks
+        for c in self.sorted_columns.iter_mut() {
+            if c.info().tick_removed & COMPONENT_TICK != 0 {
+                collect_ticks(&mut c.ticks, new_entity_len, &action);
+            }
+        }
+        // 整理全部的RemovedColumn列ticks
+        for c in self.remove_columns.iter() {
+            collect_ticks(&mut c.ticks, new_entity_len, &action);
+        }
         // 再移动entitys的空位
         for (src, dst) in action.iter() {
             let e = unsafe {
@@ -494,7 +504,7 @@ impl RemovedColumn {
 }
 
 /// 整理合并空位
-pub(crate) fn collect_tick(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
+pub(crate) fn collect_ticks(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
     for (src, dst) in action.iter() {
         if let Some(tick) = ticks.get_i(src.index()) {
             *ticks.load_alloc(dst.index()) = *tick;

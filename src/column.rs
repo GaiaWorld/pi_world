@@ -132,30 +132,16 @@ impl Column {
     }
     /// 整理合并空位
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
-        if self.info().tick_removed & COMPONENT_TICK != 0 {
-            for (src, dst) in action.iter() {
-                self.collect_key(src, dst);
-                unsafe {
-                    let tick = self.ticks.get_unchecked((*src).0 as usize);
-                    *self.ticks.get_unchecked_mut((*dst).0 as usize) = *tick;
-                }
-            }
-            self.ticks.collect();
-        } else {
-            for (src, dst) in action.iter() {
-                self.collect_key(src, dst);
+        for (src, dst) in action.iter() {
+            unsafe {
+                /// 整理合并指定的键
+                let src_data: *mut u8 = transmute(self.blob.get(*src));
+                let dst_data: *mut u8 = transmute(self.blob.get(*dst));
+                src_data.copy_to_nonoverlapping(dst_data, self.info().mem_size);
             }
         }
         // 整理合并内存
         self.blob.reserve(entity_len, 0);
-    }
-    /// 整理合并指定的键
-    fn collect_key(&mut self, src: &Row, dst: &Row) {
-        unsafe {
-            let src_data: *mut u8 = transmute(self.blob.get(*src));
-            let dst_data: *mut u8 = transmute(self.blob.get(*dst));
-            src_data.copy_to_nonoverlapping(dst_data, self.info().mem_size);
-        }
     }
 }
 
