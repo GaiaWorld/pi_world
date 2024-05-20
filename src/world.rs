@@ -233,7 +233,7 @@ impl World {
             self.update_tick_removed(index, info.tick_removed);
             return (index, Some(info.tick_removed));
         }
-        (index, None)
+        (index, Some(info.tick_removed))
     }
     /// 更新全部的原型的相关组件信息的tick_removed
     pub(crate) fn update_tick_removed(&self, index: ComponentIndex, tick_removed: u8) {

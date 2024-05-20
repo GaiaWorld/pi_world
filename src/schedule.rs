@@ -131,7 +131,7 @@ impl Schedule {
         }
 
         if schedule == &MainSchedule.intern() {
-            world.collect_by(&mut self.action, &mut self.set);
+            // world.collect_by(&mut self.action, &mut self.set);
         }
     }
     fn run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
