@@ -193,7 +193,7 @@ impl World {
     /// 创建一个插入器
     pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
         let components = I::components(Vec::new());
-        let (ar_index, ar) = self.find_archtype(self.archetype_info(components));
+        let (ar_index, ar) = self.find_ar(components);
         let s = I::init_state(self, &ar);
         Inserter::new(self, (ar_index, ar, s), self.tick())
     }
