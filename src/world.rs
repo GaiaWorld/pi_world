@@ -624,7 +624,7 @@ impl World {
             &mut move_removed_columns,
             &mut id,
         );
-        // println!("mapping2: {:?}", mapping);
+        println!("e: {:?}, src: {:?}, dst: {:?}", e, mapping.src.name(), mapping.dst.name());
         // println!("moved_columns: {:?}", moved_columns);
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
