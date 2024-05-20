@@ -545,9 +545,9 @@ impl World {
     pub fn alter_components(
         &mut self,
         e: Entity,
-        components: &mut [(ComponentIndex, bool)],
+        components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
-        components.sort_unstable();
+        // components.sort_unstable();
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -593,8 +593,8 @@ impl World {
                 }
             }
         }
-        sort_add.sort();
-        sort_remove.sort();
+        // sort_add.sort();
+        // sort_remove.sort();
         let mut id = ComponentInfo::calc_id(&sort_add);
 
         // println!("components: {:?}", components);
@@ -623,7 +623,7 @@ impl World {
             &mut move_removed_columns,
             &mut id,
         );
-        // println!("mapping2: {:?}", mapping);
+        println!("mapping2: {:?}", mapping);
         // println!("moved_columns: {:?}", moved_columns);
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);

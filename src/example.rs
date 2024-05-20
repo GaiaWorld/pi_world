@@ -985,6 +985,7 @@ mod test_mod {
         pub fn alter_add(w: &mut World) {
             let e = w.alloc_entity();
             println!("alter_add!! e: {:?}", e);
+            let a = 
             w.alter_components(e, &mut [
                 (w.init_component::<Age0>(), true), 
                 (w.init_component::<Age1>(), true)
