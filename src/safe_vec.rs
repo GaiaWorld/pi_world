@@ -57,7 +57,7 @@ impl<T> SafeVec<T> {
         self.vec.load(index).map(|r| unsafe { &mut *r.as_mut_ptr() })
     }
     #[inline(always)]
-    pub unsafe fn load_unchecked_mut(&self, index: usize) -> &mut T {
+    pub unsafe fn load_unchecked(&self, index: usize) -> &mut T {
         &mut *self.vec.load_unchecked(index).as_mut_ptr()
     }
 

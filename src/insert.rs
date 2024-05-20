@@ -134,7 +134,7 @@ impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
             .writes
             .insert(component.type_id, component.type_name.clone());
         }
-     
+    
         let (ar_index, ar) = world.find_ar( components);
         let s = I::init_state(world, &ar);
         system_meta.param_set_check();
@@ -150,7 +150,7 @@ pub trait Bundle {
     type State: Send + Sync + Sized;
 
     fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo>;
-
+    // todo 改名成init_item，每次get_parm时调用，TState放ColumnIndex
     fn init_state(world: &World, archetype: &Archetype) -> Self::State;
 
     fn insert(state: &Self::State, components: Self, e: Entity, row: Row, tick: Tick);

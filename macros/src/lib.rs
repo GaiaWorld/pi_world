@@ -468,7 +468,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     c.push(#world_path::archetype::ComponentInfo::of::<Self>(0));
                     c
                 }
-                fn init_state(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
+                fn init_state(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::State {
                     #world_path::insert::TState::new(_archetype.get_column(_world.init_component::<Self>()).unwrap().0)
                 }
 
