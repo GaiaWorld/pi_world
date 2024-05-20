@@ -134,7 +134,7 @@ impl Column {
     pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
         for (src, dst) in action.iter() {
             unsafe {
-                /// 整理合并指定的键
+                // 整理合并指定的键
                 let src_data: *mut u8 = transmute(self.blob.get(*src));
                 let dst_data: *mut u8 = transmute(self.blob.get(*dst));
                 src_data.copy_to_nonoverlapping(dst_data, self.info().mem_size);

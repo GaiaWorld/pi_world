@@ -91,14 +91,6 @@ pub struct Dirty {
 unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
-    pub(crate) fn new(owner: u128) -> Self {
-        let listeners = vec![ListenerInfo::new(owner)];
-        Self {
-            listeners,
-            vec: AppendVec::default(),
-        }
-    }
-
     /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
 		self.listeners.push(ListenerInfo::new(owner));
