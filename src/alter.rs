@@ -408,7 +408,7 @@ impl ArchetypeMapping {
 pub struct AlterState<A: Bundle> {
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
-    state_vec: Vec<MaybeUninit<A::State>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
+    state_vec: Vec<MaybeUninit<A::Item>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
     moving: Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>, // 两个ColumnIndex分别是源原型vec中的位置及目标原型vec中的位置
     removing: Vec<(ComponentIndex, ColumnIndex)>,            // ColumnIndex是组件在源原型vec中的位置
@@ -477,7 +477,7 @@ impl<A: Bundle> AlterState<A> {
 
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
             let s = unsafe { self.state_vec.get_unchecked_mut(ar_index.index()) };
-            *s = MaybeUninit::new(A::init_state(world, &mapping.dst));
+            *s = MaybeUninit::new(A::init_item(world, &mapping.dst));
         }
         let dst_row = alter_row(&mut self.mapping_dirtys, &mut mapping, ar_index, row, e)?;
         A::insert(
