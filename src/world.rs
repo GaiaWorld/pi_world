@@ -548,7 +548,9 @@ impl World {
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
-        // components.sort_unstable();
+        let mut components = components.to_vec();
+        components.reverse(); // 相同ComponentIndex的多个增删操作，让最后的操作执行
+        components.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -617,7 +619,7 @@ impl World {
         mapping_init(
             self,
             &mut mapping,
-            components,
+            components.as_slice(),
             &mut adding,
             &mut moving,
             &mut removing,

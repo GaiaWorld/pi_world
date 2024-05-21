@@ -40,3 +40,7 @@
 # v0.4
 ## 有Changed或Removed的组件，全部原型上对应组件的Column和RemovedColumn都增加Tick记录，这样全局跟踪Tick，并根据该Tick来剔除已经读取过的变化，同时确保系统读取时不会丢失变化。同时，也会根据最旧的System的last_run，来尽量减少脏列表中Row的长度。
 ## 根据ComponentInfo及其world_index，优化了alter时计算相应原型的过程。
+
+# v0.5
+## 调整了alter的代码，将泛型部分分离
+## 将alter改为立即执行，这样可以更好的复用，并且在一个system内可连续修改（要求修改后的原型也要被Query捕获）

@@ -270,7 +270,6 @@ impl Archetype {
         &self,
         world: &World,
         sorted_add_removes: &[(ComponentIndex, bool)], // 升序
-        moving_contains_added: bool,                   // 移动组件列表是否包含已添加的组件
         adding: &mut Vec<(ComponentIndex, ColumnIndex)>,
         moving: &mut Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>,
         removing: &mut Vec<(ComponentIndex, ColumnIndex)>,
@@ -278,7 +277,14 @@ impl Archetype {
         let mut result: ArchetypeInfo = Default::default();
         let mut column_index = 0;
         let len = self.column_len();
+        let mut pre_index = ComponentIndex::null();
         for (index, add) in sorted_add_removes.iter() {
+            // 去重
+            if pre_index == *index {
+                continue;
+            } else {
+                pre_index = *index;
+            }
             loop {
                 if column_index >= len {
                     if *add {
@@ -292,6 +298,7 @@ impl Archetype {
                 if info.world_index > *index {
                     // info.world_index大
                     if *add {
+                        let info = world.get_component_info(*index).unwrap();
                         adding.push((info.world_index, result.len().into()));
                         result.add(info.clone());
                     }
@@ -306,12 +313,7 @@ impl Archetype {
                 }
                 // info.world_index == *index
                 if *add {
-                    // 要添加的列已经在原型中，不需要添加
-                    if moving_contains_added {
-                        moving.push((info.world_index, column_index.into(), result.len().into()));
-                    } else {
-                        adding.push((info.world_index, result.len().into()));
-                    }
+                    moving.push((info.world_index, column_index.into(), result.len().into()));
                     result.add(info.clone());
                 } else {
                     removing.push((info.world_index, column_index.into()));

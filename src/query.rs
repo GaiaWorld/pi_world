@@ -384,6 +384,9 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
 
     // 判断该原型是否和本查询相关
     fn relate(world: &World, archetype: &Archetype) -> bool {
+        // if archetype.index().is_null() {
+        //     println!("QueryState::relate====={:?}", (archetype.index(), std::any::type_name::<Self>(), F::archetype_filter(world, archetype),  &archetype.name(),));
+        // }
         if F::archetype_filter(world, archetype) {
             return false;
         }
