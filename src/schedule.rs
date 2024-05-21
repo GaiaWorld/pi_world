@@ -227,7 +227,7 @@ impl Schedule {
             }
         }
 
-        println!("schedule initialize");
+        // println!("schedule initialize");
 
 
         self.dirty_mark = false;

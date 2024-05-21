@@ -291,7 +291,6 @@ impl<
             let info = archetype.alter1(
                 world,
                 &state.1.sorted_add_removes,
-                true,
                 &mut Vec::new(),
                 &mut Vec::new(),
                 &mut Vec::new(),
@@ -585,7 +584,7 @@ pub(crate) fn mapping_init<'a>(
     // 如果本地没有找到，则创建components，去world上查找或创建
     let info = mapping
         .src
-        .alter1(world, sorted_add_removes, true, adding, moving, removing);
+        .alter1(world, sorted_add_removes, adding, moving, removing);
     mapping.add_indexs = add_start..adding.len();
     mapping.move_indexs = move_start..moving.len();
     mapping.removed_indexs = removing_start..removing.len();
@@ -683,6 +682,7 @@ pub(crate) fn move_column(
 ) {
     for (src_row, dst_row, _) in moves.iter() {
         let src_data: *mut u8 = src_column.get_row(*src_row);
+        println!("move_column dst_column: {:?}, src_column: {:?}, src_row: {:?}, dst_row: {:?}", (dst_column.info().world_index, &dst_column.info().type_name), (src_column.info().world_index, &src_column.info().type_name), src_row, dst_row);
         dst_column.write_row(*dst_row, src_data);
     }
     if src_column.info().tick_removed & COMPONENT_TICK != 0 {
