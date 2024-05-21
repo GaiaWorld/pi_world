@@ -154,7 +154,10 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
+        // empty_archetype.index.store(0, Ordering::Relaxed);
         let component_arr = SafeVec::with_capacity(1);
+        let archetype_map = DashMap::new();
+        // archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
@@ -164,7 +167,7 @@ impl World {
             entities: SlotMap::default(),
             component_map: DashMap::new(),
             component_arr,
-            archetype_map: DashMap::new(),
+            archetype_map,
             archetype_arr,
             empty_archetype,
             listener_mgr,
@@ -537,6 +540,12 @@ impl World {
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
+        let mut components = components.to_vec();
+        components.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+        });
+        let components = components.as_slice();
+
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -615,7 +624,7 @@ impl World {
         for col in add.get_columns().iter() {
             col.add_record(e, dst_row, self.tick());
         }
-        // println!("mapping3: {:?}", mapping);
+        log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         // for ar_index in mapping_dirtys.iter() {
         //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
