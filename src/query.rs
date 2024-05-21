@@ -344,7 +344,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
-    pub fn create(world: &World, id: u128) -> Self {
+    pub fn create(world: &mut World, id: u128) -> Self {
         let qid = TypeId::of::<Q>();
         let fid = TypeId::of::<F>();
         let id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)};

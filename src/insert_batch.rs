@@ -16,7 +16,7 @@ where
     state: (
         ArchetypeWorldIndex,
         ShareArchetype,
-        <Ins as Bundle>::State,
+        <Ins as Bundle>::Item,
     ),
     tick: Tick,
 }
@@ -32,7 +32,7 @@ where
         let length = upper.unwrap_or(lower);
         let components = Ins::components(Vec::new());
         let (ar_index, ar) = world.find_ar( components);
-        let s = Ins::init_state(world, &ar);
+        let s = Ins::init_item(world, &ar);
 
         // world.entitys.reserve(length);
         let ptr = ShareArchetype::as_ptr(&ar);

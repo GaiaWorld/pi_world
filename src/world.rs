@@ -16,6 +16,7 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
+use std::iter::Map;
 use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
@@ -24,10 +25,10 @@ use crate::prelude::Mut;
 use crate::system::TypeInfo;
 use crate::utils::VecExt;
 use crate::alter::{
-    add_columns, alloc_row, mapping_init, move_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
+    alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype
 };
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
@@ -39,6 +40,7 @@ use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
+use pi_append_vec::AppendVec;
 use pi_key_alloter::new_key_type;
 // use pi_map::hashmap::HashMap;
 // use pi_map::Map;
@@ -133,15 +135,16 @@ impl<T: Default> SetDefault for T {
 
 #[derive(Debug)]
 pub struct World {
-    pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>,
-    pub(crate) single_res_arr: SafeVec<Option<SingleResource>>,
+    pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>, // 似乎只需要普通hashmap
+    pub(crate) single_res_arr: AppendVec<Option<SingleResource>>, // todo 改成AppendVec<SingleResource>
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
-    pub(crate) component_map: DashMap<TypeId, ComponentIndex>,
-    pub(crate) component_arr: SafeVec<ComponentInfo>,
+    pub(crate) component_map: DashMap<TypeId, ComponentIndex>, // 似乎只需要普通hashmap
+    pub(crate) component_arr: SafeVec<ComponentInfo>, // todo 改成AppendVec<SingleResource>// 似乎只需要普通vec
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
     pub(crate) empty_archetype: ShareArchetype,
+    pub(crate) changed_columns: Vec<(Tick,ComponentIndex)>,
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
@@ -162,7 +165,7 @@ impl World {
         archetype_arr.insert(empty_archetype.clone());
         Self {
             single_res_map: DashMap::default(),
-            single_res_arr: SafeVec::default(),
+            single_res_arr: Default::default(),
             multi_res_map: DashMap::default(),
             entities: SlotMap::default(),
             component_map: DashMap::new(),
@@ -170,6 +173,7 @@ impl World {
             archetype_map,
             archetype_arr,
             empty_archetype,
+            changed_columns: Vec::new(),
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
@@ -195,8 +199,8 @@ impl World {
     /// 创建一个插入器
     pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
         let components = I::components(Vec::new());
-        let (ar_index, ar) = self.find_archtype(self.archetype_info(components));
-        let s = I::init_state(self, &ar);
+        let (ar_index, ar) = self.find_ar(components);
+        let s = I::init_item(self, &ar);
         Inserter::new(self, (ar_index, ar, s), self.tick())
     }
 
@@ -211,13 +215,19 @@ impl World {
             .map_or(ComponentIndex::null(), |r| *r.value())
     }
     /// 获得指定组件的索引
+    pub fn add_component_indexs(&mut self, components: Vec<ComponentInfo>, result: &mut Vec<(ComponentIndex, bool)>, result_add: bool) {
+        for c in components {
+            result.push((self.add_component_info(c).0, result_add));
+        }
+    }
+    /// 获得指定组件的索引
     pub fn get_component_info(&self, index: ComponentIndex) -> Option<&ComponentInfo> {
         self.component_arr.get(index.index())
     }
     /// 添加组件信息，如果重复，则返回原有的索引及是否tick变化
     pub fn add_component_info(&self, mut info: ComponentInfo) -> (ComponentIndex, Option<u8>) {
         let tick_removed = info.tick_removed;
-        let index = match self.component_map.entry(info.type_id) {
+        let index: ComponentIndex = match self.component_map.entry(info.type_id) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let e = self.component_arr.alloc_entry();
@@ -228,13 +238,12 @@ impl World {
                 return (index, None)
             },
         };
-        let info = unsafe { self.component_arr.load_unchecked_mut(index.index())};
+        let info = unsafe { self.component_arr.load_unchecked(index.index())};
         let t = info.tick_removed | tick_removed;
         if t != info.tick_removed {
             info.tick_removed = t;
             // 扫描当前原型，如果原型中存在该组件，则将该组件tick_removed设置为tick_removed
             self.update_tick_removed(index, info.tick_removed);
-            return (index, Some(info.tick_removed));
         }
         (index, Some(info.tick_removed))
     }
@@ -247,7 +256,7 @@ impl World {
             }
         }
     }
-    /// 计算所有原型信息，设置了所有组件的索引
+    /// 计算所有原型信息，设置了所有组件的索引，按索引大小进行排序
     pub(crate) fn archetype_info(&self, mut components: Vec<ComponentInfo>) -> ArchetypeInfo {
         let mut id = 0;
         for c in components.iter_mut() {
@@ -258,11 +267,12 @@ impl World {
                 c.tick_removed = tick_removed;
             }
         }
-        ArchetypeInfo{id, components}
+        components.sort_unstable_by(|a, b| a.world_index .cmp(&b.world_index));
+        ArchetypeInfo{id, sorted_components: components}
     }
         /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
-        &self,
+        &mut self,
     ) -> Queryer<Q, F> {
         let mut state = QueryState::create(self, 0);
         state.align(self);
@@ -278,7 +288,7 @@ impl World {
         &mut self,
     ) -> Alterer<Q, F, A, D> {
         let mut query_state = QueryState::create(self, 0);
-        let mut alter_state = AlterState::new(A::components(Vec::new()), D::components(Vec::new()));
+        let mut alter_state = AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
@@ -475,7 +485,7 @@ impl World {
     }
 
      /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub(crate) fn get_component_mut1<T: 'static>(&self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
+    pub(crate) fn get_component_mut1<T: 'static>(&mut self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
         let index  = self.init_component::<T>();
         self.get_component_mut_index_impl(e, index)
     }
@@ -536,7 +546,7 @@ impl World {
 
     /// 增加和删除实体
     pub fn alter_components(
-        &self,
+        &mut self,
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
@@ -562,76 +572,87 @@ impl World {
             }
         }
         
-        let mut sort_add = vec![];
-        let mut sort_remove = vec![];
+        // let mut sort_add = vec![];
+        // let mut sort_remove = vec![];
 
         // TODO, 性能
-        let mut array =  Vec::new();
-        for (index, is_add) in components {
-            let v = if *is_add {
-                1u16
-            } else {
-                0
-            };
-            let column = ar.get_column_index(*index);
-            if *is_add == column.is_null() {
-                array.insert_value(index.index(), v);
-            } 
-        }
-        for index in 0..array.len() {
-            if array[index] != u16::MAX{
-                if let Some(info) = self.get_component_info(index.into()){
-                    if array[index] == 0{
-                        sort_remove.push(info.clone());
-                    } else if array[index] == 1{
-                        // if ar.get(row)
-                        sort_add.push(info.clone());
-                    } 
-                }
-            }
-        }
-
-        let mut id = ComponentInfo::calc_id(&sort_add);
+        // let mut array =  Vec::new();
+        // for (index, is_add) in components.iter() {
+        //     let v = if *is_add {
+        //         1u16
+        //     } else {
+        //         0
+        //     };
+        //     // 去除已经有了需要添加的和没有需要删除的组件
+        //     let column = ar.get_column_index(*index);
+        //     if *is_add == column.is_null() {
+        //         array.insert_value(index.index(), v);
+        //     } 
+        // }
+        // for index in 0..array.len() {
+        //     if array[index] != u16::MAX{
+        //         if let Some(info) = self.get_component_info(index.into()){
+        //             if array[index] == 0{
+        //                 sort_remove.push(info.clone());
+        //             } else if array[index] == 1{
+        //                 // if ar.get(row)
+        //                 sort_add.push(info.clone());
+        //             } 
+        //         }
+        //     }
+        // }
+        // sort_add.sort();
+        // sort_remove.sort();
+        // let mut id = ComponentInfo::calc_id(&sort_add);
 
         // println!("components: {:?}", components);
-        if sort_add.len() > 0{
+        // if sort_add.len() > 0{
             
-        }
+        // }
         let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
         // println!("mapping1: {:?}", mapping);
         // let mut moved_columns = vec![];
         // let mut added_columns = vec![];
         // let mut removed_columns = vec![];
+        let mut adding = Default::default();
+        let mut moving = Default::default();
+        let mut removing = Default::default();
+        let mut removed_columns = Default::default();
+        let mut move_removed_columns = Default::default();
 
+        let mut id = 0;
         mapping_init(
             self,
             &mut mapping,
-            // &mut moved_columns,
-            // &mut added_columns,
-            // &mut removed_columns,
-            &sort_add,
-            &sort_remove,
+            components,
+            &mut adding,
+            &mut moving,
+            &mut removing,
+            &mut removed_columns,
+            &mut move_removed_columns,
             &mut id,
         );
-        // println!("mapping2: {:?}", mapping);
+        println!("e: {:?}, src: {:?}, dst: {:?}", e, mapping.src.name(), mapping.dst.name());
         // println!("moved_columns: {:?}", moved_columns);
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
 
-        let dst_row = alloc_row(&mut mapping, addr.row, e);
-        let (_add_index, add)  = self.find_ar(sort_add);
+        let _ = alloc_row(&mut mapping, addr.row, e);
+        // let (_add_index, add)  = self.find_ar(sort_add);
        
-        for col in add.get_columns().iter() {
-            col.add_record(e, dst_row, self.tick());
-        }
+        // for col in add.get_columns().iter() {
+        //     col.add_record(e, dst_row, self.tick());
+        // }
         log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
+        // println!("adding: {:?}", adding);
+        // println!("mapping.moves: {:?}", mapping.moves);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        // for ar_index in mapping_dirtys.iter() {
-        //     let am = unsafe { vec.get_unchecked_mut(*ar_index) };
-        insert_columns(&mut mapping);
-        move_columns(&mut mapping);
-        remove_columns(&mut mapping);
-        add_columns(&mut mapping, self.tick());
+        let tick = self.tick();
+        insert_columns(&mut mapping, &adding, tick.clone());
+        move_columns(&mut mapping, &moving);
+        remove_columns(&mut mapping, &removed_columns, tick);
+        move_remove_columns(&mut mapping, &move_removed_columns);
+        // add_columns(&mut mapping, self.tick());
         update_table_world(&self, &mut mapping);
 
         Ok(())
@@ -801,27 +822,30 @@ impl Default for World {
 }
 
 // 将需要移动的全部源组件移动到新位置上
-fn insert_columns(am: &mut ArchetypeMapping) {
-    // for i in am.add_indexs.clone().into_iter() {
-    //     let dst_i = unsafe { add_columns.get_unchecked(i) };
-    //     let dst_column = am.dst.get_column_unchecked(*dst_i);
-    //     for (_src, dst_row, _e) in am.moves.iter() {
-    //         let dst_data: *mut u8 = dst_column.load(*dst_row);
-    //         dst_column.info().default_fn.unwrap()(dst_data);
-    //     }
-    // }
-    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-    for (i, t) in am.dst.get_columns().iter().enumerate() {
-        let column = am.src.get_column_index(t.info().world_index);
-        if column.is_null() {
-            // add_columns.push(ColumnIndex(i as u16));
-            let dst_column = am.dst.get_column_unchecked(i.into());
-            for (_src, dst_row, _e) in am.moves.iter() {
-                let dst_data: *mut u8 = dst_column.load(*dst_row);
-                dst_column.info().default_fn.unwrap()(dst_data);
-            }
+fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, ColumnIndex)>,  tick: Tick) {
+    for i in am.add_indexs.clone().into_iter() {
+        let (_, dst_i) = unsafe { add_columns.get_unchecked(i) };
+        let dst_column = am.dst.get_column_unchecked(*dst_i);
+        for (_src, dst_row, e) in am.moves.iter() {
+            let dst_data: *mut u8 = dst_column.load(*dst_row);
+            dst_column.info().default_fn.unwrap()(dst_data);
+            dst_column.add_record(*e, *dst_row, tick)
         }
     }
+    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
+    // for (_, dst_column) in am.dst.get_columns().iter().enumerate() {
+    //     // am.moving.binary_search_by(||)
+    //     // 性能
+    //     let r = am.moving.iter().find(|i|{i.world_index == dst_column.info().world_index});
+    //     // am.dst.get_column_index(am.moving[0].world_index)
+    //     // let column = am.src.get_column_index(t.info().world_index);
+    //     if r.is_null() {
+    //         for (_src, dst_row, _e) in am.moves.iter() {
+    //             let dst_data: *mut u8 = dst_column.load(*dst_row);
+    //             dst_column.info().default_fn.unwrap()(dst_data);
+    //         }
+    //     }
+    // }
     // }
 }
 

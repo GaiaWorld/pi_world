@@ -18,7 +18,7 @@ pub use pi_world_macros::Component;
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
 pub struct Inserter<'world, I: Bundle> {
     world: &'world World,
-    state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+    state: (ArchetypeWorldIndex, ShareArchetype, I::Item),
     tick: Tick,
 }
 
@@ -26,7 +26,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
     #[inline(always)]
     pub fn new(
         world: &'world World,
-        state: (ArchetypeWorldIndex, ShareArchetype, I::State),
+        state: (ArchetypeWorldIndex, ShareArchetype, I::Item),
         tick: Tick,
     ) -> Self {
         Self { world, state, tick }
@@ -55,7 +55,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
 
 pub struct Insert<'world, I: Bundle> {
     pub(crate) world: &'world World,
-    state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
+    state: &'world (ArchetypeWorldIndex, ShareArchetype, I::Item),
     tick: Tick,
 }
 
@@ -63,7 +63,7 @@ impl<'world, I: Bundle> Insert<'world, I> {
     #[inline(always)]
     pub(crate) fn new(
         world: &'world World,
-        state: &'world (ArchetypeWorldIndex, ShareArchetype, I::State),
+        state: &'world (ArchetypeWorldIndex, ShareArchetype, I::Item),
         tick: Tick,
     ) -> Self {
         Insert { world, state, tick }
@@ -83,14 +83,14 @@ impl<'world, I: Bundle> Insert<'world, I> {
 }
 
 impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
-    type State = (ArchetypeWorldIndex, ShareArchetype, I::State);
+    type State = (ArchetypeWorldIndex, ShareArchetype, I::Item);
     type Item<'w> = Insert<'w, I>;
 
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let components = I::components(Vec::new());
         let (ar_index, ar) = world.find_ar(components);
-        let s = I::init_state(world, &ar);
+        let s = I::init_item(world, &ar);
         (ar_index, ar, s)
     }
     fn archetype_depend(
@@ -100,6 +100,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         archetype: &Archetype,
         depend: &mut ArchetypeDependResult,
     ) {
+        // todo 似乎可以使用state上的ShareArchetype
         let components = I::components(Vec::new());
         depend.insert(archetype, world, components);
     }
@@ -127,14 +128,15 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
 impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
         let components = I::components(Vec::new());
+        // todo 移到system_meta，减少泛型代码
         for component in &components{
             system_meta.cur_param
             .writes
             .insert(component.type_id, component.type_name.clone());
         }
-     
+    
         let (ar_index, ar) = world.find_ar( components);
-        let s = I::init_state(world, &ar);
+        let s = I::init_item(world, &ar);
         system_meta.param_set_check();
 
         (ar_index, ar, s)
@@ -145,22 +147,22 @@ impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
 pub trait Bundle {
     // type Item;
 
-    type State: Send + Sync + Sized;
+    type Item: Send + Sync + Sized;
 
     fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo>;
+    // todo 改名成init_item，每次get_parm时调用，TState放ColumnIndex
+    fn init_item(world: &World, archetype: &Archetype) -> Self::Item;
 
-    fn init_state(world: &World, archetype: &Archetype) -> Self::State;
-
-    fn insert(state: &Self::State, components: Self, e: Entity, row: Row, tick: Tick);
+    fn insert(item: &Self::Item, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
-pub struct TState<T: 'static>(pub *const Column, PhantomData<T>);
-unsafe impl<T> Sync for TState<T> {}
-unsafe impl<T> Send for TState<T> {}
-impl<T: 'static> TState<T> {
+pub struct TypeItem<T: 'static>(pub *const Column, PhantomData<T>);
+unsafe impl<T> Sync for TypeItem<T> {}
+unsafe impl<T> Send for TypeItem<T> {}
+impl<T: 'static> TypeItem<T> {
     #[inline(always)]
     pub fn new(c: &Column) -> Self {
-        TState(unsafe { transmute(c) }, PhantomData)
+        TypeItem(unsafe { transmute(c) }, PhantomData)
     }
     #[inline(always)]
     pub fn write(&self, e: Entity, row: Row, val: T, tick: Tick) {
@@ -171,54 +173,34 @@ impl<T: 'static> TState<T> {
 }
 
 macro_rules! impl_tuple_insert {
-    ($(($name: ident, $state: ident)),*) => {
+    ($(($name: ident, $item: ident)),*) => {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
         impl<$($name: 'static + Bundle),*> Bundle for ($($name,)*) {
-            type State = ($(<$name as Bundle>::State,)*);
+            type Item = ($(<$name as Bundle>::Item,)*);
 
             fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo> {
                 $(let c = $name::components(c);)*
                 c
             }
-            fn init_state(_world: &World, _archetype: &Archetype) -> Self::State {
-                ($(<$name as Bundle>::init_state(_world, _archetype),)*)
+            fn init_item(_world: &World, _archetype: &Archetype) -> Self::Item {
+                ($(<$name as Bundle>::init_item(_world, _archetype),)*)
             }
 
             fn insert(
-                _state: &Self::State,
+                _item: &Self::Item,
                 _components: Self,
                 _e: Entity,
                 _row: Row,
                 _tick: Tick,
             ) {
-                let ($($state,)*) = _state;
+                let ($($item,)*) = _item;
                 let ($($name,)*) = _components;
                 $(
-                    <$name as Bundle>::insert($state, $name, _e, _row, _tick);
+                    <$name as Bundle>::insert($item, $name, _e, _row, _tick);
                 )*
             }
         }
     };
 }
 all_tuples!(impl_tuple_insert, 0, 32, F, S);
-
-// impl<T: 'static> Bundle for T {
-//     type Item = T;
-//     type State = TState<T>;
-//     fn components() -> Vec<ComponentInfo> {
-//         vec![(ComponentInfo::of::<T>())]
-//     }
-//     fn init_state(_world: &World, archetype: &Archetype) -> Self::State {
-//         TState::new(archetype.get_column(&TypeId::of::<T>()).unwrap())
-//     }
-
-//     fn insert(
-//         state: &Self::State,
-//         components: Self::Item,
-//         e: Entity,
-//         row: Row,
-//     ) {
-//         state.write(e, row, components);
-//     }
-// }

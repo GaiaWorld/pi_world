@@ -39,6 +39,7 @@ bitvec = { version = "1.0", features = ["serde"] }
 
 [dev-dependencies]
 cgmath="0.18"
+rand = "0.8"
 
 [workspace]
 members = ["macros"]

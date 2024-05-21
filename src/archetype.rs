@@ -38,12 +38,12 @@ impl Row {
         self.0 as usize
     }
 }
-impl From <u32> for Row {
+impl From<u32> for Row {
     fn from(index: u32) -> Self {
         Self(index)
     }
 }
-impl From <usize> for Row {
+impl From<usize> for Row {
     fn from(index: usize) -> Self {
         Self(index as u32)
     }
@@ -54,7 +54,7 @@ impl pi_null::Null for Row {
     }
 
     fn is_null(&self) -> bool {
-       self.0 == u32::null()
+        self.0 == u32::null()
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -64,12 +64,12 @@ impl ArchetypeWorldIndex {
         self.0 as usize
     }
 }
-impl From <u32> for ArchetypeWorldIndex {
+impl From<u32> for ArchetypeWorldIndex {
     fn from(index: u32) -> Self {
         Self(index)
     }
 }
-impl From <usize> for ArchetypeWorldIndex {
+impl From<usize> for ArchetypeWorldIndex {
     fn from(index: usize) -> Self {
         Self(index as u32)
     }
@@ -80,7 +80,7 @@ impl pi_null::Null for ArchetypeWorldIndex {
     }
 
     fn is_null(&self) -> bool {
-       self.0 == u32::null()
+        self.0 == u32::null()
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,12 +90,12 @@ impl ColumnIndex {
         self.0 as usize
     }
 }
-impl From <u16> for ColumnIndex {
+impl From<u16> for ColumnIndex {
     fn from(index: u16) -> Self {
         Self(index)
     }
 }
-impl From <usize> for ColumnIndex {
+impl From<usize> for ColumnIndex {
     fn from(index: usize) -> Self {
         Self(index as u16)
     }
@@ -106,18 +106,22 @@ impl pi_null::Null for ColumnIndex {
     }
 
     fn is_null(&self) -> bool {
-       self.0 == u16::null()
+        self.0 == u16::null()
     }
 }
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Flags: u32 {
-        const WITHOUT =         0b00001;
-        const READ =            0b00010;
-        const WRITE =           0b00100;
-        const DELETE =          0b01000;
-        const SHARE_WRITE =     0b10000;
+        const WITHOUT =         0b000000001; // 排除指定原型或组件
+        const OPTION =          0b000000010; // 可选，和读写配合使用
+        const READ =            0b000000100; // 读取指定组件或资源
+        const WRITE =           0b000001000; // 修改指定组件或资源
+        const MOVE =            0b000010000; // 在alter中，不相关的组件，被移动到新的原型中，定义为MOVE。MOVE是弱连接，可以在读后
+        const ENTITY_EDIT =     0b000100000; // 对所有实体及其组件进行操作，包括创建及销毁实体，增删组件，读写组件。
+        const SHARE_WRITE =     0b001000000; // 多例资源的共享写
+        const WORLD_READ =      0b010000000; // World读
+        const WORLD_WRITE =     0b100000000; // World写
     }
 }
 
@@ -160,15 +164,22 @@ impl ArchetypeDependResult {
             self.writes.push(index);
         }
     }
-    pub fn depend(&mut self, ar: &Archetype, world: &World, tid: &TypeId, false_result: Flags, true_result: Flags) {
+    pub fn depend(
+        &mut self,
+        ar: &Archetype,
+        world: &World,
+        tid: &TypeId,
+        false_result: Flags,
+        true_result: Flags,
+    ) {
         let world_index = world.get_component_index(tid);
         let index = ar.get_column_index(world_index);
         let r = if index.is_null() {
             false_result
-        } else{
+        } else {
             let set = if true_result == Flags::WRITE {
                 &mut self.writes
-            }else{
+            } else {
                 &mut self.reads
             };
             set.push(world_index);
@@ -225,7 +236,7 @@ impl Archetype {
         Self {
             id: info.id,
             name,
-            table: Table::new(info.components),
+            table: Table::new(info.sorted_components),
             index: ShareU32::new(u32::null()),
         }
     }
@@ -253,6 +264,70 @@ impl Archetype {
             }
         }
         (add, moving)
+    }
+    // 从本原型上计算改变后了原型信息， 在该原型下添加一些组件，删除一些组件，得到新原型信息，及移动的组件
+    pub fn alter1(
+        &self,
+        world: &World,
+        sorted_add_removes: &[(ComponentIndex, bool)], // 升序
+        moving_contains_added: bool,                   // 移动组件列表是否包含已添加的组件
+        adding: &mut Vec<(ComponentIndex, ColumnIndex)>,
+        moving: &mut Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>,
+        removing: &mut Vec<(ComponentIndex, ColumnIndex)>,
+    ) -> ArchetypeInfo {
+        let mut result: ArchetypeInfo = Default::default();
+        let mut column_index = 0;
+        let len = self.column_len();
+        for (index, add) in sorted_add_removes.iter() {
+            loop {
+                if column_index >= len {
+                    if *add {
+                        let info = world.get_component_info(*index).unwrap();
+                        adding.push((info.world_index, result.len().into()));
+                        result.add(info.clone());
+                    }
+                    break; // 继续迭代sort_add_removes
+                }
+                let info = self.get_column_unchecked(column_index.into()).info();
+                if info.world_index > *index {
+                    // info.world_index大
+                    if *add {
+                        adding.push((info.world_index, result.len().into()));
+                        result.add(info.clone());
+                    }
+                    break; // 继续迭代sort_add_removes
+                }
+                if info.world_index < *index {
+                    // 在原型中的列要移动
+                    moving.push((info.world_index, column_index.into(), result.len().into()));
+                    result.add(info.clone());
+                    column_index += 1;
+                    continue; // 继续递增column_index
+                }
+                // info.world_index == *index
+                if *add {
+                    // 要添加的列已经在原型中，不需要添加
+                    if moving_contains_added {
+                        moving.push((info.world_index, column_index.into(), result.len().into()));
+                    } else {
+                        adding.push((info.world_index, result.len().into()));
+                    }
+                    result.add(info.clone());
+                } else {
+                    removing.push((info.world_index, column_index.into()));
+                }
+                column_index += 1;
+                break; // 继续迭代sort_add_removes
+            }
+        }
+        // 原型中剩余的列都要移动
+        while column_index < len {
+            let info = self.get_column_unchecked(column_index.into()).info();
+            moving.push((info.world_index, column_index.into(), result.len().into()));
+            result.add(info.clone());
+            column_index += 1;
+        }
+        result
     }
 
     /// Returns the id of the archetype.
@@ -318,14 +393,14 @@ impl Debug for Archetype {
     }
 }
 #[derive(Debug, Default)]
-pub(crate) struct ArchetypeInfo{
-    pub(crate) id:u128,
-    pub(crate) components: Vec<ComponentInfo>,
+pub(crate) struct ArchetypeInfo {
+    pub(crate) id: u128,
+    pub(crate) sorted_components: Vec<ComponentInfo>,
 }
 impl ArchetypeInfo {
     pub(crate) fn name(&self) -> Cow<'static, str> {
         let mut s = String::new();
-        for info in self.components.iter() {
+        for info in self.sorted_components.iter() {
             s.push_str(&info.type_name);
             s.push('+');
         }
@@ -334,8 +409,14 @@ impl ArchetypeInfo {
         }
         s.into()
     }
+    pub(crate) fn add(&mut self, info: ComponentInfo) {
+        self.id ^= info.id();
+        self.sorted_components.push(info.clone());
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.sorted_components.len()
+    }
 }
-
 
 pub const COMPONENT_TICK: u8 = 1;
 pub const COMPONENT_REMOVED: u8 = 2;
@@ -346,9 +427,9 @@ pub struct ComponentInfo {
     pub type_name: Cow<'static, str>,
     pub drop_fn: Option<fn(*mut u8)>,
     pub default_fn: Option<fn(*mut u8)>,
-    pub mem_size: usize, // 内存大小
+    pub mem_size: usize,             // 内存大小
     pub world_index: ComponentIndex, // 在world上的索引
-    pub tick_removed: u8, // 是否有tick及removed tick = 1 removed = 2
+    pub tick_removed: u8,            // 是否有tick及removed tick = 1 removed = 2
 }
 impl ComponentInfo {
     pub fn of<T: 'static>(tick_removed: u8) -> ComponentInfo {
