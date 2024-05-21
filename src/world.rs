@@ -144,7 +144,6 @@ pub struct World {
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
     pub(crate) empty_archetype: ShareArchetype,
-    pub(crate) changed_columns: Vec<(Tick,ComponentIndex)>,
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
@@ -157,7 +156,10 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
+        empty_archetype.index.store(0, Ordering::Relaxed);
         let component_arr = SafeVec::with_capacity(1);
+        let archetype_map = DashMap::new();
+        archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
@@ -167,10 +169,9 @@ impl World {
             entities: SlotMap::default(),
             component_map: DashMap::new(),
             component_arr,
-            archetype_map: DashMap::new(),
+            archetype_map,
             archetype_arr,
             empty_archetype,
-            changed_columns: Vec::new(),
             listener_mgr,
             archetype_init_key,
             archetype_ok_key,
@@ -622,7 +623,6 @@ impl World {
             &mut removing,
             &mut removed_columns,
             &mut move_removed_columns,
-            &mut id,
         );
         println!("e: {:?}, src: {:?}, dst: {:?}", e, mapping.src.name(), mapping.dst.name());
         // println!("moved_columns: {:?}", moved_columns);
@@ -695,6 +695,7 @@ impl World {
         &self,
         info: ArchetypeInfo,
     ) -> (ArchetypeWorldIndex, ShareArchetype) {
+        assert!(info.id > 0);
         // 如果world上没有找到对应的原型，则创建并放入world中
         let (ar, b) = match self.archetype_map.entry(info.id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),

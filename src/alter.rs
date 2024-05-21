@@ -280,10 +280,6 @@ impl<
         archetype: &Archetype,
         result: &mut ArchetypeDependResult,
     ) {
-        if &state.1.writing_archetype == archetype.id() {
-            // println!("archetype_depend: ar:{:?}", archetype.name());
-            return result.merge(ArchetypeDepend::Flag(Flags::WRITE));
-        }
         Q::archetype_depend(world, archetype, result);
         // 如果相关， 则添加移除类型，并返回Alter后的原型id
         if result.flag.bits() > 0 && !result.flag.contains(Flags::WITHOUT) {
@@ -416,7 +412,6 @@ pub struct AlterState<A: Bundle> {
     move_removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的removed_column的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
 
     mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
-    writing_archetype: u128,                  // 正在写入的原型
 }
 impl<A: Bundle> AlterState<A> {
     pub(crate) fn make(
@@ -441,7 +436,6 @@ impl<A: Bundle> AlterState<A> {
             removed_columns: Default::default(),
             move_removed_columns: Default::default(),
             mapping_dirtys: Vec::new(),
-            writing_archetype: 0,
         }
     }
 
@@ -472,7 +466,6 @@ impl<A: Bundle> AlterState<A> {
                 &mut self.removing,
                 &mut self.removed_columns,
                 &mut self.move_removed_columns,
-                &mut self.writing_archetype,
             );
 
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
@@ -577,7 +570,6 @@ pub(crate) fn mapping_init<'a>(
     removing: &mut Vec<(ComponentIndex, ColumnIndex)>,
     removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
     move_removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
-    writing_archetype: &mut u128,
 ) {
     let add_start = adding.len();
     let move_start = moving.len();
@@ -596,7 +588,6 @@ pub(crate) fn mapping_init<'a>(
         mapping.dst_index = mapping.src.index();
         return;
     }
-    *writing_archetype = info.id;
     let (dst_index, dst) = world.find_archtype(info);
     mapping.dst = dst;
     mapping.dst_index = dst_index;
