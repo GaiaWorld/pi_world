@@ -643,7 +643,7 @@ impl World {
         // for col in add.get_columns().iter() {
         //     col.add_record(e, dst_row, self.tick());
         // }
-        log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
+        // log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
         // println!("adding: {:?}", adding);
         // println!("mapping.moves: {:?}", mapping.moves);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
