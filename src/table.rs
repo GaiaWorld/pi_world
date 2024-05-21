@@ -30,7 +30,7 @@ pub struct Table {
     remove_columns: SafeVec<RemovedColumn>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
     lock: SpinLock<()>, // 用于保护多线程下两个alter同时添加相同组件的情况
     pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
-    removes: AppendVec<Row>,                    // 整理前被移除的实例
+    pub(crate) removes: AppendVec<Row>,                    // 整理前被移除的实例
 }
 impl Table {
     pub fn new(sorted_components: Vec<ComponentInfo>) -> Self {
@@ -479,12 +479,15 @@ impl Debug for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Table")
             .field("entitys", &self.entities)
-            .field("columns", &self.sorted_columns)
+            .field("sorted_columns", &self.sorted_columns)
+            .field("remove_columns", &self.remove_columns)
+            .field("destroys", unsafe { &*self.destroys.get() })
             .field("removes", &self.removes)
             .finish()
     }
 }
 
+#[derive(Debug)]
 pub struct RemovedColumn {
     pub(crate) ticks: AppendVec<Tick>,
     pub(crate) dirty: Dirty,

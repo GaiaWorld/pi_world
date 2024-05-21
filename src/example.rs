@@ -204,7 +204,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -985,7 +985,7 @@ mod test_mod {
 
             let (e, age0, age2) = item.unwrap();
             println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
-            
+
             println!("query end!!!");
          }
          
@@ -1124,18 +1124,35 @@ mod test_mod {
             ];
             sort_components.sort_by(|a, b|a.0.cmp(&b.0));
             
-            w.alter_components(e.0,&sort_components,);
+            w.alter_components(e.0, &sort_components,);
             println!("alter end!!");
         }
 
         app.add_system(Update, query);
         app.add_system(Update, alter);
 
-        for _ in 0..2 {
-            app.run();
-        }
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+                ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
 
-        // app.run();
+        app.world.assert_archetype_aar(&[None, Some(info.clone())]);
+        app.run();
+
+        info.columns_info[0].as_mut().unwrap().change_listeners = 1;
+        info.entitys = Some(2);
+        info.removes = Some(1);
+
+        app.world.assert_archetype_aar(&[None, Some(info)]);
     }
+
+   
 
 }

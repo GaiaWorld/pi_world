@@ -498,7 +498,7 @@ impl World {
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
 
         if let Some((c, _)) = ar.get_column(index) {
-            let t =self.tick();
+            let t = self.tick();
             let value: Mut<T> = Mut::new(
                 &ColumnTick::new(c, t, t),
                 e,
@@ -554,8 +554,9 @@ impl World {
         components.sort_by(|a, b| {
             a.0.cmp(&b.0)
         });
-        let components = components.as_slice();
 
+        let components = components.as_slice();
+  
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),

@@ -79,12 +79,14 @@ impl<A: AsyncRuntime + AsyncRuntimeExt> App<A> {
     /// schedule_label为None时， 表示运行所有的system
     /// 否则运行指定日程中的system
     pub fn run(&mut self) {
+        // for item in self.world.archetype_arr.iter(){
+        //     println!("item: {:?}", item);
+        // }
         if self.is_first_run {
             self.startup_schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
             self.is_first_run = false;
         }
         
-
         self.schedule.run(&mut self.world, &self.rt, &MainSchedule.intern());
     }
 
