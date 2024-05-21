@@ -22,6 +22,7 @@ use std::mem::{transmute, MaybeUninit};
 use std::ops::Range;
 // use std::ops::Range;
 
+use pi_key_alloter::Key;
 use pi_null::Null;
 
 use crate::archetype::*;
@@ -294,6 +295,7 @@ impl<
                 &mut Vec::new(),
                 &mut Vec::new(),
                 &mut Vec::new(),
+                false,
             );
             if archetype.id() != &info.id {
                 result.merge(ArchetypeDepend::Alter((
@@ -426,6 +428,7 @@ impl<A: Bundle> AlterState<A> {
         let mut result = Vec::new();
         world.add_component_indexs(add, &mut result, true);
         world.add_component_indexs(remove, &mut result, false);
+        result.sort_unstable();
         AlterState::new(result)
     }
 
@@ -472,6 +475,7 @@ impl<A: Bundle> AlterState<A> {
                 &mut self.removed_columns,
                 &mut self.move_removed_columns,
                 &mut self.writing_archetype,
+                false,
             );
 
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
@@ -577,6 +581,7 @@ pub(crate) fn mapping_init<'a>(
     removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
     move_removed_columns: &'a mut Vec<(ColumnIndex, ColumnIndex)>,
     writing_archetype: &mut u128,
+    existed_adding_is_move: bool,
 ) {
     let add_start = adding.len();
     let move_start = moving.len();
@@ -584,7 +589,7 @@ pub(crate) fn mapping_init<'a>(
     // 如果本地没有找到，则创建components，去world上查找或创建
     let info = mapping
         .src
-        .alter1(world, sorted_add_removes, adding, moving, removing);
+        .alter1(world, sorted_add_removes, adding, moving, removing, existed_adding_is_move);
     mapping.add_indexs = add_start..adding.len();
     mapping.move_indexs = move_start..moving.len();
     mapping.removed_indexs = removing_start..removing.len();
@@ -614,6 +619,10 @@ pub(crate) fn mapping_init<'a>(
         move_removed_columns.push((i.into(), remove_column_index));
     }
     mapping.move_removed_indexs = move_removed_start..move_removed_columns.len();
+
+
+    // println!("adding: {:?}", adding);
+    // println!("moving: {:?}", moving);
 }
 
 pub(crate) fn alter_row<'w, 'a>(
@@ -638,6 +647,7 @@ pub(crate) fn alloc_row(mapping: &mut ArchetypeMapping, src_row: Row, e: Entity)
     let dst_row = mapping.dst.alloc();
     // 记录移动条目的源位置和目标位置
     mapping.moves.push((src_row, dst_row, e));
+    // println!("mapping.moves: {:?}, src: {:?}, dst: {:?}, {:?}", mapping.moves, mapping.src.index(), mapping.dst.index(), e.index());
     dst_row
 }
 
@@ -682,7 +692,7 @@ pub(crate) fn move_column(
 ) {
     for (src_row, dst_row, _) in moves.iter() {
         let src_data: *mut u8 = src_column.get_row(*src_row);
-        println!("move_column dst_column: {:?}, src_column: {:?}, src_row: {:?}, dst_row: {:?}", (dst_column.info().world_index, &dst_column.info().type_name), (src_column.info().world_index, &src_column.info().type_name), src_row, dst_row);
+        // println!("move_column dst_column: {:?}, src_column: {:?}, src_row: {:?}, dst_row: {:?}", (dst_column.info().world_index, &dst_column.info().type_name), (src_column.info().world_index, &src_column.info().type_name), src_row, dst_row);
         dst_column.write_row(*dst_row, src_data);
     }
     if src_column.info().tick_removed & COMPONENT_TICK != 0 {
