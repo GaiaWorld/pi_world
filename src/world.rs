@@ -645,8 +645,9 @@ impl World {
         //     col.add_record(e, dst_row, self.tick());
         // }
         // log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
-        // println!("adding: {:?}", adding);
-        // println!("mapping.moves: {:?}", mapping.moves);
+        println!("adding: {:?}", adding);
+        println!("moving: {:?}", moving);
+        println!("mapping.moves: {:?}", mapping.moves);
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         let tick = self.tick();
         insert_columns(&mut mapping, &adding, tick.clone());
@@ -829,6 +830,7 @@ fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, 
         let dst_column = am.dst.get_column_unchecked(*dst_i);
         for (_src, dst_row, e) in am.moves.iter() {
             let dst_data: *mut u8 = dst_column.load(*dst_row);
+            println!("dst_column====={:?}", dst_column.info().type_name);
             dst_column.info().default_fn.unwrap()(dst_data);
             dst_column.add_record(*e, *dst_row, tick)
         }
