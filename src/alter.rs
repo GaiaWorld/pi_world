@@ -20,7 +20,7 @@ use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
 use std::ops::{Deref, DerefMut, Range};
 
-use bevy_utils::HashMap;
+
 use pi_null::Null;
 
 use crate::archetype::*;
