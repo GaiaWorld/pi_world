@@ -202,7 +202,7 @@ struct Velocity([f32; 3]);
  
 #[cfg(test)]
 mod test_mod {
- 
+
     use super::*;
     use crate::{
         // app::*,
@@ -990,7 +990,9 @@ mod test_mod {
         struct E(f32);
 
         fn ab(a: SingleRes<A>, mut b: SingleResMut<B>) {
+            println!("ab:{:?}", b.0);
             b.0 += a.0 + 1.0;
+            println!("ab:{:?}", b.0);
         }
 
         fn cd(c: SingleRes<C>, mut d: SingleResMut<D>) {
@@ -1000,9 +1002,10 @@ mod test_mod {
         fn ce(w: &World, c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
             e.0 += c.0 + 1.0;
             b.0 += c.0 + 1.0;
+            println!("ce:{:?}", b.0);
         }
         
-        let mut app = MultiThreadApp::new();
+        let mut app = App::new();
         app.world.insert_single_res(A(0.0));
         app.world.insert_single_res(B(0.0));
         app.world.insert_single_res(C(0.0));
@@ -1555,7 +1558,7 @@ mod test_mod {
         pub fn query(q: Query<(Entity, &Age0, &Age1, &Age2), (Changed<Age0>)>) {
             println!("query start!!!");
             let iter = q.iter().next();
-            assert_eq!(iter.is_null(), true);
+            assert_eq!(iter.unwrap().1, &Age0(0));
             println!("query end!!!");
         }
 

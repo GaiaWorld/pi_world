@@ -26,7 +26,7 @@ use crate::alter::{
     alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype, COMPONENT_CHANGED, COMPONENT_TICK
 };
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
@@ -157,10 +157,10 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
-        // empty_archetype.index.store(0, Ordering::Relaxed);
+        empty_archetype.index.store(0, Ordering::Relaxed);
         let component_arr = SafeVec::with_capacity(1);
         let archetype_map = DashMap::new();
-        // archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
+        archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
@@ -225,7 +225,7 @@ impl World {
     }
     /// 添加组件信息，如果重复，则返回原有的索引及是否tick变化
     pub fn add_component_info(&self, mut info: ComponentInfo) -> (ComponentIndex, Option<u8>) {
-        let tick_removed = info.tick_removed;
+        let tick_info = info.tick_info;
         let index: ComponentIndex = match self.component_map.entry(info.type_id) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
@@ -238,20 +238,38 @@ impl World {
             },
         };
         let info = unsafe { self.component_arr.load_unchecked(index.index())};
-        let t = info.tick_removed | tick_removed;
-        if t != info.tick_removed {
-            info.tick_removed = t;
+        let t = info.tick_info | tick_info;
+        if t != info.tick_info {
             // 扫描当前原型，如果原型中存在该组件，则将该组件tick_removed设置为tick_removed
-            self.update_tick_removed(index, info.tick_removed);
+            self.update_tick_info(index, t);
+            info.tick_info = t;
         }
-        (index, Some(info.tick_removed))
+        (index, Some(info.tick_info))
     }
     /// 更新全部的原型的相关组件信息的tick_removed
-    pub(crate) fn update_tick_removed(&self, index: ComponentIndex, tick_removed: u8) {
+    pub(crate) fn update_tick_info(&self, index: ComponentIndex, tick_info: u8) {
         for ar in self.archetype_arr.iter() {
-            if let Some(c) = unsafe { ar.get_column_mut(index) } {
-                c.0.info_mut().tick_removed = tick_removed;
-                // todo 将已经存在的实体修改tick
+            if let Some((c, _)) = unsafe { ar.get_column_mut(index) } {
+                let info = c.info_mut();
+                let old = info.tick_info;
+                info.tick_info = tick_info;
+                if tick_info &COMPONENT_TICK != 0 && old & COMPONENT_TICK == 0 {
+                    let tick = self.increment_tick();
+                    // 将已经存在的实体修改tick
+                    for i in 0..ar.len().index() {
+                        *c.ticks.load_alloc(i) = tick;
+                    }
+                }
+                if tick_info &COMPONENT_CHANGED != 0 && old & COMPONENT_CHANGED == 0 {
+                    // 将已经存在的实体强行放入脏列表，因为添加新的组件信息时，监听器可能尚未安装
+                    for i in 0..ar.len().index() {
+                        let row = i.into();
+                        let e = ar.get(row);
+                        if !e.is_null() {
+                            c.dirty.record_unchecked(e, row);
+                        }
+                    }
+                }
             }
         }
     }
@@ -263,7 +281,7 @@ impl World {
             let (index, change) = self.add_component_info(c.clone());
             c.world_index = index;
             if let Some(tick_removed) = change {
-                c.tick_removed = tick_removed;
+                c.tick_info = tick_removed;
             }
         }
         components.sort_unstable_by(|a, b| a.world_index .cmp(&b.world_index));
@@ -273,7 +291,7 @@ impl World {
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &mut self,
     ) -> Queryer<Q, F> {
-        let mut state = QueryState::create(self, 0);
+        let mut state = QueryState::create(self);
         state.align(self);
         Queryer::new(self, state)
     }
@@ -286,7 +304,7 @@ impl World {
     >(
         &mut self,
     ) -> Alterer<Q, F, A, D> {
-        let mut query_state = QueryState::create(self, 0);
+        let mut query_state = QueryState::create(self);
         let mut alter_state = AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射

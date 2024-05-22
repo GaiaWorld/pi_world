@@ -114,14 +114,14 @@ impl Table {
         unsafe { self.sorted_columns.get_unchecked(index.index())}
     }
     /// 添加changed监听器，原型刚创建时调用
-    pub fn add_changed_listener(&self, index: ComponentIndex, owner: u128) {
+    pub fn add_changed_listener(&self, index: ComponentIndex, owner: Tick) {
         // println!("add_changed_listener!! self: {:p}, index: {:?}", self, index);
         if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
             c.dirty.insert_listener(owner)
         }
     }
     /// 添加removed监听器，原型刚创建时调用
-    pub fn add_removed_listener(&self, index: ComponentIndex, owner: u128) {
+    pub fn add_removed_listener(&self, index: ComponentIndex, owner: Tick) {
         // 获取索引
         let column_index = self.add_remove_column_index(index);
         let r = unsafe { self.remove_columns.load_unchecked(column_index.index()) };
@@ -129,14 +129,14 @@ impl Table {
         r.dirty.insert_listener(owner);
     }
     /// 添加destroyed监听器，原型刚创建时调用
-    pub fn add_destroyed_listener(&self, owner: u128) {
+    pub fn add_destroyed_listener(&self, owner: Tick) {
         unsafe { &mut *self.destroys.get() }.insert_listener(owner)
     }
     /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
     pub(crate) fn find_changed_listener(
         &self,
         index: ComponentIndex,
-        owner: u128,
+        owner: Tick,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         if let Some((c, column_index)) = unsafe { self.get_column_mut(index) } {
@@ -153,7 +153,7 @@ impl Table {
     pub(crate) fn find_removed_listener(
         &self,
         index: ComponentIndex,
-        owner: u128,
+        owner: Tick,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         let column_index = self.add_remove_column_index(index);
@@ -169,7 +169,7 @@ impl Table {
     /// 查询在同步到原型时，寻找自己添加的destroyed监听器，并记录监听器位置
     pub(crate) fn find_destroyed_listener(
         &self,
-        owner: u128,
+        owner: Tick,
         vec: &mut SmallVec<[DirtyIndex; 1]>,
     ) {
         let list = unsafe { &*self.destroys.get() };
@@ -425,7 +425,7 @@ impl Table {
         }
         // 整理全部的列ticks
         for c in self.sorted_columns.iter_mut() {
-            if c.info().tick_removed & COMPONENT_TICK != 0 {
+            if c.info().is_tick() {
                 collect_ticks(&mut c.ticks, new_entity_len, &action);
             }
         }
