@@ -109,7 +109,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         self.state
-            .destroy(&self.query.world, e, &self.query.state.map)
+            .destroy(&self.query.world, e, &self.query.state.map, self.query.tick)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -205,7 +205,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         self.state
-            .destroy(&self.query.world, e, &self.query.state.map)
+            .destroy(&self.query.world, e, &self.query.state.map, self.query.tick)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -401,7 +401,7 @@ impl ArchetypeMapping {
                 let d = self.dst.get_remove_column(*dst);
                 *d.ticks.load_alloc(dst_row.index()) = tick;
                 // 在脏列表上记录移除行
-                d.dirty.record(e, dst_row);
+                d.dirty.record(e, dst_row, tick);
             }
         }
     }
@@ -423,7 +423,7 @@ impl ArchetypeMapping {
                 .get_i(src_row.index())
                 .map_or(Tick::null(), |r| *r);
             *d.ticks.load_alloc(dst_row.index()) = tick;
-            d.dirty.record_unchecked(e, dst_row);
+            d.dirty.record(e, dst_row, tick);
         }
     }
 }
@@ -542,15 +542,16 @@ impl State {
         world: &World,
         entity: Entity,
         map: &Vec<ArchetypeLocalIndex>,
+        tick: Tick,
     ) -> Result<bool, QueryError> {
         let (addr, _world_index, local_index) =
             check(world, entity, /* cache_mapping, */ map)?;
         let ar = unsafe { &self.vec.get_unchecked(local_index.index()).src };
-        Self::destroy_row(world, ar, addr.row)
+        Self::destroy_row(world, ar, addr.row, tick)
     }
     /// 标记销毁
-    fn destroy_row(world: &World, ar: &Archetype, row: Row) -> Result<bool, QueryError> {
-        let e = ar.mark_destroy(row);
+    fn destroy_row(world: &World, ar: &Archetype, row: Row, tick: Tick) -> Result<bool, QueryError> {
+        let e = ar.mark_destroy(row, tick);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
@@ -645,7 +646,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
     /// 标记销毁当前迭代的实体
 
     pub fn destroy(&mut self) -> Result<bool, QueryError> {
-        State::destroy_row(&self.it.world, &self.it.ar, self.it.row)
+        State::destroy_row(&self.it.world, &self.it.ar, self.it.row, self.it.tick)
     }
 
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {

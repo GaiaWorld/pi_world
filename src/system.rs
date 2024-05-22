@@ -1,4 +1,4 @@
-use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
+use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, ops::Range, pin::Pin};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},
@@ -49,6 +49,67 @@ impl ReadWrite {
         }
         Ok(())
     }
+}
+
+#[derive(Debug)]
+pub enum Relation {
+    El(TypeId),
+    Read(TypeId),
+    Write(TypeId),
+    And(usize),
+    Or(usize),
+    Opt,
+    Not,
+}
+#[derive(Debug)]
+pub struct Related {
+    pub(crate) vec: Vec<Relation>,
+    pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
+}
+impl Related {
+    pub fn read(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+        if !self.contains(&type_info) {
+        }
+        self.vec.push(Relation::Read(type_info.type_id));
+        return Ok(())
+    }
+    pub fn write(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+        if !self.contains(&type_info) {
+        }
+        self.vec.push(Relation::Write(type_info.type_id));
+        return Ok(())
+    }
+    pub fn read_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+        if !self.contains(&type_info) {
+        }
+        self.vec.push(Relation::Or(1));
+        self.vec.push(Relation::Read(type_info.type_id));
+        return Ok(())
+    }
+    pub fn write_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+        if !self.contains(&type_info) {
+        }
+        self.vec.push(Relation::Or(1));
+        self.vec.push(Relation::Write(type_info.type_id));
+        return Ok(())
+    }
+    pub fn not(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+        if !self.contains(&type_info) {
+        }
+        self.vec.push(Relation::Not);
+        self.vec.push(Relation::Read(type_info.type_id));
+        return Ok(())
+    }
+    pub fn contains(&mut self, type_info: &TypeInfo) -> bool {
+        match self.map.entry(type_info.type_id) {
+            std::collections::hash_map::Entry::Occupied(_) => true,
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(type_info.name.clone());
+                false
+            },
+        }
+    }
+
 }
 /// The metadata of a [`System`].
 #[derive(Debug)]

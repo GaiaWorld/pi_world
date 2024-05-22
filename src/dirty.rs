@@ -87,15 +87,26 @@ impl ListenerInfo {
 pub struct Dirty {
     listeners: Vec<ListenerInfo>, // 每个监听器的TypeId和当前读取的长度
     pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
+    pub(crate) min_tick: Tick,            // 所有监听器的最小tick，用来快速剔除记录
 }
 unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
     /// 插入一个监听者的类型id
+    pub(crate) fn new() -> Self {
+        Self {
+            listeners: Vec::new(),
+            vec: AppendVec::default(),
+            min_tick: usize::MAX.into(),
+        }
+    }
+
+    /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
         // println!("insert_listener!!! self: {:p}", self);
 		self.listeners.push(ListenerInfo::new(owner));
-}
+        self.min_tick = 0usize.into();
+    }
     /// 插入一个监听者的类型id
     pub(crate) fn listener_list(&self) -> &Vec<ListenerInfo> {
         &self.listeners
@@ -117,19 +128,11 @@ impl Dirty {
         self.vec.insert(EntityRow { e, row });
     }
     #[inline(always)]
-    pub(crate) fn record(&self, e: Entity, row: Row) {
+    pub(crate) fn record(&self, e: Entity, row: Row, tick: Tick) {
         // println!("record!!! self: {:p}, listener_index: {:?}", self, (e, row, self.listener_list().len()));
-        if !self.listener_list().is_empty() {
+        if tick > self.min_tick {
             self.vec.insert(EntityRow { e, row });
         }
-    }
-    /// 最小的tick，如果记录的数据tick小于该tick，则可以忽略
-    pub(crate) fn record_tick(&self) -> Tick {
-        let mut t = usize::MAX;
-        for l in self.listener_list().iter() {
-            t = t.min(l.tick.load(Ordering::Relaxed));
-        }
-        t.into()
     }
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
@@ -157,12 +160,21 @@ impl Dirty {
         if len == 0 {
             return Some(0);
         }
+        let mut min_tick = usize::MAX;
+        let mut can = true;
         for info in self.listeners.iter_mut() {
+            min_tick = min_tick.min(info.tick.load(Ordering::Relaxed));
             if *info.read_len.get_mut() < len {
-                return None;
+                can = false;
             }
         }
-        return Some(len);
+        self.min_tick = min_tick.into();
+        // 只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
+        if can {
+            Some(len)
+        }else{
+            None
+        }
     }
     /// 清理方法
     pub(crate) fn clear(&mut self, len: usize) {

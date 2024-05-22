@@ -250,12 +250,12 @@ impl Table {
     /// 标记销毁，用于destroy
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
-    pub(crate) fn mark_destroy(&self, row: Row) -> Entity {
+    pub(crate) fn mark_destroy(&self, row: Row, tick: Tick) -> Entity {
         let e = self.entities.load_alloc(row.index());
         if e.is_null() {
             return *e;
         }
-        { unsafe { &*self.destroys.get() } }.record_unchecked(*e, row);
+        { unsafe { &*self.destroys.get() } }.record(*e, row, tick);
         replace(e, Entity::null())
     }
     /// 标记移出，用于delete 和 alter

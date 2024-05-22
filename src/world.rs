@@ -754,7 +754,7 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
-        let e = ar.mark_destroy(addr.row);
+        let e = ar.mark_destroy(addr.row, self.tick());
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
@@ -768,7 +768,7 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
-        let e = ar.mark_destroy(addr.row);
+        let e = ar.mark_destroy(addr.row, self.tick());
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
