@@ -273,6 +273,7 @@ impl Archetype {
         adding: &mut Vec<(ComponentIndex, ColumnIndex)>,
         moving: &mut Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>,
         removing: &mut Vec<(ComponentIndex, ColumnIndex)>,
+        existed_adding_is_move: bool,
     ) -> ArchetypeInfo {
         let mut result: ArchetypeInfo = Default::default();
         let mut column_index = 0;
@@ -315,8 +316,13 @@ impl Archetype {
                 }
                 // info.world_index == *index
                 if *add {
-                    moving.push((info.world_index, column_index.into(), result.len().into()));
+                    if existed_adding_is_move {
+                        moving.push((info.world_index, column_index.into(), result.len().into()));
+                    }else{
+                        adding.push((info.world_index, result.len().into()));
+                    }
                     result.add(info.clone());
+
                 } else {
                     removing.push((info.world_index, column_index.into()));
                 }
