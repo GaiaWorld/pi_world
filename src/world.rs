@@ -561,114 +561,114 @@ impl World {
         self.get_component_mut_index_impl(e, index)
     }
 
-    /// 增加和删除实体
-    pub fn alter_components(
-        &mut self,
-        e: Entity,
-        components: &[(ComponentIndex, bool)],
-    ) -> Result<(), QueryError> {
-        let mut components = components.to_vec();
-        components.reverse(); // 相同ComponentIndex的多个增删操作，让最后的操作执行
-        components.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
-        let components = components.as_slice();
+    // /// 增加和删除实体
+    // pub fn alter_components(
+    //     &mut self,
+    //     e: Entity,
+    //     components: &[(ComponentIndex, bool)],
+    // ) -> Result<(), QueryError> {
+    //     let mut components = components.to_vec();
+    //     components.reverse(); // 相同ComponentIndex的多个增删操作，让最后的操作执行
+    //     components.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
+    //     let components = components.as_slice();
 
-        let addr = match self.entities.get(e) {
-            Some(v) => v,
-            None => return Err(QueryError::NoSuchEntity),
-        };
+    //     let addr = match self.entities.get(e) {
+    //         Some(v) => v,
+    //         None => return Err(QueryError::NoSuchEntity),
+    //     };
         
-        let ar_index = addr.archetype_index();
-        let mut ar = self.empty_archetype();
+    //     let ar_index = addr.archetype_index();
+    //     let mut ar = self.empty_archetype();
 
-        if !addr.index.is_null() {
-            ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
-            let ae = ar.mark_remove(addr.row);
-            if e != ae {
-                return Err(QueryError::NoMatchEntity(ae));
-            }
-        }
+    //     if !addr.index.is_null() {
+    //         ar = unsafe { self.archetype_arr.get_unchecked(ar_index as usize)};
+    //         let ae = ar.mark_remove(addr.row);
+    //         if e != ae {
+    //             return Err(QueryError::NoMatchEntity(ae));
+    //         }
+    //     }
         
-        // let mut sort_add = vec![];
-        // let mut sort_remove = vec![];
+    //     // let mut sort_add = vec![];
+    //     // let mut sort_remove = vec![];
 
-        // TODO, 性能
-        // let mut array =  Vec::new();
-        // for (index, is_add) in components.iter() {
-        //     let v = if *is_add {
-        //         1u16
-        //     } else {
-        //         0
-        //     };
-        //     // 去除已经有了需要添加的和没有需要删除的组件
-        //     let column = ar.get_column_index(*index);
-        //     if *is_add == column.is_null() {
-        //         array.insert_value(index.index(), v);
-        //     } 
-        // }
-        // for index in 0..array.len() {
-        //     if array[index] != u16::MAX{
-        //         if let Some(info) = self.get_component_info(index.into()){
-        //             if array[index] == 0{
-        //                 sort_remove.push(info.clone());
-        //             } else if array[index] == 1{
-        //                 // if ar.get(row)
-        //                 sort_add.push(info.clone());
-        //             } 
-        //         }
-        //     }
-        // }
-        // sort_add.sort();
-        // sort_remove.sort();
-        // let mut id = ComponentInfo::calc_id(&sort_add);
+    //     // TODO, 性能
+    //     // let mut array =  Vec::new();
+    //     // for (index, is_add) in components.iter() {
+    //     //     let v = if *is_add {
+    //     //         1u16
+    //     //     } else {
+    //     //         0
+    //     //     };
+    //     //     // 去除已经有了需要添加的和没有需要删除的组件
+    //     //     let column = ar.get_column_index(*index);
+    //     //     if *is_add == column.is_null() {
+    //     //         array.insert_value(index.index(), v);
+    //     //     } 
+    //     // }
+    //     // for index in 0..array.len() {
+    //     //     if array[index] != u16::MAX{
+    //     //         if let Some(info) = self.get_component_info(index.into()){
+    //     //             if array[index] == 0{
+    //     //                 sort_remove.push(info.clone());
+    //     //             } else if array[index] == 1{
+    //     //                 // if ar.get(row)
+    //     //                 sort_add.push(info.clone());
+    //     //             } 
+    //     //         }
+    //     //     }
+    //     // }
+    //     // sort_add.sort();
+    //     // sort_remove.sort();
+    //     // let mut id = ComponentInfo::calc_id(&sort_add);
 
-        // println!("components: {:?}", components);
-        // if sort_add.len() > 0{
+    //     // println!("components: {:?}", components);
+    //     // if sort_add.len() > 0{
             
-        // }
-        let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
-        // println!("mapping1: {:?}", mapping);
-        // let mut moved_columns = vec![];
-        // let mut added_columns = vec![];
-        // let mut removed_columns = vec![];
-        let mut adding = Default::default();
-        let mut moving = Default::default();
-        let mut removing = Default::default();
-        let mut removed_columns = Default::default();
-        let mut move_removed_columns = Default::default();
+    //     // }
+    //     let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
+    //     // println!("mapping1: {:?}", mapping);
+    //     // let mut moved_columns = vec![];
+    //     // let mut added_columns = vec![];
+    //     // let mut removed_columns = vec![];
+    //     let mut adding = Default::default();
+    //     let mut moving = Default::default();
+    //     let mut removing = Default::default();
+    //     let mut removed_columns = Default::default();
+    //     let mut move_removed_columns = Default::default();
 
-        mapping_init(
-            self,
-            &mut mapping,
-            components,
-            &mut adding,
-            &mut moving,
-            &mut removing,
-            &mut removed_columns,
-            &mut move_removed_columns,
-            true,
-        );
-        // println!("moved_columns: {:?}", moved_columns);
-        // println!("added_columns: {:?}", added_columns);
-        // println!("removed_columns: {:?}", removed_columns);
+    //     mapping_init(
+    //         self,
+    //         &mut mapping,
+    //         components,
+    //         &mut adding,
+    //         &mut moving,
+    //         &mut removing,
+    //         &mut removed_columns,
+    //         &mut move_removed_columns,
+    //         true,
+    //     );
+    //     // println!("moved_columns: {:?}", moved_columns);
+    //     // println!("added_columns: {:?}", added_columns);
+    //     // println!("removed_columns: {:?}", removed_columns);
 
-        let _ = alloc_row(&mut mapping, addr.row, e);
-        // let (_add_index, add)  = self.find_ar(sort_add);
+    //     let _ = alloc_row(&mut mapping, addr.row, e);
+    //     // let (_add_index, add)  = self.find_ar(sort_add);
        
-        // for col in add.get_columns().iter() {
-        //     col.add_record(e, dst_row, self.tick());
-        // }
-        // log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
-        // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        let tick = self.tick();
-        insert_columns(&mut mapping, &adding, tick.clone());
-        move_columns(&mut mapping, &moving);
-        remove_columns(&mut mapping, &removed_columns, tick);
-        move_remove_columns(&mut mapping, &move_removed_columns);
-        // add_columns(&mut mapping, self.tick());
-        update_table_world(&self, &mut mapping);
+    //     // for col in add.get_columns().iter() {
+    //     //     col.add_record(e, dst_row, self.tick());
+    //     // }
+    //     // log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
+    //     // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
+    //     let tick = self.tick();
+    //     insert_columns(&mut mapping, &adding, tick.clone());
+    //     move_columns(&mut mapping, &moving);
+    //     remove_columns(&mut mapping, &removed_columns, tick);
+    //     move_remove_columns(&mut mapping, &move_removed_columns);
+    //     // add_columns(&mut mapping, self.tick());
+    //     update_table_world(&self, &mut mapping);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub(crate) fn get_component_ptr<T: 'static>(&self, e: Entity) -> Result<&mut T, QueryError> {
