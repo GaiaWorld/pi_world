@@ -16,7 +16,7 @@ pub struct ColumnDebug {
 }
 
 impl World{
-    pub fn assert_archetype_aar(&self, archetypes_info: &[Option<ArchetypeDebug>]){
+    pub fn assert_archetype_arr(&self, archetypes_info: &[Option<ArchetypeDebug>]){
         if !archetypes_info.is_empty(){
             assert_eq!(archetypes_info.len(), self.archetype_arr.len(), "{:?}", self.archetype_arr);
         }

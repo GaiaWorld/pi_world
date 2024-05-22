@@ -1137,20 +1137,20 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
-                ],
+            ],
             remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
 
-        app.world.assert_archetype_aar(&[None, Some(info.clone())]);
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
         app.run();
 
         info.columns_info[0].as_mut().unwrap().change_listeners = 1;
         info.entitys = Some(2);
         info.removes = Some(1);
 
-        app.world.assert_archetype_aar(&[None, Some(info)]);
+        app.world.assert_archetype_arr(&[None, Some(info)]);
     }
 
    
