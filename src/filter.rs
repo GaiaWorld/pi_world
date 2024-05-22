@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
-use crate::archetype::{Archetype, ComponentInfo, COMPONENT_REMOVED, COMPONENT_TICK};
+use crate::archetype::{Archetype, ComponentInfo, COMPONENT_CHANGED, COMPONENT_REMOVED, COMPONENT_TICK};
 use crate::system::SystemMeta;
 use crate::world::{ComponentIndex, World};
 
@@ -82,7 +82,7 @@ pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
     fn init_listeners(world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Changed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK)).0));
+        listeners.push(ListenType::Changed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK | COMPONENT_CHANGED)).0));
     }
 }
 

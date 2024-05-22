@@ -11,7 +11,7 @@ use pi_arr::{Arr, Location, BUCKETS};
 use pi_null::Null;
 
 use crate::{
-    archetype::{ComponentInfo, Row, COMPONENT_TICK},
+    archetype::{ComponentInfo, Row},
     dirty::Dirty,
     prelude::Entity,
     world::Tick,
@@ -51,7 +51,7 @@ impl Column {
     }
     #[inline]
     pub fn add_record(&self, e: Entity, row: Row, tick: Tick) {
-        if self.info().tick_removed & COMPONENT_TICK == 0 {
+        if !self.info().is_tick() {
             return;
         }
         // println!("add_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
@@ -60,7 +60,7 @@ impl Column {
     }
     #[inline]
     pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
-        if self.info().tick_removed & COMPONENT_TICK == 0 {
+        if !self.info().is_tick() {
             return;
         }
         let old = self.ticks.load_alloc(row.0 as usize);
@@ -125,7 +125,7 @@ impl Column {
     /// 扩容
     pub fn reserve(&mut self, len: usize, additional: usize) {
         self.blob.reserve(len, additional);
-        if self.info().tick_removed & COMPONENT_TICK != 0 {
+        if self.info().is_tick() {
             self.ticks.reserve(additional);
         }
         self.dirty.reserve(additional);

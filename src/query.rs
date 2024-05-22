@@ -183,7 +183,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.cur_param_ok();
-        Self::State::create(world, unsafe{transmute(system_meta.type_info.type_id)})
+        Self::State::create(world)
     }
     fn archetype_depend(
         world: &World,
@@ -240,7 +240,7 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetEl
         Q::init_read_write(world, system_meta);
         F::init_read_write(world, system_meta);
         system_meta.param_set_check();
-        Self::State::create(world, unsafe{transmute(system_meta.type_info.type_id)})
+        Self::State::create(world)
     }
 }
 impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
@@ -251,7 +251,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, 
 }
 /// 监听原型创建， 添加record
 pub struct Notify<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-    id: u128,
+    id: Tick,
     listeners: SmallVec<[ListenType; 1]>,
     _a: (PhantomData<&'a ()>,PhantomData<Q>,PhantomData<F>),
 }
@@ -273,7 +273,7 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
 // 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
 unsafe fn add_dirty_listeners(
     ar: &Archetype,
-    owner: u128,
+    owner: Tick,
     listeners: &SmallVec<[ListenType; 1]>,
 ) {
     for ltype in listeners.iter() {
@@ -288,7 +288,7 @@ unsafe fn add_dirty_listeners(
 // 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
 unsafe fn find_dirty_listeners(
     ar: &Archetype,
-    owner: u128,
+    owner: Tick,
     listeners: &SmallVec<[ListenType; 1]>,
     vec: &mut SmallVec<[DirtyIndex; 1]>,
 ) {
@@ -329,25 +329,23 @@ impl pi_null::Null for ArchetypeLocalIndex{
 
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-    pub(crate) id: u128,
+    pub(crate) id: Tick, // 由world上分配的唯一tick
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
-    pub(crate) archetype_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
+    pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
+    pub(crate) archetypes: Vec<Archetype>, // 原型
+    pub(crate) local_archetypes_len: usize, // 本地vec的长度，应该可能在alter中添加原型，这是要通过这个长度和vec.len()来判断是否已经添加原型
     pub(crate) last_run: Tick,                                         // 上次运行的tick
-    // pub(crate) cache_mapping: (ArchetypeWorldIndex, ArchetypeLocalIndex), // 缓存上次的索引映射关系
     _k: PhantomData<F>,
-    //id: u32,
 }
 
 impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
-    pub fn create(world: &mut World, id: u128) -> Self {
-        let qid = TypeId::of::<Q>();
-        let fid = TypeId::of::<F>();
-        let id = unsafe { id ^ transmute::<_, u128>(qid)^ transmute::<_, u128>(fid)};
+    pub fn create(world: &mut World) -> Self {
+        let id = world.increment_tick();
         let mut listeners = Default::default();
         if F::LISTENER_COUNT > 0 {
             F::init_listeners(world, &mut listeners);
@@ -369,15 +367,16 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         QueryState::new(id, listeners)
     }
-    pub fn new(id: u128, listeners: SmallVec<[ListenType; 1]>) -> Self {
+    pub fn new(id: Tick, listeners: SmallVec<[ListenType; 1]>) -> Self {
         Self {
             id,
             listeners,
             vec: Vec::new(),
-            archetype_len: 0,
+            archetypes_len: 0,
+            archetypes: Vec::new(),
             map: Default::default(),
+            local_archetypes_len: 0,
             last_run: Tick::default(),
-            // cache_mapping: (ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)),
             _k: PhantomData,
         }
     }
@@ -397,15 +396,17 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();
-        if len == self.archetype_len {
+        if len == self.archetypes_len {
             return;
         }
+        let local_len = self.archetypes.len();
         // 检查新增的原型
-        for i in self.archetype_len..len {
+        for i in self.archetypes_len..len {
             let ar = unsafe { world.archetype_arr.get_unchecked(i) };
-            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32) );
+            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32), local_len);
         }
-        self.archetype_len = len;
+        self.archetypes_len = len;
+        self.local_archetypes_len = self.archetypes.len();
     }
     // 新增的原型
     pub fn add_archetype(
@@ -413,10 +414,18 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         world: &World,
         ar: &ShareArchetype,
         index: ArchetypeWorldIndex,
+        local_len: usize,
     ) {
         // 判断原型是否和查询相关
         if !Self::relate(world, ar) {
             return;
+        }
+        // 忽略已经添加的原型
+        for i in self.local_archetypes_len..local_len {
+            let v = unsafe {self.archetypes.get_unchecked(i)};
+            if v.id() == ar.id() {
+                return;
+            }
         }
         let mut listeners = SmallVec::new();
         if F::LISTENER_COUNT > 0 {

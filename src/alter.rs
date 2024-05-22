@@ -20,7 +20,6 @@ use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
 use std::ops::{Deref, DerefMut, Range};
 
-use bevy_utils::HashMap;
 use pi_null::Null;
 
 use crate::archetype::*;
@@ -120,7 +119,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
         )?;
-        if let Some(new_ar) = self.state.alter(
+        if let Some((new_ar, index)) = self.state.alter(
             &self.query.world,
             local_index,
             e,
@@ -128,8 +127,8 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             components,
             self.query.tick,
         ) {
-            // todo 将新多出来的原型，判断是否相关，如果相关则放入到query上，这样可以多次alter
-            // self.query.state.map.insert(e, new_ar);
+            // 将新多出来的原型，判断是否相关，如果相关则放入到query上，这样可以多次alter
+            self.query.state.add_archetype(&self.query.world, new_ar, index, self.query.state.local_archetypes_len);
         };
         Ok(true)
     }
@@ -317,10 +316,8 @@ impl<
     > ParamSetElement for Alter<'_, Q, F, A, D>
 {
     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        Q::init_read_write(world, system_meta);
-        F::init_read_write(world, system_meta);
         system_meta.param_set_check();
-        let q = QueryState::create(world, unsafe { transmute(system_meta.type_info.type_id) });
+        let q = QueryState::create(world);
         (
             q,
             AlterState::make(world, A::components(Vec::new()), D::components(Vec::new())),
@@ -378,7 +375,7 @@ impl ArchetypeMapping {
     ) {
         let src_data: *mut u8 = src_column.get_row(src_row);
         dst_column.write_row(dst_row, src_data);
-        if src_column.info().tick_removed & COMPONENT_TICK != 0 {
+        if src_column.info().is_tick() {
             let tick = src_column.get_tick_unchecked(src_row);
             dst_column.add_record_unchecked(e, dst_row, tick);
         }
@@ -467,11 +464,11 @@ impl State {
         world: &'a World,
         mapping: &mut ArchetypeMapping,
         existed_adding_is_move: bool,
-    ) -> (bool, Option<ShareArchetype>) {
+    ) -> (bool, bool) {
         // let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("find_mapping: {:?}", (ar_index, mapping.src.index(), mapping.dst.index(), mapping.dst_index));
         if !mapping.dst_index.is_null() {
-            return (false, None);
+            return (false, false);
         }
         let add_start: usize = self.adding.len();
         let move_start = self.moving.len();
@@ -493,7 +490,7 @@ impl State {
             // 同原型内移动，由于bundle_vec的对应位置还未初始化，所以is_new应为true
             mapping.dst = mapping.src.clone();
             mapping.dst_index = mapping.src.index();
-            return (true, None);
+            return (true, false);
         }
         let (dst_index, dst) = world.find_archtype(info);
         mapping.dst = dst;
@@ -515,7 +512,7 @@ impl State {
                 .push((i.into(), remove_column_index));
         }
         mapping.move_removed_indexs = move_removed_start..self.move_removed_columns.len();
-        (true, Some(mapping.dst.clone()))
+        (true, true)
     }
     pub(crate) fn alter_row(
         &self,
@@ -607,7 +604,7 @@ impl<A: Bundle> AlterState<A> {
         src_row: Row,
         components: A,
         tick: Tick,
-    ) -> Option<ShareArchetype> {
+    ) -> Option<(&ShareArchetype, ArchetypeWorldIndex)> {
         let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
         let (is_new, new_ar) = self.state.find_mapping(world, mapping, false);
@@ -636,7 +633,11 @@ impl<A: Bundle> AlterState<A> {
         A::insert(item, components, e, dst_row, tick);
         self.state
             .alter_row(world, mapping, src_row, dst_row, e, tick);
-        new_ar
+        if new_ar {
+            Some((&mapping.dst, mapping.dst_index))
+        } else {
+            None
+        }
     }
 }
 
@@ -766,7 +767,7 @@ pub(crate) fn move_column(
         // println!("move_column dst_column: {:?}, src_column: {:?}, src_row: {:?}, dst_row: {:?}", (dst_column.info().world_index, &dst_column.info().type_name), (src_column.info().world_index, &src_column.info().type_name), src_row, dst_row);
         dst_column.write_row(*dst_row, src_data);
     }
-    if src_column.info().tick_removed & COMPONENT_TICK != 0 {
+    if src_column.info().is_tick() {
         for (src_row, dst_row, e) in moves.iter() {
             let tick = src_column.get_tick_unchecked(*src_row);
             dst_column.add_record_unchecked(*e, *dst_row, tick);

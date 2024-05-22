@@ -70,12 +70,12 @@ impl Null for EntityRow {
 // 监听器信息
 #[derive(Debug, Default)]
 pub struct ListenerInfo {
-    owner: u128, // 监听器id，由system::id和Query::id组成
+    owner: Tick, // 监听器id，也是QueryState.id, 由world上分配的唯一tick
     read_len: ShareUsize, // 已读取的长度
     tick: ShareUsize, // 读取时的tick
 }
 impl ListenerInfo {
-    pub fn new(owner: u128) -> Self {
+    pub fn new(owner: Tick) -> Self {
         Self {
             owner,
             read_len: ShareUsize::new(0),
@@ -93,7 +93,7 @@ unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
     /// 插入一个监听者的类型id
-    pub(crate) fn insert_listener(&mut self, owner: u128) {
+    pub(crate) fn insert_listener(&mut self, owner: Tick) {
         // println!("insert_listener!!! self: {:p}", self);
 		self.listeners.push(ListenerInfo::new(owner));
         self.min_tick = 0usize.into();
@@ -103,7 +103,7 @@ impl Dirty {
         &self.listeners
     }
     // 返回监听器的位置
-    pub fn find_listener_index(&self, owner: u128) -> u32 {
+    pub fn find_listener_index(&self, owner: Tick) -> u32 {
         self.listener_list()
             .iter()
             .enumerate()

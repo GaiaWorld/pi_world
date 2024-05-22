@@ -427,7 +427,8 @@ impl ArchetypeInfo {
 }
 
 pub const COMPONENT_TICK: u8 = 1;
-pub const COMPONENT_REMOVED: u8 = 2;
+pub const COMPONENT_CHANGED: u8 = 2;
+pub const COMPONENT_REMOVED: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ComponentInfo {
@@ -437,17 +438,17 @@ pub struct ComponentInfo {
     pub default_fn: Option<fn(*mut u8)>,
     pub mem_size: usize,             // 内存大小
     pub world_index: ComponentIndex, // 在world上的索引
-    pub tick_removed: u8,            // 是否有tick及removed tick = 1 removed = 2
+    pub tick_info: u8,            // tick信息 tick = 1 changed = 2 removed = 4
 }
 impl ComponentInfo {
-    pub fn of<T: 'static>(tick_removed: u8) -> ComponentInfo {
+    pub fn of<T: 'static>(tick_info: u8) -> ComponentInfo {
         ComponentInfo::create(
             TypeId::of::<T>(),
             std::any::type_name::<T>().into(),
             get_drop::<T>(),
             <T as SetDefault>::default_fn(),
             size_of::<T>(),
-            tick_removed,
+            tick_info,
         )
     }
     pub fn create(
@@ -456,7 +457,7 @@ impl ComponentInfo {
         drop_fn: Option<fn(*mut u8)>,
         default_fn: Option<fn(*mut u8)>,
         mem_size: usize,
-        tick_removed: u8,
+        tick_info: u8,
     ) -> Self {
         ComponentInfo {
             type_id,
@@ -465,11 +466,20 @@ impl ComponentInfo {
             default_fn,
             mem_size,
             world_index: ComponentIndex::null(),
-            tick_removed,
+            tick_info,
         }
     }
     pub fn id(&self) -> u128 {
         unsafe { transmute::<TypeId, u128>(self.type_id) }.into()
+    }
+    pub fn is_tick(&self) -> bool {
+        self.tick_info & COMPONENT_TICK != 0
+    }
+    pub fn is_changed(&self) -> bool {
+        self.tick_info & COMPONENT_CHANGED != 0
+    }
+    pub fn is_removed(&self) -> bool {
+        self.tick_info & COMPONENT_REMOVED != 0
     }
     pub fn calc_id(vec: &Vec<ComponentInfo>) -> u128 {
         let mut id = 0;
