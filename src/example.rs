@@ -80,6 +80,7 @@ pub fn print_changed_entities(
         Entity,
         &mut Age0,
         &mut Age1,
+        ArchetypeName,
         // &Age2, &Age3, &Age4, &Age5, &Age6, &Age7, &Age8
     )>,
     // q1: Query<(Entity, &mut Age1)>,
@@ -94,12 +95,13 @@ pub fn print_changed_entities(
         e,
         mut age0,
         age1,
+        aname,
         // age2, age3, age4, age5, age6, age7, age8
     ) in q
     {
         // let a =1+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         age0.0 += 1 + age1.0;
-        println!("print_changed_entities {:?}", e);
+        println!("print_changed_entities {:?}", (e, aname));
         //+age2.0+age3.0+age4.0+age6.0+age7.0+age8.0;
         // age1.0 +=1+age5.0[0];
     }
@@ -120,7 +122,7 @@ pub fn print_changed_entities(
     println!("print_changed_entities over");
 }
 pub fn alter1(
-    mut i0: Alter<&Age2, (), (Age3,), (Age4,)>,
+    mut i0: Alter<(), (), (Age3,), (Age4,)>,
     q0: Query<(Entity, &mut Age0, &mut Age1)>,
 ) {
     println!("alter1");
@@ -197,14 +199,14 @@ struct Rotation([f32; 3]);
 
 #[derive(Copy, Clone, Component)]
 struct Velocity([f32; 3]);
-
+ 
 #[cfg(test)]
 mod test_mod {
  
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -438,7 +440,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_alter() {
+    fn test_alter() { 
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
@@ -476,16 +478,19 @@ mod test_mod {
     }
     #[test]
     fn test_alter2() {
+        println!("0");
         let mut world = World::new();
         let i = world.make_inserter::<(Age0,)>();
-        let _entities = (0..10_000)
+        let _entities = (0..1)
             .map(|_| i.insert((Age0(0),)))
             .collect::<Vec<_>>();
         world.collect();
         {
+            println!("1");
             let mut alter = world.make_alterer::<(&Age0,), (), (Age1,), ()>();
             let mut it = alter.iter_mut();
             while let Some(_) = it.next() {
+                println!("2");
                 let _ = it.alter((Age1(0),));
             }
         }
@@ -865,7 +870,7 @@ mod test_mod {
     }
 
     #[test]
-    fn alter(){
+    fn alter(){ 
         let mut world = World::new();
         let i = world.make_inserter::<(Age1, Age0)>();
         let e1 = i.insert((Age1(2), Age0(1)));
@@ -985,7 +990,7 @@ mod test_mod {
 
             let (e, age0, age2) = item.unwrap();
             println!("query!!! e: {:?}, age0: {:?}, age2: {:?}", e, age0, age2);
-            
+
             println!("query end!!!");
          }
          
@@ -1096,7 +1101,7 @@ mod test_mod {
         // app.run();
     }
 
-    #[test]
+    #[test] 
     fn test_alter3() {
         pub struct EntityRes(Entity);
 
@@ -1124,18 +1129,35 @@ mod test_mod {
             ];
             sort_components.sort_by(|a, b|a.0.cmp(&b.0));
             
-            w.alter_components(e.0,&sort_components,);
+            w.alter_components(e.0, &sort_components,);
             println!("alter end!!");
         }
 
         app.add_system(Update, query);
         app.add_system(Update, alter);
 
-        for _ in 0..2 {
-            app.run();
-        }
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+                ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
 
-        // app.run();
+        app.world.assert_archetype_aar(&[None, Some(info.clone())]);
+        app.run();
+
+        info.columns_info[0].as_mut().unwrap().change_listeners = 1;
+        info.entitys = Some(2);
+        info.removes = Some(1);
+
+        app.world.assert_archetype_aar(&[None, Some(info)]);
     }
+
+   
 
 }

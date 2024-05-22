@@ -16,14 +16,12 @@ use core::result::Result;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
-use std::iter::Map;
 use std::mem::{transmute, ManuallyDrop,};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
 use crate::prelude::Mut;
 use crate::system::TypeInfo;
-use crate::utils::VecExt;
 use crate::alter::{
     alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
 };
@@ -156,10 +154,10 @@ impl World {
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
         let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
-        empty_archetype.index.store(0, Ordering::Relaxed);
+        // empty_archetype.index.store(0, Ordering::Relaxed);
         let component_arr = SafeVec::with_capacity(1);
         let archetype_map = DashMap::new();
-        archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
+        // archetype_map.insert(*empty_archetype.id(), empty_archetype.clone());
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
@@ -496,7 +494,7 @@ impl World {
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
 
         if let Some((c, _)) = ar.get_column(index) {
-            let t =self.tick();
+            let t = self.tick();
             let value: Mut<T> = Mut::new(
                 &ColumnTick::new(c, t, t),
                 e,
@@ -551,6 +549,8 @@ impl World {
         let mut components = components.to_vec();
         components.reverse(); // 相同ComponentIndex的多个增删操作，让最后的操作执行
         components.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
+        let components = components.as_slice();
+
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
@@ -615,18 +615,17 @@ impl World {
         let mut removed_columns = Default::default();
         let mut move_removed_columns = Default::default();
 
-        let mut id = 0;
         mapping_init(
             self,
             &mut mapping,
-            components.as_slice(),
+            components,
             &mut adding,
             &mut moving,
             &mut removing,
             &mut removed_columns,
             &mut move_removed_columns,
+            true,
         );
-        println!("e: {:?}, src: {:?}, dst: {:?}", e, mapping.src.name(), mapping.dst.name());
         // println!("moved_columns: {:?}", moved_columns);
         // println!("added_columns: {:?}", added_columns);
         // println!("removed_columns: {:?}", removed_columns);
@@ -637,9 +636,7 @@ impl World {
         // for col in add.get_columns().iter() {
         //     col.add_record(e, dst_row, self.tick());
         // }
-        // println!("mapping3: {:?}", mapping);
-        // println!("adding: {:?}", adding);
-        // println!("mapping.moves: {:?}", mapping.moves);
+        // log::warn!("mapping3: {:?}, {:?}, {:?}, {:?}, =={:?}", e, addr.row, dst_row, mapping.src.name(), mapping.dst.name());
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         let tick = self.tick();
         insert_columns(&mut mapping, &adding, tick.clone());
@@ -697,7 +694,6 @@ impl World {
         &self,
         info: ArchetypeInfo,
     ) -> (ArchetypeWorldIndex, ShareArchetype) {
-        assert!(info.id > 0);
         // 如果world上没有找到对应的原型，则创建并放入world中
         let (ar, b) = match self.archetype_map.entry(info.id) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
@@ -823,6 +819,7 @@ fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, 
         let dst_column = am.dst.get_column_unchecked(*dst_i);
         for (_src, dst_row, e) in am.moves.iter() {
             let dst_data: *mut u8 = dst_column.load(*dst_row);
+            // println!("dst_column====={:?}", dst_column.info().type_name);
             dst_column.info().default_fn.unwrap()(dst_data);
             dst_column.add_record(*e, *dst_row, tick)
         }

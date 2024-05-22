@@ -162,10 +162,12 @@ unsafe impl<T> Send for TypeItem<T> {}
 impl<T: 'static> TypeItem<T> {
     #[inline(always)]
     pub fn new(c: &Column) -> Self {
+        // println!("TypeItem new:{:?} {:p}", (c.info().type_name), c);
         TypeItem(unsafe { transmute(c) }, PhantomData)
     }
     #[inline(always)]
     pub fn write(&self, e: Entity, row: Row, val: T, tick: Tick) {
+        // println!("TypeItem write:{:?} {:p}", (e, row, tick), self.0);
         let c: &mut Column = unsafe { transmute(self.0) };
         c.write(row, val);
         c.add_record(e, row, tick);

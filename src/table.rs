@@ -30,7 +30,7 @@ pub struct Table {
     remove_columns: SafeVec<RemovedColumn>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
     lock: SpinLock<()>, // 用于保护多线程下两个alter同时添加相同组件的情况
     pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
-    removes: AppendVec<Row>,                    // 整理前被移除的实例
+    pub(crate) removes: AppendVec<Row>,                    // 整理前被移除的实例
 }
 impl Table {
     pub fn new(sorted_components: Vec<ComponentInfo>) -> Self {
@@ -64,20 +64,17 @@ impl Table {
     }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {
-        *self.entities.load_alloc(row.0 as usize)
+        *self.entities.load_alloc(row.index())
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
-        let a = self.entities.load_alloc(row.0 as usize);
+        let a = self.entities.load_alloc(row.index());
+        // println!("set1：{:p} {:p} {:?}", &self.entities, a, (&a, row, e, self.entities.vec_capacity(), self.entities.len()));
         *a = e;
     }
     #[inline(always)]
     pub fn get_columns(&self) -> &Vec<Column> {
         &self.sorted_columns
-    }
-    #[inline(always)]
-    pub fn column_map(&self) -> &mut Vec<ColumnIndex> {
-        todo!()//unsafe {transmute(self.column_map.get())}
     }
     pub fn get_column_index_by_tid(&self, world: &World, tid: &TypeId) -> ColumnIndex {
         self.get_column_index(world.get_component_index(tid))
@@ -89,7 +86,9 @@ impl Table {
         self.column_map.get(index.index()).map_or(ColumnIndex::null(), |r| *r)
     }
     pub fn get_column(&self, index: ComponentIndex) -> Option<(&Column, ColumnIndex)> {
+        // println!("get_column：{:?}", index);
         if let Some(t) = self.column_map.get(index.index()) {
+            // println!("get_column1：{:?}", t);
             if t.is_null() {
                 return None;
             }
@@ -252,7 +251,7 @@ impl Table {
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_destroy(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row.0 as usize);
+        let e = self.entities.load_alloc(row.index());
         if e.is_null() {
             return *e;
         }
@@ -263,7 +262,7 @@ impl Table {
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row.0 as usize);
+        let e = self.entities.load_alloc(row.index());
         if e.is_null() {
             return *e;
         }
@@ -314,7 +313,7 @@ impl Table {
         if remove_len == 1 {
             // 移除一个，用交换尾部的方式
             let remove_row = unsafe { removes.get_unchecked(0) };
-            if (*remove_row).0 as usize + 1 < entity_len {
+            if remove_row.index() + 1 < entity_len {
                 action.push((Row(entity_len as u32 - 1), *remove_row));
             }
             return entity_len - 1;
@@ -335,7 +334,7 @@ impl Table {
             while start < end {
                 index -= 1;
                 let remove_row = unsafe { action.get_unchecked(end - 1) };
-                if remove_row.0.0 as usize == index {
+                if remove_row.0.index() == index {
                     // 最大的要移动的行就是entitys的最后一个，则跳过
                     end -= 1;
                     continue;
@@ -353,7 +352,7 @@ impl Table {
         set.clear();
         set.grow(entity_len);
         for row in removes.iter() {
-            set.set((*row).0 as usize, true);
+            set.set(row.index(), true);
         }
         let ones = set.ones();
         let mut end = entity_len;
@@ -438,11 +437,11 @@ impl Table {
         for (src, dst) in action.iter() {
             let e = unsafe {
                 replace(
-                    self.entities.get_unchecked_mut((*src).0 as usize),
+                    self.entities.get_unchecked_mut(src.index()),
                     Entity::null(),
                 )
             };
-            *unsafe { self.entities.get_unchecked_mut((*dst).0 as usize) } = e;
+            *unsafe { self.entities.get_unchecked_mut(dst.index()) } = e;
             // 修改world上entity的地址
             world.replace_row(e, *dst);
         }
@@ -457,7 +456,7 @@ impl Table {
 }
 impl Drop for Table {
     fn drop(&mut self) {
-        let len = self.len().0 as usize;
+        let len = self.len().index();
         if len == 0 {
             return;
         }
@@ -479,12 +478,15 @@ impl Debug for Table {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Table")
             .field("entitys", &self.entities)
-            .field("columns", &self.sorted_columns)
+            .field("sorted_columns", &self.sorted_columns)
+            .field("remove_columns", &self.remove_columns)
+            .field("destroys", unsafe { &*self.destroys.get() })
             .field("removes", &self.removes)
             .finish()
     }
 }
 
+#[derive(Debug)]
 pub struct RemovedColumn {
     pub(crate) ticks: AppendVec<Tick>,
     pub(crate) dirty: Dirty,

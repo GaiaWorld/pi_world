@@ -266,13 +266,14 @@ impl Archetype {
         (add, moving)
     }
     // 从本原型上计算改变后了原型信息， 在该原型下添加一些组件，删除一些组件，得到新原型信息，及移动的组件
-    pub fn alter1(
+    pub(crate) fn alter1(
         &self,
         world: &World,
         sorted_add_removes: &[(ComponentIndex, bool)], // 升序
         adding: &mut Vec<(ComponentIndex, ColumnIndex)>,
         moving: &mut Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>,
         removing: &mut Vec<(ComponentIndex, ColumnIndex)>,
+        existed_adding_is_move: bool,
     ) -> ArchetypeInfo {
         let mut result: ArchetypeInfo = Default::default();
         let mut column_index = 0;
@@ -313,8 +314,13 @@ impl Archetype {
                 }
                 // info.world_index == *index
                 if *add {
-                    moving.push((info.world_index, column_index.into(), result.len().into()));
+                    if existed_adding_is_move {
+                        moving.push((info.world_index, column_index.into(), result.len().into()));
+                    }else{
+                        adding.push((info.world_index, result.len().into()));
+                    }
                     result.add(info.clone());
+
                 } else {
                     removing.push((info.world_index, column_index.into()));
                 }

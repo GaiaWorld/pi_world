@@ -12,6 +12,8 @@
 ## 扩展SystemMeta，将对Component和Res的读写进行记录，这样在SystemMeta上判断原型是否相关及组件级别的读写分析。这样就消除了FetchComponents的archetype_depend和res_depend。SystemParam的archetype_depend和res_depend也可以不要了。
 ## 将FetchComponents的init_read_write改为init_state，QueryState初始化时就获得QS和FS，这样可以消除QueryState的每原型状态。只有每原型的DirtyIndex，但没有泛型了。 Iter就可以分成2个部分，最核心的部分就可以消除泛型了。
 ## 将脏监听及owner和Related放到world上，原型创建或脏监听创建，都彼此扫描，确保列上有对应tick和脏。 这样可以不使用监听器模式，但还是要解决判断查询是否和原型相关的问题。SystemMeta要有1个Related列表(组件 读写 或)，用于判断查询是否和原型相关。
+## 优化原型名字的表达，类似use 模块。
+## 可查看出整个world的原型内存状态。过程包括（insert alter)，
 
 
 # v0.1.11 
