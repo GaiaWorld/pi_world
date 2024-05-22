@@ -1,4 +1,4 @@
-use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, ops::Range, pin::Pin};
+use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
 
 use crate::{
     archetype::{Archetype, ArchetypeDependResult, Flags},

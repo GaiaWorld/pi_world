@@ -93,15 +93,6 @@ unsafe impl Sync for Dirty {}
 unsafe impl Send for Dirty {}
 impl Dirty {
     /// 插入一个监听者的类型id
-    pub(crate) fn new() -> Self {
-        Self {
-            listeners: Vec::new(),
-            vec: AppendVec::default(),
-            min_tick: usize::MAX.into(),
-        }
-    }
-
-    /// 插入一个监听者的类型id
     pub(crate) fn insert_listener(&mut self, owner: u128) {
         // println!("insert_listener!!! self: {:p}", self);
 		self.listeners.push(ListenerInfo::new(owner));
@@ -160,15 +151,15 @@ impl Dirty {
         if len == 0 {
             return Some(0);
         }
-        let mut min_tick = usize::MAX;
+        let mut min_tick = Tick::max();
         let mut can = true;
         for info in self.listeners.iter_mut() {
-            min_tick = min_tick.min(info.tick.load(Ordering::Relaxed));
+            min_tick = min_tick.min(info.tick.load(Ordering::Relaxed).into());
             if *info.read_len.get_mut() < len {
                 can = false;
             }
         }
-        self.min_tick = min_tick.into();
+        self.min_tick = min_tick;
         // 只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
         if can {
             Some(len)

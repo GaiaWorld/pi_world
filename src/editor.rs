@@ -1,18 +1,24 @@
 use std::mem::{transmute, ManuallyDrop};
 
+use pi_map::hashmap::HashMap;
+
 use crate::{
-    insert::Bundle,
-    prelude::{Entity, Mut, QueryError, Tick, World},
-    system::SystemMeta,
-    system_params::SystemParam,
-    world::ComponentIndex,
+    alter::State, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::ArchetypeLocalIndex, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
-pub struct EntityEditor<'w>(ManuallyDrop<&'w mut World>);
+pub struct EntityEditor<'w> {
+    alter_map: HashMap<u128, State>, // sorted_add_removes的hash值
+    archetype_map: HashMap<(u128, u128), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+    world: ManuallyDrop<&'w mut World>
+}
 
 impl<'w> EntityEditor<'w> {
-    pub fn new(w: ManuallyDrop<&'w mut World>) -> Self {
-        Self(w)
+    pub fn new(world: ManuallyDrop<&'w mut World>) -> Self {
+        Self{
+            alter_map:HashMap::default(),
+            archetype_map: HashMap::default(),
+            world
+        }
     }
 
     pub fn add_components(
@@ -25,7 +31,7 @@ impl<'w> EntityEditor<'w> {
             .filter_map(|v| Some((*v, true)))
             .collect::<Vec<(ComponentIndex, bool)>>();
 
-        self.0.alter_components(e, &mut components)
+        self.world.alter_components(e, &mut components)
     }
 
     pub fn remove_components(
@@ -38,7 +44,7 @@ impl<'w> EntityEditor<'w> {
             .filter_map(|v| Some((*v, false)))
             .collect::<Vec<(ComponentIndex, bool)>>();
 
-        self.0.alter_components(e, &mut components)
+        self.world.alter_components(e, &mut components)
     }
 
     pub fn alter_components(
@@ -46,11 +52,12 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &mut [(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
-        self.0.alter_components(e, components)
+
+        self.world.alter_components(e, components)
     }
 
     pub fn insert_components(&mut self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
-        let e = self.0.alloc_entity();
+        let e = self.world.alloc_entity();
         let mut components = components
             .iter()
             .filter_map(|v| Some((*v, true)))
@@ -61,31 +68,31 @@ impl<'w> EntityEditor<'w> {
     }
 
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
-        self.0.destroy_entity2(e)
+        self.world.destroy_entity2(e)
     }
 
     pub fn alloc(&self) -> Entity {
-        self.0.alloc_entity()
+        self.world.alloc_entity()
     }
 
     pub fn get<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
-        self.0.get_component::<B>(e)
+        self.world.get_component::<B>(e)
     }
 
     pub fn get_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Result<Mut<B>, QueryError> {
-        self.0.get_component_mut1::<B>(e)
+        self.world.get_component_mut1::<B>(e)
     }
 
     pub fn get_unchecked<B: Bundle + 'static>(&'w self, e: Entity) -> &'w B {
-        self.0.get_component::<B>(e).unwrap()
+        self.world.get_component::<B>(e).unwrap()
     }
 
     pub fn get_unchecked_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Mut<B> {
-        self.0.get_component_mut1::<B>(e).unwrap()
+        self.world.get_component_mut1::<B>(e).unwrap()
     }
 
     pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
-        self.0.init_component::<B>()
+        self.world.init_component::<B>()
     }
 }
 

@@ -81,6 +81,9 @@ impl Tick {
     pub fn index(&self) -> usize {
         self.0 as usize
     }
+    pub fn max() -> Self {
+        Self(u32::MAX)
+    }
 }
 impl Deref for Tick {
     type Target = u32;
@@ -754,7 +757,7 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
-        let e = ar.mark_destroy(addr.row, self.tick());
+        let e = ar.mark_destroy(addr.row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
@@ -768,7 +771,7 @@ impl World {
             None => return Err(QueryError::NoSuchEntity),
         };
         let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
-        let e = ar.mark_destroy(addr.row, self.tick());
+        let e = ar.mark_destroy(addr.row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
