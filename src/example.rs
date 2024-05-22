@@ -1484,66 +1484,54 @@ mod test_mod {
         // app.run();
     }
 
-    // #[test]
-    // fn test_editor() {
-    //     let mut app = SingleThreadApp::new();
-    //     pub fn alter_add(mut edit: EntityEditor) {
-    //         println!("alter_add start!!");
-    //         let mut scomponents = [
-    //             edit.init_component::<Age0>(), 
-    //             edit.init_component::<Age1>()
-    //         ];
+    #[test]
+    fn test_editor() {
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(mut edit: EntityEditor) {
+            println!("alter_add start!!");
+            let mut scomponents = [
+                edit.init_component::<Age0>(), 
+                edit.init_component::<Age1>()
+            ];
 
-    //         let _ = edit
-    //             .insert_components(&scomponents);
-    //         println!("alter_add start!!");
-    //     }
+            let e = edit.insert_components(&scomponents).unwrap();
+            println!("alter_add end!! e: {:?}", e);
+        }
 
-    //     pub fn alter_add2(
-    //         mut edit: EntityEditor,
-    //         q: Query<(Entity, &Age1, &Age0), (Changed<Age1>)>,
-    //     ) {
-    //         println!("alter_add2 start!!");
-    //         // assert_eq!(q.is_empty(), false);
-    //         let iter = q.iter().next();
-    //         assert_eq!(iter.is_some(), true);
-    //         let (e, age1, age0) = iter.unwrap();
+        pub fn alter_add2(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age1, &Age0), (Changed<Age1>, Changed<Age0>)>,
+        ) {
+            println!("alter_add2 start!!");
+            // assert_eq!(q.is_empty(), false);
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age0) = iter.unwrap();
 
-    //         println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-    //         edit.alter_components(e, &mut [(edit.init_component::<Age2>(), true)])
-    //             .unwrap();
+            println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
+            edit.alter_components(e, &[
+                (edit.init_component::<Age2>(), true),
+                (edit.init_component::<Age3>(), true),
+                (edit.init_component::<Age0>(), false),
+            ]).unwrap();
  
-    //         println!("alter_add2 end");
-    //     }
+            println!("alter_add2 end");
+        }
 
+        pub fn query(q: Query<(Entity, &Age1, &Age2, &Age3), (Changed<Age3>, Removed<Age0>)>) {
+            println!("query start!!!");
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age2, age3) = iter.unwrap();
+            println!("query end!!!");
+        }
 
-    //     pub fn query(q: Query<(Entity, &Age0, &Age2), (Changed<Age10>)>) {
-    //         println!("query start!!!");
-    //         let iter = q.iter().next();
-    //         assert_eq!(iter.is_null(), true);
-    //         println!("query end!!!");
-    //     }
+        app.add_system(Update, alter_add);
+        app.add_system(Update, alter_add2);
+        app.add_system(Update, query);
 
-    //     app.add_system(Update, alter_add);
-    //     app.add_system(Update, alter_add2);
-    //     app.add_system(Update, query);
-        
-    //     // let mut info = ArchetypeDebug {
-    //     //     entitys: Some(1),
-    //     //     columns_info: vec![
-    //     //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
-    //     //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
-    //     //         Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
-    //     //     ],
-    //     //     remove_columns: Some(0),
-    //     //     destroys_listeners: Some(0),
-    //     //     removes: Some(0),
-    //     // };
-
-    //     app.run();
-
-    //     // app.run();
-    // }
+        app.run();
+    }
 
     #[test] 
     fn test_alter3() {

@@ -108,8 +108,8 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     /// 标记销毁实体
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
-        self.state
-            .destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        // self.state
+        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -204,8 +204,8 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     /// 标记销毁实体
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
-        self.state
-            .destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        // self.state
+        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -326,7 +326,7 @@ impl<
 }
 
 #[derive(Debug)]
-pub(crate) struct ArchetypeMapping {
+pub struct ArchetypeMapping {
     pub(crate) src: ShareArchetype,               // 源原型
     pub(crate) dst: ShareArchetype,               // 映射到的目标原型
     pub(crate) dst_index: ArchetypeWorldIndex,    // 目标原型在World原型数组中的位置
@@ -428,7 +428,7 @@ impl ArchetypeMapping {
 
 pub struct State {
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
-    adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
+    pub(crate) adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
     moving: Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>, // 两个ColumnIndex分别是源原型vec中的位置及目标原型vec中的位置
     removing: Vec<(ComponentIndex, ColumnIndex)>,            // ColumnIndex是组件在源原型vec中的位置
     removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
@@ -537,7 +537,7 @@ impl State {
 
     /// 标记销毁实体
     fn destroy(
-        &self,
+        // &self,
         world: &World,
         vec: &Vec<ArchetypeMapping>, // 记录所有的原型映射
         entity: Entity,
@@ -549,7 +549,7 @@ impl State {
         Self::destroy_row(world, ar, addr.row)
     }
     /// 标记销毁
-    fn destroy_row(world: &World, ar: &Archetype, row: Row) -> Result<bool, QueryError> {
+    pub(crate) fn destroy_row(world: &World, ar: &Archetype, row: Row) -> Result<bool, QueryError> {
         let e = ar.mark_destroy(row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);

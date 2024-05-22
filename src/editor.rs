@@ -1,29 +1,55 @@
-use core::hash;
-use std::{hash::{DefaultHasher, Hash, Hasher}, mem::{transmute, ManuallyDrop}};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    mem::{transmute, ManuallyDrop},
+};
 
 use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{ArchetypeMapping, State}, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::ArchetypeLocalIndex, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
+    alter::{ArchetypeMapping, State},
+    archetype::Row,
+    insert::Bundle,
+    prelude::{Entity, Mut, QueryError, Tick, World},
+    query::ArchetypeLocalIndex,
+    system::SystemMeta,
+    system_params::SystemParam,
+    world::ComponentIndex,
 };
 
+impl State {
+    fn insert_columns(&self, am: &mut ArchetypeMapping, dst_row: Row, e: Entity, tick: Tick) {
+        for i in am.add_indexs.clone().into_iter() {
+            let (_, dst_i) = unsafe { self.adding.get_unchecked(i) };
+            let dst_column = am.dst.get_column_unchecked(*dst_i);
+            let dst_data: *mut u8 = dst_column.load(dst_row);
+            dst_column.info().default_fn.unwrap()(dst_data);
+            dst_column.add_record(e, dst_row, tick)
+        }
+    }
+}
 pub struct EntityEditor<'w> {
-    alter_map: HashMap<u64, State>, // sorted_add_removes的hash值
-    archetype_map: HashMap<(u32, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+    alter_map: &'w mut HashMap<u64, State>, // sorted_add_removes的hash值
+    archetype_map: &'w mut HashMap<(u32, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     world: ManuallyDrop<&'w mut World>,
-    vec: Vec<ArchetypeMapping>,
-    tmp: Vec<(ComponentIndex, bool)>,
+    vec: &'w mut Vec<ArchetypeMapping>,
+    tmp: &'w mut Vec<(ComponentIndex, bool)>,
 }
 
 impl<'w> EntityEditor<'w> {
-    pub fn new(world: ManuallyDrop<&'w mut World>) -> Self {
-        Self{
-            alter_map: HashMap::default(),
-            archetype_map: HashMap::default(),
+    pub fn new(
+        alter_map: &'w mut HashMap<u64, State>, // sorted_add_removes的hash值
+        archetype_map: &'w mut HashMap<(u32, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+        world: ManuallyDrop<&'w mut World>,
+        vec: &'w mut Vec<ArchetypeMapping>,
+        tmp: &'w mut Vec<(ComponentIndex, bool)>,
+    ) -> Self {
+        Self {
+            alter_map,
+            archetype_map,
             world,
-            vec: Vec::new(),
-            tmp: Vec::new(),
+            vec,
+            tmp,
         }
     }
 
@@ -32,12 +58,11 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
-        let mut components = components
-            .iter()
-            .filter_map(|v| Some((*v, true)))
-            .collect::<Vec<(ComponentIndex, bool)>>();
-
-        self.world.alter_components(e, &mut components)
+        self.tmp.clear();
+        for item in components.iter().rev() {
+            self.tmp.push((*item, true));
+        }
+        self.alter_components_impl(e)
     }
 
     pub fn remove_components(
@@ -45,12 +70,11 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
-        let mut components = components
-            .iter()
-            .filter_map(|v| Some((*v, false)))
-            .collect::<Vec<(ComponentIndex, bool)>>();
-
-        self.world.alter_components(e, &mut components)
+        self.tmp.clear();
+        for item in components.iter().rev() {
+            self.tmp.push((*item, false));
+        }
+        self.alter_components_impl(e)
     }
 
     pub fn alter_components(
@@ -59,44 +83,51 @@ impl<'w> EntityEditor<'w> {
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
         self.tmp.clear();
-        for item in components.iter().rev(){
+        for item in components.iter().rev() {
             self.tmp.push(*item)
         }
         // components.reverse(); // 相同ComponentIndex的多个增删操作，让最后的操作执行
+        self.alter_components_impl(e)
+    }
+
+    fn alter_components_impl(&mut self, e: Entity) -> Result<(), QueryError> {
         self.tmp.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
-        
+
         let mut hasher = DefaultHasher::new();
         self.tmp.hash(&mut hasher);
-        let hash = hasher.finish() ;
-        
+        let hash = hasher.finish();
+
         let addr = match self.world.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        
+
         let ar_index = addr.archetype_index();
         let mut ar = self.world.empty_archetype();
 
         if !addr.index.is_null() {
-            ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index as usize)};
+            ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index as usize) };
             let ae = ar.mark_remove(addr.row);
             if e != ae {
                 return Err(QueryError::NoMatchEntity(ae));
             }
         }
 
-        let local_index = if let Some(local_index ) = self.archetype_map.get(&(ar_index, hash)){
+        let local_index = if let Some(local_index) = self.archetype_map.get(&(ar_index, hash)) {
             *local_index
-        }else{
-            self.vec.push(ArchetypeMapping::new(ar.clone(), self.world.empty_archetype().clone()));
+        } else {
+            self.vec.push(ArchetypeMapping::new(
+                ar.clone(),
+                self.world.empty_archetype().clone(),
+            ));
             let local_index = ArchetypeLocalIndex::from(self.vec.len() - 1);
             self.archetype_map.insert((ar_index, hash), local_index);
             local_index
         };
 
-        let state = if let Some(state) = self.alter_map.get_mut(&hash){
+        let state = if let Some(state) = self.alter_map.get_mut(&hash) {
             state
-        }else{
+        } else {
             self.alter_map.insert(hash, State::new(self.tmp.clone()));
             self.alter_map.get_mut(&hash).unwrap()
         };
@@ -105,24 +136,43 @@ impl<'w> EntityEditor<'w> {
         state.find_mapping(&self.world, mapping, true);
 
         let dst_row = mapping.dst.alloc();
-        state.alter_row(&self.world, mapping, addr.row, dst_row, e, self.world.tick());
+
+        let tick = self.world.tick();
+
+        state.insert_columns(mapping, dst_row, e, tick.clone());
+
+        state.alter_row(&self.world, mapping, addr.row, dst_row, e, tick);
 
         Ok(())
     }
 
-    pub fn insert_components(&mut self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+    pub fn insert_components(
+        &mut self,
+        components: &[ComponentIndex],
+    ) -> Result<Entity, QueryError> {
         let e = self.world.alloc_entity();
-        let mut components = components
-            .iter()
-            .filter_map(|v| Some((*v, true)))
-            .collect::<Vec<(ComponentIndex, bool)>>();
-        // self.0.i.alter_components(e, components)
-        self.alter_components(e, &mut components)?;
+
+        self.tmp.clear();
+        for item in components.iter().rev() {
+            self.tmp.push((*item, true))
+        }
+        
+        self.alter_components_impl(e)?;
         Ok(e)
     }
 
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
-        self.world.destroy_entity2(e)
+        let addr = match self.world.entities.get(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity),
+        };
+
+        let ar_index = addr.archetype_index();
+        let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index as usize) };
+
+        State::destroy_row(&self.world, ar, addr.row)?;
+
+        Ok(())
     }
 
     pub fn alloc(&self) -> Entity {
@@ -151,22 +201,32 @@ impl<'w> EntityEditor<'w> {
 }
 
 impl SystemParam for EntityEditor<'_> {
-    type State = ();
+    type State = (
+        HashMap<u64, State>,
+        HashMap<(u32, u64), ArchetypeLocalIndex>,
+        Vec<ArchetypeMapping>,
+        Vec<(ComponentIndex, bool)>,
+    );
     type Item<'w> = EntityEditor<'w>;
 
     fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         // 如果world上没有找到对应的原型，则创建并放入world中
-        ()
+        (
+            HashMap::default(),
+            HashMap::default(),
+            Vec::new(),
+            Vec::new(),
+        )
     }
 
     #[inline]
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
-        _state: &'world mut Self::State,
+        state: &'world mut Self::State,
         _tick: Tick,
     ) -> Self::Item<'world> {
-        EntityEditor::new(world.unsafe_world())
+        EntityEditor::new(&mut state.0, &mut state.1, world.unsafe_world(),  &mut state.2, &mut state.3)
     }
     #[inline]
     fn get_self<'world>(
