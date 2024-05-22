@@ -56,7 +56,7 @@ impl Column {
         }
         // println!("add_record1===={:?}", (e, self.is_record_tick, self.ticks.load_alloc(row.0 as usize), row, tick, &self.blob.info.type_name));
         *self.ticks.load_alloc(row.0 as usize) = tick;
-        self.dirty.record(e, row);
+        self.dirty.record(e, row, tick);
     }
     #[inline]
     pub fn change_record(&self, e: Entity, row: Row, tick: Tick) {
@@ -68,12 +68,12 @@ impl Column {
             return;
         }
         *old = tick;
-        self.dirty.record(e, row);
+        self.dirty.record(e, row, tick);
     }
     #[inline]
     pub fn add_record_unchecked(&self, e: Entity, row: Row, tick: Tick) {
         *self.ticks.load_alloc(row.index()) = tick;
-        self.dirty.record(e, row);
+        self.dirty.record(e, row, tick);
     }
     #[inline(always)]
     pub fn get<T>(&self, row: Row) -> &T {

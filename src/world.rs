@@ -81,6 +81,9 @@ impl Tick {
     pub fn index(&self) -> usize {
         self.0 as usize
     }
+    pub fn max() -> Self {
+        Self(u32::MAX)
+    }
 }
 impl Deref for Tick {
     type Target = u32;

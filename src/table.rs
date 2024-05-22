@@ -255,7 +255,7 @@ impl Table {
         if e.is_null() {
             return *e;
         }
-        { unsafe { &*self.destroys.get() } }.record_unchecked(*e, row);
+        { unsafe { &*self.destroys.get() } }.record(*e, row, Tick::max());
         replace(e, Entity::null())
     }
     /// 标记移出，用于delete 和 alter

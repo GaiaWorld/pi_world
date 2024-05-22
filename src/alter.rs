@@ -402,7 +402,7 @@ impl ArchetypeMapping {
                 let d = self.dst.get_remove_column(*dst);
                 *d.ticks.load_alloc(dst_row.index()) = tick;
                 // 在脏列表上记录移除行
-                d.dirty.record(e, dst_row);
+                d.dirty.record(e, dst_row, tick);
             }
         }
     }
