@@ -290,7 +290,23 @@ mod test_mod {
         app.add_system(Update, print_changed_entities);
         println!("data");
         app.run();
+        
+        let mut info = ArchetypeDebug {
+            entitys: Some(2),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+
         app.run();
+        
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
         assert_eq!(app.world.get_component::<Age0>(e1).unwrap().0, 4);
         // assert_eq!(app.world.get_component::<Age0>(e2).unwrap().0, 1);
         // assert_eq!(app.world.get_component::<Age1>(e1).unwrap().0, 2);
@@ -308,13 +324,28 @@ mod test_mod {
         app.add_system(Update, print_changed_entities);
         
         app.run();
+
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+
         app.run();
     }
     #[test]
     fn test_add_remove() {
         let mut world = World::new();
         let i = world.make_inserter::<(A,)>();
-        let entities = (0..10_000).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
+        let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
         world.collect();
         {
             let mut alter = world.make_alterer::<(&A,), (With<A>,), (B,), ()>();
@@ -336,6 +367,29 @@ mod test_mod {
         for e in entities {
             assert_eq!(world.get_component::<B>(e).is_err(), true)
         }
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(20),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(10),
+        };
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(10),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("B")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(10),
+        };
+
+        world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
     }
     #[bench]
     fn bench_heavy_compute(b: &mut Bencher) {
@@ -365,7 +419,7 @@ mod test_mod {
         world.collect();
         let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
         println!("query, {:?}", query.iter().size_hint());
-        b.iter(move || {
+        b.iter( || {
             let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
 
             query.iter_mut().for_each(|(mut pos, mut mat)| {
@@ -418,6 +472,21 @@ mod test_mod {
                 ));
             }
             assert_eq!(world.get_component::<Transform>(e).unwrap().0[0], 9999f32);
+
+            let mut info = ArchetypeDebug {
+                entitys: Some(10_000),
+                columns_info: vec![
+                    Some(ColumnDebug{change_listeners: 0, name: Some("Transform")}),
+                    Some(ColumnDebug{change_listeners: 0, name: Some("Position")}),
+                    Some(ColumnDebug{change_listeners: 0, name: Some("Rotation")}),
+                    Some(ColumnDebug{change_listeners: 0, name: Some("Velocity")}),
+                ],
+                remove_columns: Some(0),
+                destroys_listeners: Some(0),
+                removes: Some(0),
+            };
+    
+            world.assert_archetype_arr(&[None, Some(info.clone())]);
         }
     }
 
@@ -435,6 +504,31 @@ mod test_mod {
         for (a, mut b) in q.iter_mut() {
             b.0 += a.0;
         }
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(2),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+
         assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 1);
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 1);
     }
@@ -448,6 +542,32 @@ mod test_mod {
         app.add_system(Update, p_set);
         
         app.run();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(1),
+        };
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+
         app.run();
         app.run();
     }
@@ -470,6 +590,32 @@ mod test_mod {
             }
         }
         world.collect();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+
         assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 2);
         assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 2);
@@ -501,6 +647,26 @@ mod test_mod {
                 let _ = it.alter(());
             }
         }
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(2),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(1),
+        };
+
+        world.assert_archetype_arr(&[None, Some(info.clone()), None]);
+
+        info.entitys = Some(1);
+        info.columns_info = vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+        ];
+        info.remove_columns = Some(0);
+        world.assert_archetype_arr(&[None, None, Some(info.clone()), ]);
     }
 
     #[test]
@@ -512,7 +678,23 @@ mod test_mod {
         app.add_system(Update, alter1.in_schedule(AddSchedule));
         
         app.run_schedule(AddSchedule);
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+
         app.run_schedule(AddSchedule);
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
     }
     #[test]
     fn test_changed() {
@@ -522,7 +704,30 @@ mod test_mod {
         app.add_system(Update, alter1);
         app.add_system(Update, changed_l);
         
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(1),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), None]);
+
+        info.columns_info = vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+            Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}),
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
+        ];
+        info.removes = Some(0);
+        app.world.assert_archetype_arr(&[None, None, Some(info.clone()),]);
         app.run();
     }
 
@@ -558,8 +763,40 @@ mod test_mod {
         app.add_system(Update, removed_l);
         app.add_system(Update, print_info);
         
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(1),
+        };
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), None]);
+
         app.run();
+
+        info.entitys = Some(2);
+        info.removes = Some(2);
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(2),
+            columns_info: vec![ 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
     }
 
     #[test]
@@ -614,7 +851,28 @@ mod test_mod {
         app.add_system(Update, cd);
         app.add_system(Update, ce);
         
+        let mut info = ArchetypeDebug {
+            entitys: Some(10000),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), None, None, None,]);
+
         app.run();
+
+        info.columns_info = vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+            Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+            Some(ColumnDebug{change_listeners: 0, name: Some("C")}), 
+        ];
+
+        app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
+
         for _ in 0..1000 {
             app.run();
         }
@@ -696,7 +954,28 @@ mod test_mod {
         // app.add_system(Update, cd);
         // app.add_system(Update, ce);
         
+        let mut info = ArchetypeDebug {
+            entitys: Some(10000),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+        app.world.assert_archetype_arr(&[None, Some(info.clone()), None, None, None,]);
+
         app.run();
+
+        info.columns_info = vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+            Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+            Some(ColumnDebug{change_listeners: 0, name: Some("C")}), 
+        ];
+
+        app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
+
         for _ in 0..1000 {
             app.run();
         }
@@ -733,8 +1012,16 @@ mod test_mod {
         app.add_system(Update, cd);
         app.add_system(Update, ce);
         
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        app.world.assert_archetype_arr(&[None]);
+
         assert_eq!(app.world.get_single_res::<B>().unwrap().0, 4.0);
         assert_eq!(app.world.get_single_res::<D>().unwrap().0, 2.0);
         assert_eq!(app.world.get_single_res::<E>().unwrap().0, 2.0);
@@ -774,8 +1061,16 @@ mod test_mod {
         app.add_system(Update, cd);
         app.add_system(Update, ce);
         
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        app.world.assert_archetype_arr(&[None]);
+
         assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);
         assert_eq!(app.world.get_multi_res::<C>(0).unwrap().0, 4.0);
         assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 8.0);
@@ -827,9 +1122,29 @@ mod test_mod {
         app.add_system(Update, insert);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, print_changed2);
-        
+
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+
         app.run();
+
+        info.entitys = Some(2);
+
+        app.world.assert_archetype_arr(&[None, Some(info)]);
     }
 
     #[test]
@@ -844,17 +1159,20 @@ mod test_mod {
             q0: Query<(Entity, &mut Age0, &Age1), ()>,
         ) {
             println!("alter1 it:{:?}", q0.iter().size_hint());
-            for (e, _, _) in q0.iter() {
-                let _r = i0.destroy(e);
-                dbg!(_r);
-            }
+            let item = q0.iter().next();
+            assert_eq!(item.is_some(), true);
+            let (e, _, _) = item.unwrap(); 
+            let _r = i0.destroy(e);
+            dbg!(_r);
+            
             println!("alter1: end");
         }
         pub fn destroyed(q0: Query<(Entity, &mut Age0, &mut Age1), Destroyed>) {
             println!("destroyed");
-            for (e, age0, _) in q0.iter() {
-                println!("e {:?}, age0: {:?}", e, age0);
-            }
+            let item = q0.iter().next();
+            assert_eq!(item.is_some(), true);
+            let (e, age0, _) = item.unwrap();
+            println!("e {:?}, age0: {:?}", e, age0);
         
             println!("destroyed: end");
         }
@@ -865,8 +1183,29 @@ mod test_mod {
         app.add_system(Update, destroyed);
         app.add_system(Update, print_info);
         
+        app.world.assert_archetype_arr(&[None]);
+
         app.run();
+
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(1),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+
         app.run();
+
+        info.entitys = Some(2);
+
+        app.world.assert_archetype_arr(&[None, Some(info)]);
     }
 
     #[test]
