@@ -35,6 +35,7 @@ pub enum QueryError {
     NoSuchEntity,
     NoSuchRow,
     NoSuchRes,
+    RepeatAlter,
 }
 
 pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
@@ -57,13 +58,13 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
     
     pub fn contains(&self, entity: Entity) -> bool {
-        if let Ok( (_addr, world_index, local_index)) = check(
+        if let Ok( (addr, local_index)) = check(
             self.world,
             entity,
             // unsafe { &mut *self.cache_mapping.get() },
             &self.state.map,
         ){
-            unsafe { *self.cache_mapping.get()  = (world_index, local_index)};
+            unsafe { *self.cache_mapping.get()  = (addr.archetype_index(), local_index)};
             return true;
         }else{
             return false;
@@ -120,12 +121,10 @@ unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'wor
 impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     
     pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
-        // let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
         Query {
             world,
             state,
             tick,
-            // cache_mapping,
         }
     }
     
@@ -334,8 +333,6 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
     pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
-    pub(crate) archetypes: Vec<Archetype>, // 原型
-    pub(crate) local_archetypes_len: usize, // 本地vec的长度，应该可能在alter中添加原型，这是要通过这个长度和vec.len()来判断是否已经添加原型
     pub(crate) last_run: Tick,                                         // 上次运行的tick
     _k: PhantomData<F>,
 }
@@ -373,9 +370,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             listeners,
             vec: Vec::new(),
             archetypes_len: 0,
-            archetypes: Vec::new(),
             map: Default::default(),
-            local_archetypes_len: 0,
             last_run: Tick::default(),
             _k: PhantomData,
         }
@@ -399,14 +394,12 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         if len == self.archetypes_len {
             return;
         }
-        let local_len = self.archetypes.len();
         // 检查新增的原型
         for i in self.archetypes_len..len {
             let ar = unsafe { world.archetype_arr.get_unchecked(i) };
-            self.add_archetype(world, ar, ArchetypeWorldIndex(i as u32), local_len);
+            self.add_archetype(world, ar, i.into());
         }
         self.archetypes_len = len;
-        self.local_archetypes_len = self.archetypes.len();
     }
     // 新增的原型
     pub fn add_archetype(
@@ -414,18 +407,10 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         world: &World,
         ar: &ShareArchetype,
         index: ArchetypeWorldIndex,
-        local_len: usize,
     ) {
         // 判断原型是否和查询相关
         if !Self::relate(world, ar) {
             return;
-        }
-        // 忽略已经添加的原型
-        for i in self.local_archetypes_len..local_len {
-            let v = unsafe {self.archetypes.get_unchecked(i)};
-            if v.id() == ar.id() {
-                return;
-            }
         }
         let mut listeners = SmallVec::new();
         if F::LISTENER_COUNT > 0 {
@@ -453,8 +438,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
         // println!("get1======{:?}", (entity, self.map.len()));
-        let (addr, _world_index, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
-        // let arch = world.archetype_arr.get(addr.archetype_index() as usize).unwrap();
+        let (addr, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
 
         let arqs = unsafe { &self.vec.get_unchecked(local_index.index()) };
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  arch.name()));
@@ -490,16 +474,15 @@ pub struct ArchetypeQueryState<S> {
 pub(crate) fn check<'w>(
     world: &'w World,
     entity: Entity,
-    // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     map: &Vec<ArchetypeLocalIndex>,
-) -> Result<(EntityAddr, ArchetypeWorldIndex, ArchetypeLocalIndex), QueryError> {
+) -> Result<(EntityAddr, ArchetypeLocalIndex), QueryError> {
     // assert!(!entity.is_null());
     let addr = match world.entities.get(entity) {
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
     };
 
-    let local_index  = match map.get(addr.index.index()) {
+    let local_index  = match map.get(addr.archetype_index().index()) {
         Some(v) => if v.is_null() {
             return Err(QueryError::NoMatchArchetype);
         } else {
@@ -507,14 +490,12 @@ pub(crate) fn check<'w>(
         },
         None => return Err(QueryError::NoMatchArchetype),
     };
-    return Ok((addr, addr.index, local_index));
-
-    // Ok(addr)
+    Ok((addr, local_index))
 }
 
 pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) world: &'w World,
-    state: &'w QueryState<Q, F>,
+    pub(crate) state: &'w QueryState<Q, F>,
     pub(crate) tick: Tick,
     // 原型的位置
     pub(crate) ar_index: ArchetypeLocalIndex,

@@ -58,7 +58,7 @@ impl pi_null::Null for Row {
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ArchetypeWorldIndex(pub(crate) u32);
+pub struct ArchetypeWorldIndex(pub(crate) i32);
 impl ArchetypeWorldIndex {
     pub fn index(&self) -> usize {
         self.0 as usize
@@ -66,21 +66,21 @@ impl ArchetypeWorldIndex {
 }
 impl From<u32> for ArchetypeWorldIndex {
     fn from(index: u32) -> Self {
-        Self(index)
+        Self(index as i32)
     }
 }
 impl From<usize> for ArchetypeWorldIndex {
     fn from(index: usize) -> Self {
-        Self(index as u32)
+        Self(index as i32)
     }
 }
 impl pi_null::Null for ArchetypeWorldIndex {
     fn null() -> Self {
-        Self(u32::null())
+        Self(i32::null())
     }
 
     fn is_null(&self) -> bool {
-        self.0 == u32::null()
+        self.0.is_null()
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -243,7 +243,7 @@ impl Archetype {
     // 获得ready状态及所在的World原型index
     #[inline(always)]
     pub fn index(&self) -> ArchetypeWorldIndex {
-        ArchetypeWorldIndex(self.index.load(Ordering::Relaxed))
+        self.index.load(Ordering::Relaxed).into()
     }
     // 原型表结构改变， 在该原型下添加一些组件，删除一些组件，得到新原型需要包含哪些组件，及移动的组件
     pub fn alter(

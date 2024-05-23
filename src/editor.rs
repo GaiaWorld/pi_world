@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
-    mem::{transmute, ManuallyDrop},
+    mem::transmute,
 };
 
 use pi_map::{hashmap::HashMap, Map};
@@ -9,7 +9,7 @@ use pi_null::Null;
 
 use crate::{
     alter::{ArchetypeMapping, State},
-    archetype::Row,
+    archetype::{ArchetypeWorldIndex, Row},
     insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
@@ -95,8 +95,8 @@ impl<'w> EntityEditor<'w> {
         let ar_index = addr.archetype_index();
         let mut ar = &self.world.empty_archetype;
 
-        if !addr.index.is_null() {
-            ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index as usize) };
+        if !ar_index.is_null() {
+            ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
             let ae = ar.mark_remove(addr.row);
             if e != ae {
                 return Err(QueryError::NoMatchEntity(ae));
@@ -145,7 +145,7 @@ impl<'w> EntityEditor<'w> {
         components: &[ComponentIndex],
     ) -> Result<Entity, QueryError> {
         let e = self.world.alloc_entity();
-
+        // todo 应该优化一下，遍历时算id，然后在world上查找原型，没有找到再用world.find_ar来创建原型，不应该调用alter_components_impl, alter_components_impl内的ar_index判断也可以去掉
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push((*item, true))
@@ -162,7 +162,7 @@ impl<'w> EntityEditor<'w> {
         };
 
         let ar_index = addr.archetype_index();
-        let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index as usize) };
+        let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
 
         State::destroy_row(&self.world, ar, addr.row)?;
 
@@ -213,7 +213,7 @@ impl<'w> EntityEditor<'w> {
 #[derive(Default)]
 pub struct EditorState {
     alter_map: HashMap<u64, State>, // sorted_add_removes的hash值
-    archetype_map: HashMap<(u32, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+    archetype_map: HashMap<(ArchetypeWorldIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,
     tmp: Vec<(ComponentIndex, bool)>,
 }
@@ -240,7 +240,7 @@ impl SystemParam for EntityEditor<'_> {
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+        _state: &'world mut Self::State,
         _tick: Tick,
     ) -> Self::Item<'world> {
         let ptr: *const World = world;
