@@ -173,20 +173,36 @@ impl<'w> EntityEditor<'w> {
         self.world.alloc_entity()
     }
 
-    pub fn get<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
+    pub fn get_component<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
         self.world.get_component::<B>(e)
     }
 
-    pub fn get_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Result<Mut<B>, QueryError> {
+    pub fn get_component_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Result<Mut<B>, QueryError> {
         self.world.get_component_mut1::<B>(e)
     }
 
-    pub fn get_unchecked<B: Bundle + 'static>(&'w self, e: Entity) -> &'w B {
+    pub fn get_component_unchecked<B: Bundle + 'static>(&self, e: Entity) -> &B {
         self.world.get_component::<B>(e).unwrap()
     }
 
-    pub fn get_unchecked_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Mut<B> {
+    pub fn get_component_unchecked_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Mut<B> {
         self.world.get_component_mut1::<B>(e).unwrap()
+    }
+
+    pub fn get_component_by_index<B: Bundle + 'static>(&self, e: Entity, index: ComponentIndex) -> Result<&B, QueryError> {
+        self.world.get_component_by_index::<B>(e, index)
+    }
+
+    pub fn get_component_mut_by_id<B: Bundle + 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<Mut<B>, QueryError> {
+        self.world.get_component_by_index_mut(e, index)
+    }
+
+    pub fn get_component_unchecked_by_index<B: Bundle + 'static>(&self, e: Entity, index: ComponentIndex) ->&B { 
+        self.world.get_component_by_index::<B>(e, index).unwrap()
+    }
+
+    pub fn get_component_unchecked_mut_by_id<B: Bundle + 'static>(&mut self, e: Entity, index: ComponentIndex) -> Mut<B> {
+        self.world.get_component_by_index_mut(e, index).unwrap()
     }
 
     pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
