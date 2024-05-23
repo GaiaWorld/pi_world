@@ -1,3 +1,21 @@
+use crate::alter::{
+    alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world,
+    AlterState, Alterer, ArchetypeMapping,
+};
+use crate::archetype::{
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype,
+    COMPONENT_CHANGED, COMPONENT_TICK,
+};
+use crate::editor::{EditorState, EntityEditor};
+use crate::fetch::{ColumnTick, FetchComponents};
+use crate::filter::FilterComponents;
+use crate::insert::{Bundle, Inserter};
+use crate::insert_batch::InsertBatchIter;
+use crate::listener::{EventListKey, ListenerMgr};
+use crate::prelude::Mut;
+use crate::query::{QueryError, QueryState, Queryer};
+use crate::safe_vec::{SafeVec, SafeVecIter};
+use crate::system::TypeInfo;
 /// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
@@ -13,33 +31,18 @@
 ///
 use core::fmt::*;
 use core::result::Result;
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::cell::SyncUnsafeCell;
-use std::mem::{transmute, ManuallyDrop,};
-use std::ops::Deref;
-use std::ptr::{self, null_mut};
-use std::sync::atomic::Ordering;
-use crate::prelude::Mut;
-use crate::system::TypeInfo;
-use crate::alter::{
-    alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world, AlterState, Alterer, ArchetypeMapping
-};
-use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype, COMPONENT_CHANGED, COMPONENT_TICK
-};
-use crate::fetch::{ColumnTick, FetchComponents};
-use crate::filter::FilterComponents;
-use crate::insert::{Bundle, Inserter};
-use crate::insert_batch::InsertBatchIter;
-use crate::listener::{EventListKey, ListenerMgr};
-use crate::query::{QueryError, QueryState, Queryer};
-use crate::safe_vec::{SafeVec, SafeVecIter};
 use dashmap::mapref::{entry::Entry, one::Ref};
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
 use pi_key_alloter::new_key_type;
+use std::any::{Any, TypeId};
+use std::borrow::Cow;
+use std::cell::SyncUnsafeCell;
+use std::mem::{transmute, ManuallyDrop};
+use std::ops::Deref;
+use std::ptr::{self, null_mut};
+use std::sync::atomic::Ordering;
 // use pi_map::hashmap::HashMap;
 // use pi_map::Map;
 use pi_null::Null;
@@ -57,12 +60,12 @@ impl ComponentIndex {
         self.0 as usize
     }
 }
-impl From <u32> for ComponentIndex {
+impl From<u32> for ComponentIndex {
     fn from(index: u32) -> Self {
         Self(index)
     }
 }
-impl From <usize> for ComponentIndex {
+impl From<usize> for ComponentIndex {
     fn from(index: usize) -> Self {
         Self(index as u32)
     }
@@ -72,7 +75,7 @@ impl pi_null::Null for ComponentIndex {
         Self(u32::null())
     }
     fn is_null(&self) -> bool {
-       self.0 == u32::null()
+        self.0 == u32::null()
     }
 }
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -110,7 +113,6 @@ impl From<usize> for Tick {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
 #[derive(Clone, Debug)]
@@ -145,6 +147,7 @@ pub struct World {
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
     pub(crate) empty_archetype: ShareArchetype,
+    pub(crate) entity_editor_state: EditorState,
     pub(crate) listener_mgr: ListenerMgr,
     archetype_init_key: EventListKey,
     archetype_ok_key: EventListKey,
@@ -177,6 +180,7 @@ impl World {
             archetype_init_key,
             archetype_ok_key,
             tick: ShareUsize::new(1),
+            entity_editor_state: Default::default(),
         }
     }
     // 获得世界当前的tick
@@ -203,6 +207,11 @@ impl World {
         Inserter::new(self, (ar_index, ar, s), self.tick())
     }
 
+    /// 创建一个实体编辑器
+    pub fn make_entity_editor(&mut self) -> EntityEditor {
+        EntityEditor::new( self)
+    }
+
     /// 是否存在实体
     pub fn contains(&self, entity: Entity) -> bool {
         self.entities.contains_key(entity)
@@ -214,7 +223,12 @@ impl World {
             .map_or(ComponentIndex::null(), |r| *r.value())
     }
     /// 获得指定组件的索引
-    pub fn add_component_indexs(&mut self, components: Vec<ComponentInfo>, result: &mut Vec<(ComponentIndex, bool)>, result_add: bool) {
+    pub fn add_component_indexs(
+        &mut self,
+        components: Vec<ComponentInfo>,
+        result: &mut Vec<(ComponentIndex, bool)>,
+        result_add: bool,
+    ) {
         for c in components {
             result.push((self.add_component_info(c).0, result_add));
         }
@@ -234,10 +248,10 @@ impl World {
                 info.world_index = index;
                 e.insert(info);
                 entry.insert(index);
-                return (index, None)
-            },
+                return (index, None);
+            }
         };
-        let info = unsafe { self.component_arr.load_unchecked(index.index())};
+        let info = unsafe { self.component_arr.load_unchecked(index.index()) };
         let t = info.tick_info | tick_info;
         if t != info.tick_info {
             // 扫描当前原型，如果原型中存在该组件，则将该组件tick_removed设置为tick_removed
@@ -253,14 +267,14 @@ impl World {
                 let info = c.info_mut();
                 let old = info.tick_info;
                 info.tick_info = tick_info;
-                if tick_info &COMPONENT_TICK != 0 && old & COMPONENT_TICK == 0 {
+                if tick_info & COMPONENT_TICK != 0 && old & COMPONENT_TICK == 0 {
                     let tick = self.increment_tick();
                     // 将已经存在的实体修改tick
                     for i in 0..ar.len().index() {
                         *c.ticks.load_alloc(i) = tick;
                     }
                 }
-                if tick_info &COMPONENT_CHANGED != 0 && old & COMPONENT_CHANGED == 0 {
+                if tick_info & COMPONENT_CHANGED != 0 && old & COMPONENT_CHANGED == 0 {
                     // 将已经存在的实体强行放入脏列表，因为添加新的组件信息时，监听器可能尚未安装
                     for i in 0..ar.len().index() {
                         let row = i.into();
@@ -284,10 +298,13 @@ impl World {
                 c.tick_info = tick_removed;
             }
         }
-        components.sort_unstable_by(|a, b| a.world_index .cmp(&b.world_index));
-        ArchetypeInfo{id, sorted_components: components}
+        components.sort_unstable_by(|a, b| a.world_index.cmp(&b.world_index));
+        ArchetypeInfo {
+            id,
+            sorted_components: components,
+        }
     }
-        /// 创建一个查询器
+    /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
         &mut self,
     ) -> Queryer<Q, F> {
@@ -305,7 +322,8 @@ impl World {
         &mut self,
     ) -> Alterer<Q, F, A, D> {
         let mut query_state = QueryState::create(self);
-        let mut alter_state = AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
+        let mut alter_state =
+            AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
         Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
@@ -339,10 +357,13 @@ impl World {
 
     // 如果不存在单例类型， 则注册指定的单例资源（不插入具体值，只添加类型），为了安全，必须保证不在ECS执行中调用，返回索引
     pub fn or_register_single_res(&mut self, type_info: TypeInfo) -> usize {
-        let r = self.single_res_map.entry(type_info.type_id).or_insert_with(|| {
-            let index = self.single_res_arr.insert(None);
-            (None, index, type_info.name)
-        });
+        let r = self
+            .single_res_map
+            .entry(type_info.type_id)
+            .or_insert_with(|| {
+                let index = self.single_res_arr.insert(None);
+                (None, index, type_info.name)
+            });
         r.value().1
     }
 
@@ -495,35 +516,44 @@ impl World {
         unsafe { transmute(self.get_component_ptr::<T>(e)) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub fn get_component_mut<T: 'static>(&mut self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
-    //    self.get_component_info(index)
-       let index  = self.init_component::<T>();
-       self.get_component_mut_index_impl(e, index)
-    }
-
-     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
-    pub(crate) fn get_component_mut1<T: 'static>(&mut self, e: Entity) -> Result<Mut<'static, T>, QueryError> {
-        let index  = self.init_component::<T>();
+    pub fn get_component_mut<T: 'static>(
+        &mut self,
+        e: Entity,
+    ) -> Result<Mut<'static, T>, QueryError> {
+        //    self.get_component_info(index)
+        let index = self.init_component::<T>();
         self.get_component_mut_index_impl(e, index)
     }
 
-    pub(crate) fn get_component_mut_index_impl<T: 'static>(&self, e: Entity, index: ComponentIndex) -> Result<Mut<'static, T>, QueryError> {
+    /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
+    pub(crate) fn get_component_mut1<T: 'static>(
+        &mut self,
+        e: Entity,
+    ) -> Result<Mut<'static, T>, QueryError> {
+        let index = self.init_component::<T>();
+        self.get_component_mut_index_impl(e, index)
+    }
+
+    pub(crate) fn get_component_mut_index_impl<T: 'static>(
+        &self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Result<Mut<'static, T>, QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
+        let ar = unsafe {
+            self.archetype_arr
+                .get_unchecked(addr.archetype_index() as usize)
+        };
 
         if let Some((c, _)) = ar.get_column(index) {
             let t = self.tick();
-            let value: Mut<T> = Mut::new(
-                &ColumnTick::new(c, t, t),
-                e,
-                addr.row,
-            );
-            return Ok(unsafe { transmute(value) }); 
+            let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
+            return Ok(unsafe { transmute(value) });
         } else {
-            return Err(QueryError::MissingComponent)
+            return Err(QueryError::MissingComponent);
         }
     }
 
@@ -536,11 +566,14 @@ impl World {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
+        let ar = unsafe {
+            self.archetype_arr
+                .get_unchecked(addr.archetype_index() as usize)
+        };
         if let Some((c, _)) = ar.get_column(index) {
             return Ok(c.get_row(addr.row));
         } else {
-            return Err(QueryError::MissingComponent)
+            return Err(QueryError::MissingComponent);
         }
     }
 
@@ -550,7 +583,7 @@ impl World {
         e: Entity,
         index: ComponentIndex,
     ) -> Result<&T, QueryError> {
-        unsafe { transmute(self.get_component_ptr_by_index(e, index))}
+        unsafe { transmute(self.get_component_ptr_by_index(e, index)) }
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component_by_index_mut<T: 'static>(
@@ -576,7 +609,7 @@ impl World {
     //         Some(v) => v,
     //         None => return Err(QueryError::NoSuchEntity),
     //     };
-        
+
     //     let ar_index = addr.archetype_index();
     //     let mut ar = self.empty_archetype();
 
@@ -587,7 +620,7 @@ impl World {
     //             return Err(QueryError::NoMatchEntity(ae));
     //         }
     //     }
-        
+
     //     // let mut sort_add = vec![];
     //     // let mut sort_remove = vec![];
 
@@ -603,7 +636,7 @@ impl World {
     //     //     let column = ar.get_column_index(*index);
     //     //     if *is_add == column.is_null() {
     //     //         array.insert_value(index.index(), v);
-    //     //     } 
+    //     //     }
     //     // }
     //     // for index in 0..array.len() {
     //     //     if array[index] != u16::MAX{
@@ -613,7 +646,7 @@ impl World {
     //     //             } else if array[index] == 1{
     //     //                 // if ar.get(row)
     //     //                 sort_add.push(info.clone());
-    //     //             } 
+    //     //             }
     //     //         }
     //     //     }
     //     // }
@@ -623,7 +656,7 @@ impl World {
 
     //     // println!("components: {:?}", components);
     //     // if sort_add.len() > 0{
-            
+
     //     // }
     //     let mut mapping = ArchetypeMapping::new(ar.clone(), self.empty_archetype().clone());
     //     // println!("mapping1: {:?}", mapping);
@@ -653,7 +686,7 @@ impl World {
 
     //     let _ = alloc_row(&mut mapping, addr.row, e);
     //     // let (_add_index, add)  = self.find_ar(sort_add);
-       
+
     //     // for col in add.get_columns().iter() {
     //     //     col.add_record(e, dst_row, self.tick());
     //     // }
@@ -684,7 +717,10 @@ impl World {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.archetype_index() as usize) };
+        let ar = unsafe {
+            self.archetype_arr
+                .get_unchecked(addr.archetype_index() as usize)
+        };
         let index = self.get_component_index(tid);
         if let Some((c, _)) = ar.get_column(index) {
             Ok(c.get_row(addr.row))
@@ -782,8 +818,8 @@ impl World {
         self.entities.remove(e).unwrap();
         Ok(())
     }
-     /// 销毁指定的实体
-     pub(crate) fn destroy_entity2(&self, e: Entity) -> Result<(), QueryError> {
+    /// 销毁指定的实体
+    pub(crate) fn destroy_entity2(&self, e: Entity) -> Result<(), QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity),
@@ -834,7 +870,11 @@ impl Default for World {
 }
 
 // 将需要移动的全部源组件移动到新位置上
-fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, ColumnIndex)>,  tick: Tick) {
+fn insert_columns(
+    am: &mut ArchetypeMapping,
+    add_columns: &Vec<(ComponentIndex, ColumnIndex)>,
+    tick: Tick,
+) {
     for i in am.add_indexs.clone().into_iter() {
         let (_, dst_i) = unsafe { add_columns.get_unchecked(i) };
         let dst_column = am.dst.get_column_unchecked(*dst_i);
@@ -861,7 +901,6 @@ fn insert_columns(am: &mut ArchetypeMapping, add_columns: &Vec<(ComponentIndex, 
     // }
     // }
 }
-
 
 /// Creates an instance of the type this trait is implemented for
 /// using data from the supplied [World].
@@ -958,6 +997,6 @@ impl EntityAddr {
     }
     #[inline(always)]
     pub fn archetype_index(&self) -> u32 {
-        self.index.0 
+        self.index.0
     }
 }

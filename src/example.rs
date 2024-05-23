@@ -1538,12 +1538,20 @@ mod test_mod {
             println!("query end!!!");
         }
 
-        pub fn query2(q: Query<(Entity, &Age1, &Age2, &Age3), (Changed<Age3>)>) {
+        pub fn query2(q: Query<(Entity, &Age1, &Age2, &Age3, ), (Changed<Age3>)>, editor: EntityEditor) {
             println!("query2 start!!!");
             let iter = q.iter().next();
             assert_eq!(iter.is_some(), true);
             let (e, age1, age2, age3) = iter.unwrap();
+            editor.destroy(e);
             println!("query2 end!!!");
+        }
+
+        pub fn query3(q: Query<(Entity, &Age1, &Age2, &Age3,)>,) {
+            println!("query3 start!!!");
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+            println!("query3 end!!!");
         }
 
         app.add_system(Update, alter_add);
@@ -1551,6 +1559,7 @@ mod test_mod {
         app.add_system(Update, alter_add3);
         app.add_system(Update, query);
         app.add_system(Update, query2);
+        app.add_system(Update, query3);
 
         app.run();
 

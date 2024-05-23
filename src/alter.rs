@@ -426,6 +426,7 @@ impl ArchetypeMapping {
     }
 }
 
+#[derive(Debug)]
 pub struct State {
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
     pub(crate) adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
