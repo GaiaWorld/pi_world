@@ -424,6 +424,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         for i in self.local_archetypes_len..local_len {
             let v = unsafe {self.archetypes.get_unchecked(i)};
             if v.id() == ar.id() {
+                println!("add_archetype repeat======{:?}", (v.id(), v.name()));
                 return;
             }
         }
@@ -498,6 +499,7 @@ pub(crate) fn check<'w>(
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
     };
+    // println!("addr======{:?}", (entity, addr));
 
     let local_index  = match map.get(addr.index.index()) {
         Some(v) => if v.is_null() {

@@ -9,7 +9,7 @@ use pi_null::Null;
 
 use crate::{
     alter::{ArchetypeMapping, State},
-    archetype::Row,
+    archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row},
     insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
@@ -37,9 +37,11 @@ impl<'w> EntityEditor<'w> {
     pub fn new(world: &'w mut World) -> Self {
         Self { world }
     }
-
     fn state(&mut self)-> &mut EditorState{
         &mut self.world.entity_editor_state
+    }
+    fn get_entity_prototype(&self, e: Entity) -> Option<(ArchetypeInfo, ArchetypeWorldIndex)> {
+        self.world.get_entity_prototype(e)
     }
     pub fn add_components(
         &mut self,

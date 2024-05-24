@@ -123,7 +123,7 @@ fn vec_set(vec: &mut Vec<NodeIndex>, index: usize, value: NodeIndex) {
     *unsafe { vec.get_unchecked_mut(index) } = value;
 }
 #[derive(Clone)]
-pub struct ExecGraph(Share<GraphInner>, String);
+pub struct ExecGraph(Share<GraphInner>, pub String);
 
 impl ExecGraph {
     pub fn new(name: String) -> Self {
@@ -457,6 +457,13 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("run start===={:?}", sys.name());
+                    #[cfg(feature = "trace")]
+                    {
+                        use tracing::Instrument;
+                        let system_span = tracing::info_span!("system", name = &**sys.name());
+                        sys.run(world).instrument(system_span).await;
+                    }
+                    #[cfg(not(feature = "trace"))]
                     sys.run(world).await;
                     // println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, node_index)

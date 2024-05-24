@@ -215,14 +215,17 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             // self.query.cache_mapping.get_mut(),
             &self.query.state.map,
         )?;
-        self.state.alter(
+        if let Some((new_ar, index)) = self.state.alter(
             &self.query.world,
             local_index,
             e,
             addr.row,
             components,
             self.query.tick,
-        );
+        ) {
+            // 将新多出来的原型，判断是否相关，如果相关则放入到query上，这样可以多次alter
+            self.query.state.add_archetype(&self.query.world, new_ar, index, self.query.state.local_archetypes_len);
+        };
         Ok(true)
     }
 }
