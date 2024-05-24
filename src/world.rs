@@ -211,8 +211,8 @@ impl World {
     /// 获得实体的原型信息
     pub fn get_entity_prototype(&self, entity: Entity) -> Option<(ArchetypeInfo, ArchetypeWorldIndex)> {
         self.entities.get(entity).map(|e| {
-            let ar_index = e.archetype_index() as usize;
-            let ar = self.archetype_arr.get(ar_index).unwrap();
+            let ar_index = e.archetype_index();
+            let ar = self.archetype_arr.get(ar_index.index()).unwrap();
             let sorted_components = ar.get_columns().iter().map(|c| c.info().clone()).collect();
             let info = ArchetypeInfo{id: *ar.id(), sorted_components};
             (info, ar_index.into())
