@@ -4,6 +4,7 @@ use fixedbitset::FixedBitSet;
 use pi_async_rt::rt::{AsyncRuntime, AsyncRuntimeExt};
 use pi_share::Share;
 use bevy_utils::intern::Interned;
+use tracing::Instrument;
 /// Schedule包含一个主执行器，及多个阶段执行器
 ///
 use crate::{
@@ -140,6 +141,8 @@ impl Schedule {
         g: &mut ExecGraph,
         systems: &Share<SafeVec<BoxedSystem>>
     ) {
+        #[cfg(feature = "trace")] 
+        let run_span = tracing::warn_span!("run {:?}", name = &g.1).entered();
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
         let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(systems) };
@@ -147,7 +150,11 @@ impl Schedule {
         let _ = rt.block_on(async move {
             let rt2 = rt1;
             g.run(s, &rt2, w).await.unwrap();
-            g.collect();
+            #[cfg(feature = "trace")] 
+            {  
+                let _collect_span = tracing::warn_span!("collect").entered();
+                g.collect();
+            }
         });
     }
     // pub async fn async_run<A: AsyncRuntime + AsyncRuntimeExt>(

@@ -208,7 +208,16 @@ impl World {
     pub fn make_entity_editor(&mut self) -> EntityEditor {
         EntityEditor::new(self)
     }
-
+    /// 获得实体的原型信息
+    pub fn get_entity_prototype(&self, entity: Entity) -> Option<(ArchetypeInfo, ArchetypeWorldIndex)> {
+        self.entities.get(entity).map(|e| {
+            let ar_index = e.archetype_index();
+            let ar = self.archetype_arr.get(ar_index.index()).unwrap();
+            let sorted_components = ar.get_columns().iter().map(|c| c.info().clone()).collect();
+            let info = ArchetypeInfo{id: *ar.id(), sorted_components};
+            (info, ar_index.into())
+        })
+    }
     /// 是否存在实体
     pub fn contains(&self, entity: Entity) -> bool {
         self.entities.contains_key(entity)
