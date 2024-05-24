@@ -182,10 +182,10 @@ pub fn print_e(
     println!("print_e: end");
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
 
 struct A(u32);
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
 struct B(u32);
 
 #[derive(Copy, Clone, Debug, Component)]
@@ -347,21 +347,22 @@ mod test_mod {
         let i = world.make_inserter::<(A,)>();
         let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
         world.collect();
+        let index= world.init_component::<B>();
         {
-            let mut alter = world.make_alterer::<(&A,), (With<A>,), (B,), ()>();
-            let mut it = alter.iter_mut();
-            while let Some(_) = it.next() {
-                let _ = it.alter((B(0),));
+            let mut editor = world.make_entity_editor();
+            
+            // let mut it = 
+            for entity in &entities {
+                editor.add_components(*entity, &[index]);
             }
         }
         for e in &entities {
             assert_eq!(world.get_component::<B>(*e).is_ok(), true)
         }
         {
-            let mut alter = world.make_alterer::<(&A,), (With<A>, With<B>), (), (B,)>();
-            let mut it = alter.iter_mut();
-            while let Some(_) = it.next() {
-                let _ = it.alter(());
+            let mut editor = world.make_entity_editor();
+            for entity in &entities {
+                editor.remove_components(*entity, &[index]);
             }
         }
         for e in entities {
@@ -534,7 +535,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_alter() { 
+    fn test_alter() {
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
@@ -579,15 +580,11 @@ mod test_mod {
         let e2 = i.insert((Age1(4), Age0(2)));
         world.collect();
         {
-            let mut alter = world.make_alterer::<(&Age1, &mut Age0), (), (Age2,), ()>();
-            let mut it = alter.iter_mut();
-            while let Some((a, mut b)) = it.next() {
-                if a.0 == 2 {
-                    b.0 += 1;
-                } else {
-                    it.alter((Age2(a.0),)).unwrap();
-                }
-            }
+            let mut editor = world.make_entity_editor();
+            let index = editor.init_component::<Age2>();
+
+            // editor.add_components(e1, &[index]);
+            editor.add_components(e2, &[index]);
         }
         world.collect();
 
@@ -616,11 +613,11 @@ mod test_mod {
 
         world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
 
-        assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 2);
+        assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 1);
         assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 2);
         assert_eq!(world.get_component::<Age1>(e2).unwrap().0, 4);
-        assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 4);
+        assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 0);
     }
     #[test]
     fn test_alter2() {
@@ -629,22 +626,21 @@ mod test_mod {
         let i = world.make_inserter::<(Age0,)>();
         let _entities = (0..1)
             .map(|_| i.insert((Age0(0),)))
-            .collect::<Vec<_>>();
+            .collect::<Vec<Entity>>();
         world.collect();
+        let mut editor = world.make_entity_editor();
+        let index = editor.init_component::<Age1>();
         {
             println!("1");
-            let mut alter = world.make_alterer::<(&Age0,), (), (Age1,), ()>();
-            let mut it = alter.iter_mut();
-            while let Some(_) = it.next() {
-                println!("2");
-                let _ = it.alter((Age1(0),));
+            
+            for e in &_entities{
+                    editor.add_components(*e, &[index]);
             }
+            println!("2");
         }
         {
-            let mut alter = world.make_alterer::<(), (With<Age0>, With<Age1>), (), (Age1,)>();
-            let mut it = alter.iter_mut();
-            while let Some(_) = it.next() {
-                let _ = it.alter(());
+            for e in &_entities {
+                editor.remove_components(*e, &[index]);
             }
         }
 
@@ -698,7 +694,7 @@ mod test_mod {
     }
     #[test]
     fn test_changed() {
-        let mut app = App::new();
+        let mut app = crate::app::SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter1);

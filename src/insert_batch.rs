@@ -1,7 +1,7 @@
 use std::iter::FusedIterator;
 use std::mem::transmute;
 
-use crate::archetype::{Archetype, ArchetypeWorldIndex, ComponentInfo, ShareArchetype};
+use crate::archetype::{Archetype, ArchetypeWorldIndex, ShareArchetype};
 use crate::insert::{Insert, Bundle};
 use crate::prelude::Tick;
 use crate::world::{Entity, World};

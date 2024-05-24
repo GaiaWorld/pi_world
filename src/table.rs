@@ -15,13 +15,12 @@ use pi_async_rt::lock::spin_lock::SpinLock;
 use pi_null::Null;
 use smallvec::SmallVec;
 
-use crate::archetype::{ComponentInfo, COMPONENT_TICK};
+use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
 use crate::dirty::{Dirty, DirtyIndex, DirtyIter, DirtyType, EntityRow};
 use crate::safe_vec::SafeVec;
 use crate::world::{ComponentIndex, Entity, World, Tick};
-
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
@@ -258,7 +257,7 @@ impl Table {
         { unsafe { &*self.destroys.get() } }.record(*e, row, Tick::max());
         replace(e, Entity::null())
     }
-    /// 标记移出，用于delete 和 alter
+    /// 标记移出，用于alter
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
