@@ -1,9 +1,6 @@
-use crate::alter::{
-    alloc_row, mapping_init, move_columns, move_remove_columns, remove_columns, update_table_world,
-    AlterState, Alterer, ArchetypeMapping,
-};
+use crate::alter::{AlterState, Alterer};
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Row, ShareArchetype,
+    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype,
     COMPONENT_CHANGED, COMPONENT_TICK,
 };
 use crate::editor::{EditorState, EntityEditor};
@@ -39,7 +36,7 @@ use pi_key_alloter::new_key_type;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
-use std::mem::{transmute, ManuallyDrop};
+use std::mem::{self, transmute, ManuallyDrop};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
 use std::sync::atomic::Ordering;
@@ -209,7 +206,7 @@ impl World {
 
     /// 创建一个实体编辑器
     pub fn make_entity_editor(&mut self) -> EntityEditor {
-        EntityEditor::new( self)
+        EntityEditor::new(self)
     }
 
     /// 是否存在实体
@@ -545,7 +542,7 @@ impl World {
         };
         let ar = unsafe {
             self.archetype_arr
-                .get_unchecked(addr.archetype_index() as usize)
+                .get_unchecked(addr.archetype_index().index())
         };
 
         if let Some((c, _)) = ar.get_column(index) {
@@ -568,7 +565,7 @@ impl World {
         };
         let ar = unsafe {
             self.archetype_arr
-                .get_unchecked(addr.archetype_index() as usize)
+                .get_unchecked(addr.archetype_index().index())
         };
         if let Some((c, _)) = ar.get_column(index) {
             return Ok(c.get_row(addr.row));
@@ -719,7 +716,7 @@ impl World {
         };
         let ar = unsafe {
             self.archetype_arr
-                .get_unchecked(addr.archetype_index() as usize)
+                .get_unchecked(addr.archetype_index().index())
         };
         let index = self.get_component_index(tid);
         if let Some((c, _)) = ar.get_column(index) {
@@ -783,10 +780,10 @@ impl World {
     // 先事件通知调度器，将原型放入数组，之后其他system可以看到该原型
     pub(crate) fn archtype_ok(&self, ar: &ShareArchetype) -> ArchetypeWorldIndex {
         let entry = self.archetype_arr.alloc_entry();
-        let index = entry.index() as u32;
-        ar.index.store(index, Ordering::Relaxed);
+        let index = entry.index();
+        ar.index.store(index as u32, Ordering::Relaxed);
         entry.insert(ar.clone()); // 确保其他线程一定可以看见
-        ArchetypeWorldIndex(index)
+        index.into()
     }
     /// 插入一个新的Entity
     #[inline(always)]
@@ -795,10 +792,9 @@ impl World {
     }
     /// 替换Entity的原型及行
     #[inline(always)]
-    pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeWorldIndex, row: Row) {
+    pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeWorldIndex, row: Row) -> EntityAddr {
         let addr = unsafe { self.entities.load_unchecked(e) };
-        addr.index = ar_index;
-        addr.row = row;
+        mem::replace(addr, EntityAddr::new(ar_index, row))
     }
     /// 判断指定的实体是否存在
     pub fn contains_entity(&self, e: Entity) -> bool {
@@ -810,21 +806,10 @@ impl World {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity),
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
-        let e = ar.mark_destroy(addr.row);
-        if e.is_null() {
-            return Err(QueryError::NoSuchRow);
-        }
-        self.entities.remove(e).unwrap();
-        Ok(())
-    }
-    /// 销毁指定的实体
-    pub(crate) fn destroy_entity2(&self, e: Entity) -> Result<(), QueryError> {
-        let addr = match self.entities.get(e) {
-            Some(v) => *v,
-            None => return Err(QueryError::NoSuchEntity),
+        let ar = unsafe {
+            self.archetype_arr
+                .get_unchecked(addr.archetype_index().index())
         };
-        let ar = unsafe { self.archetype_arr.get_unchecked(addr.index.0 as usize) };
         let e = ar.mark_destroy(addr.row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
@@ -832,8 +817,9 @@ impl World {
         self.entities.remove(e).unwrap();
         Ok(())
     }
+
     /// 创建一个新的实体
-    pub fn alloc_entity(&self) -> Entity {
+    pub(crate) fn alloc_entity(&self) -> Entity {
         self.entities
             .insert(EntityAddr::new(ArchetypeWorldIndex::null(), Row(0)))
     }
@@ -867,39 +853,6 @@ impl Default for World {
     fn default() -> Self {
         Self::new()
     }
-}
-
-// 将需要移动的全部源组件移动到新位置上
-fn insert_columns(
-    am: &mut ArchetypeMapping,
-    add_columns: &Vec<(ComponentIndex, ColumnIndex)>,
-    tick: Tick,
-) {
-    for i in am.add_indexs.clone().into_iter() {
-        let (_, dst_i) = unsafe { add_columns.get_unchecked(i) };
-        let dst_column = am.dst.get_column_unchecked(*dst_i);
-        for (_src, dst_row, e) in am.moves.iter() {
-            let dst_data: *mut u8 = dst_column.load(*dst_row);
-            // println!("dst_column====={:?}", dst_column.info().type_name);
-            dst_column.info().default_fn.unwrap()(dst_data);
-            dst_column.add_record(*e, *dst_row, tick)
-        }
-    }
-    // 新增组件的位置，目标原型组件存在，但源原型上没有该组件
-    // for (_, dst_column) in am.dst.get_columns().iter().enumerate() {
-    //     // am.moving.binary_search_by(||)
-    //     // 性能
-    //     let r = am.moving.iter().find(|i|{i.world_index == dst_column.info().world_index});
-    //     // am.dst.get_column_index(am.moving[0].world_index)
-    //     // let column = am.src.get_column_index(t.info().world_index);
-    //     if r.is_null() {
-    //         for (_src, dst_row, _e) in am.moves.iter() {
-    //             let dst_data: *mut u8 = dst_column.load(*dst_row);
-    //             dst_column.info().default_fn.unwrap()(dst_data);
-    //         }
-    //     }
-    // }
-    // }
 }
 
 /// Creates an instance of the type this trait is implemented for
@@ -981,7 +934,7 @@ unsafe impl Sync for MultiResource {}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EntityAddr {
-    pub(crate) index: ArchetypeWorldIndex,
+    index: ArchetypeWorldIndex,
     pub(crate) row: Row,
 }
 unsafe impl Sync for EntityAddr {}
@@ -989,14 +942,26 @@ unsafe impl Send for EntityAddr {}
 
 impl EntityAddr {
     #[inline(always)]
-    pub fn new(ar_index: ArchetypeWorldIndex, row: Row) -> Self {
+    pub(crate) fn new(index: ArchetypeWorldIndex, row: Row) -> Self {
         EntityAddr {
-            index: ar_index,
+            index,
             row,
         }
     }
     #[inline(always)]
-    pub fn archetype_index(&self) -> u32 {
-        self.index.0
+    pub(crate) fn is_mark(&self) -> bool {
+        self.index.0 < 0
+    }
+    #[inline(always)]
+    pub(crate) fn mark(&mut self) {
+        self.index = ArchetypeWorldIndex(-self.index.0 - 1);
+    }
+    #[inline(always)]
+    pub fn archetype_index(&self) -> ArchetypeWorldIndex {
+        if self.index.0 >= 0 || self.index.is_null() {
+            self.index
+        } else {
+            ArchetypeWorldIndex(-self.index.0 - 1)
+        }
     }
 }

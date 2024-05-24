@@ -1,8 +1,9 @@
-use std::{any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
+use std::{fmt::Debug, any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
+
+use pi_share::Share;
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags},
-    world::World,
+    archetype::{Archetype, ArchetypeDependResult, Flags}, world:: World,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -51,17 +52,78 @@ impl ReadWrite {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Relation {
-    El(TypeId),
+    With(TypeId),
+    Without(TypeId),
     Read(TypeId),
     Write(TypeId),
-    And(usize),
-    Or(usize),
-    Opt,
-    Not,
+    OptRead(TypeId),
+    OptWrite(TypeId),
+    Or,
+    And,
+    End,
 }
-#[derive(Debug)]
+impl Relation {
+    pub fn without(&self, type_id: &TypeId, r: RelateResult) -> RelateResult {
+        match self {
+            Relation::With(id) if id == type_id => r.ok(Some(true)),
+            Relation::Read(id) if id == type_id => r.ok(Some(true)),
+            Relation::Write(id) if id == type_id => r.ok(Some(true)),
+            _ => r,
+        }
+    }
+    pub fn read(&self, type_id: &TypeId, r: RelateResult) -> RelateResult {
+        match self {
+            Relation::Without(id) if id == type_id => r.ok(Some(false)),
+            Relation::Read(id) if id == type_id => r.ok(Some(true)),
+            Relation::Write(id) if id == type_id => r.ok(Some(false)),
+            Relation::OptRead(id) if id == type_id => r.ok(None),
+            Relation::OptWrite(id) if id == type_id => r.ok(None),
+            _ => r,
+        }
+    }
+    pub fn write(type_id: TypeId, other: &Relation) -> RelateResult {
+        todo!()
+    }
+    pub fn is_start(&self) -> RelateResult {
+        match self {
+            Relation::Or => RelateResult::start(false),
+            Relation::And => RelateResult::start(true),
+            _ => RelateResult::default(),
+        }
+    }
+    pub fn is_end(&self) -> bool {
+        match self {
+            Relation::End => true,
+            _ => false,
+        }
+    }
+
+}
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RelateResult {
+    result: Option<bool>,
+    and: Option<bool>,
+}
+impl RelateResult {
+    pub fn ok(mut self, result: Option<bool>) -> Self {
+        self.result = result;
+        self
+    }
+    pub fn end(mut self) -> Self {
+        self.result;
+        self
+    }
+    pub fn start(and: bool) -> Self {
+        Self {
+            result: None,
+            and: Some(and),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct Related {
     pub(crate) vec: Vec<Relation>,
     pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
@@ -69,6 +131,7 @@ pub struct Related {
 impl Related {
     pub fn read(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
         if !self.contains(&type_info) {
+            
         }
         self.vec.push(Relation::Read(type_info.type_id));
         return Ok(())
@@ -82,22 +145,19 @@ impl Related {
     pub fn read_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
         if !self.contains(&type_info) {
         }
-        self.vec.push(Relation::Or(1));
-        self.vec.push(Relation::Read(type_info.type_id));
+        self.vec.push(Relation::OptRead(type_info.type_id));
         return Ok(())
     }
     pub fn write_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
         if !self.contains(&type_info) {
         }
-        self.vec.push(Relation::Or(1));
-        self.vec.push(Relation::Write(type_info.type_id));
+        self.vec.push(Relation::OptWrite(type_info.type_id));
         return Ok(())
     }
-    pub fn not(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
+    pub fn without(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
         if !self.contains(&type_info) {
         }
-        self.vec.push(Relation::Not);
-        self.vec.push(Relation::Read(type_info.type_id));
+        self.vec.push(Relation::Without(type_info.type_id));
         return Ok(())
     }
     pub fn contains(&mut self, type_info: &TypeInfo) -> bool {
@@ -110,22 +170,105 @@ impl Related {
         }
     }
 
+    pub fn check<F>(&self, f: &F, type_id: &TypeId, start: &mut usize, result: RelateResult) -> RelateResult
+    where
+        F: Fn(&Relation, &TypeId, RelateResult) -> RelateResult,
+    {
+        while *start < self.vec.len() {
+            let r = unsafe { self.vec.get_unchecked(*start) };
+            *start += 1;
+            if r.is_end() {
+                return result.end();
+            }
+            let re = r.is_start();
+            if re.and.is_some() {
+                let re = self.check(f, type_id, start, re);
+                if re.result.is_some() {
+                    
+                }
+            }
+            let result = f(r, type_id, result);
+            if result.result.is_some() {
+                return result;
+            }
+        }
+        result
+    }
+    // 检查新旧读写在reads或writes是否完全不重合
+    pub fn check_rw(&self, other: &Related, vec: &mut Vec<TypeId>) {
+        // 先检查withouts
+        if self.check_without(other) || other.check_without(self) {
+            return;
+        }
+        assert_eq!(self.check_w(other, false, true), None);
+        assert_eq!(self.check_w(other, true, true), None);
+        assert_eq!(self.check_w(other, true, false), None);
+    }
+    // 检查other的每一个without，和self的with read或writes判断，表示查询完全不重合
+    pub fn check_without(&self, other: &Related) -> bool {
+        // 
+        for w in other.vec.iter() {
+            match w {
+                Relation::Without(t) => {
+                    let mut start = 0;
+                    let r = self.check(&Relation::without, t, &mut start, RelateResult::start(true)).end();
+                    if r.result.is_some() && r.result.unwrap() {
+                        return true;
+                    }
+                },
+                _ => ()
+            }
+        }
+        // for w in withouts.keys() {
+        //     if rw.reads.contains_key(w) || rw.writes.contains_key(w) || rw.withs.contains_key(w) {
+        //         return true;
+        //     }
+        // }
+        false
+    }
+    // 检查数据集是否和写冲突
+    pub fn check_w(&self, other: &Related, self_write: bool, other_write: bool) -> Option<Cow<'static, str>> {
+        // for t in map.iter() {
+        //     if writes.contains_key(t.0) {
+        //         return Some(t.1.clone());
+        //     }
+        // }
+        None
+    }
+    
+    // 判断该原型是否相关
+    pub fn relate(&self, archetype: &Archetype) -> bool {
+        true
+    }
+    // 获取该原型的每组件的读写依赖
+    pub fn depend(&self, archetype: &Archetype){
+        todo!()
+    }
+    
 }
 /// The metadata of a [`System`].
-#[derive(Debug)]
 pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
+    pub(crate) vec: Vec<Share<Related>>, // 当前参数的读写依赖
+    pub(crate) cur_related: Related, // 当前参数的读写依赖
+    pub(crate) res_map: HashMap<TypeId, (u8, Cow<'static, str>)>, // 参数集的读写依赖
+    pub(crate) map: HashMap<TypeId, Cow<'static, str>>, // 当前参数的读写依赖
     pub(crate) components: ReadWrite, // 该系统所有组件级读写依赖
     pub(crate) cur_param: ReadWrite,  // 当前参数的读写依赖
     pub(crate) param_set: ReadWrite,  // 参数集的读写依赖
     pub(crate) res_reads: HashMap<TypeId, Cow<'static, str>>, // 读Res
     pub(crate) res_writes: HashMap<TypeId, Cow<'static, str>>, // 写ResMut
+
 }
 
 impl SystemMeta {
     pub fn new(type_info: TypeInfo) -> Self {
         Self {
             type_info,
+            vec: Default::default(),
+            cur_related: Default::default(),
+            res_map: Default::default(),
+            map: Default::default(),
             components: Default::default(),
             cur_param: Default::default(),
             param_set: Default::default(),
@@ -144,6 +287,7 @@ impl SystemMeta {
     pub fn name(&self) -> &str {
         &self.type_info.name
     }
+
     /// 当前参数检查通过
     pub fn cur_param_ok(&mut self) {
         // 检查前面查询的rw是否有组件读写冲突
@@ -209,6 +353,13 @@ impl SystemMeta {
     }
 }
 
+impl Debug for SystemMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SystemMeta")
+            .field("type_info", &self.type_info)
+            .finish()
+    }
+}
 pub trait System: Send + Sync + 'static {
     /// Returns the system's name.
     fn name(&self) -> &Cow<'static, str>;

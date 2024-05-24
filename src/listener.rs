@@ -2,7 +2,8 @@
 /// 容器销毁时，监听器也会被销毁，或移除监听器并销毁，如果这个时候还有事件通知，则也需要监听器自己保证安全
 use core::fmt::*;
 use std::{
-    any::TypeId, mem::{forget, transmute}
+    any::TypeId,
+    mem::{forget, transmute},
 };
 
 use dashmap::{mapref::entry::Entry, DashMap};
@@ -57,8 +58,7 @@ impl ListenerMgr {
         match entry {
             Entry::Occupied(e) => {
                 let llk = *e.get();
-                let list: Box<ListenerList<L, E>> =
-                unsafe { 
+                let list: Box<ListenerList<L, E>> = unsafe {
                     let el = self.listener_list.get_unchecked(llk.0);
                     Box::from_raw(transmute(el.ptr))
                 };
@@ -106,7 +106,7 @@ impl ListenerMgr {
         match entry {
             Entry::Occupied(e) => {
                 let elk = *e.get();
-                let list: Box<EventList<E>> = unsafe { 
+                let list: Box<EventList<E>> = unsafe {
                     let el = self.event_list.get_unchecked(elk.0);
                     Box::from_raw(transmute(el.ptr))
                 };
@@ -145,7 +145,7 @@ impl ListenerMgr {
         key: ListenerListKey,
         event: E,
     ) {
-        let list: &ListenerList<L, E> = 
+        let list: &ListenerList<L, E> =
             unsafe { transmute(self.listener_list.get(key.0).unwrap().ptr) };
         list.notify(event);
     }
@@ -171,15 +171,21 @@ pub struct ListenerList<L: Listener<Event = E>, E> {
     vec: SafeVec<L>,
 }
 impl<L: Listener<Event = E>, E: Clone> ListenerList<L, E> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             vec: SafeVec::default(),
         }
     }
-    fn notify(&self, event: E) {
+    pub fn register(&self, listener: L) {
+        self.vec.insert(listener);
+    }
+    pub fn notify(&self, event: E) {
         for l in self.vec.iter() {
             l.listen(event.clone());
         }
+    }
+    pub fn collect(&mut self) {
+        self.vec.collect();
     }
 }
 impl<L: Listener<Event = E>, E: Clone> Default for ListenerList<L, E> {
@@ -194,15 +200,21 @@ pub struct EventList<E> {
     vec: SafeVec<Share<dyn Listener<Event = E>>>,
 }
 impl<E: Clone> EventList<E> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             vec: SafeVec::default(),
         }
     }
-    fn notify(&self, event: E) {
+    pub fn register(&self, listener: Share<dyn Listener<Event = E>>) {
+        self.vec.insert(listener);
+    }
+    pub fn notify(&self, event: E) {
         for l in self.vec.iter() {
             l.listen(event.clone());
         }
+    }
+    pub fn collect(&mut self) {
+        self.vec.collect();
     }
 }
 
@@ -227,7 +239,7 @@ pub fn get_drop<T>() -> fn(*mut u8) {
 #[cfg(test)]
 mod test_mod {
     use crate::{
-        archetype::{Archetype, ComponentInfo, ShareArchetype},
+        archetype::{Archetype, ShareArchetype},
         listener::*,
     };
     struct A();
@@ -240,7 +252,7 @@ mod test_mod {
     fn test() {
         {
             let a = Box::<A>::into_raw(Box::new(A())) as *mut u8;
-            let e = Element{
+            let e = Element {
                 ptr: a,
                 drop_fn: get_drop::<A>(),
             };
