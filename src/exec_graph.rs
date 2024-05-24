@@ -275,14 +275,14 @@ impl ExecGraph {
                     sys.res_depend(world, tid, name, single, &mut result);
                     if result == Flags::READ {
                         // 如果只有读，则该system为该Res的to
-                        inner.add_edge(node_index, system_index);
+                        // inner.add_edge(node_index, system_index);
                         continue;
                     } else if result == Flags::WRITE {
                         // 有写，则该system为该Res的from，并根据system的次序调整写的次序
-                        inner.adjust_edge(system_index, node_index);
+                        // inner.adjust_edge(system_index, node_index);
                     } else if result == Flags::SHARE_WRITE {
                         // 共享写，则该system为该Res的from
-                        inner.add_edge(system_index, node_index);
+                        // inner.add_edge(system_index, node_index);
                     } else {
                         // 如果没有关联，则跳过
                         continue;
