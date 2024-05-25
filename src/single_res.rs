@@ -43,6 +43,7 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let info = TypeInfo::of::<T>();
+        println!("system_meta: {:?}, info: {:?}", system_meta, info);
         (single_resource(world, system_meta, &info, true).unwrap(), Tick::default())
     }
     fn res_depend(
@@ -116,6 +117,7 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let info = TypeInfo::of::<T>();
+        println!("mut system_meta: {:?}, info: {:?}", system_meta, info);
         match single_resource(world, system_meta, &info, false) {
             Some(r) => r,
             None => panic!("init SingleRes fail, {:?} is not exist", std::any::type_name::<T>()),

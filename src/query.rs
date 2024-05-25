@@ -481,6 +481,7 @@ pub(crate) fn check<'w>(
         Some(v) => *v,
         None => return Err(QueryError::NoSuchEntity),
     };
+    // println!("addr======{:?}", (entity, addr));
 
     let local_index  = match map.get(addr.archetype_index().index()) {
         Some(v) => if v.is_null() {

@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{
-    Archetype, ArchetypeDependResult, ColumnIndex, ComponentInfo, Flags, Row, COMPONENT_TICK
+    Archetype, ArchetypeDependResult, ArchetypeWorldIndex, ColumnIndex, ComponentInfo, Flags, Row, COMPONENT_TICK
 };
 use crate::column::Column;
 use crate::prelude::FromWorld;
@@ -510,9 +510,9 @@ impl<T: 'static> FetchComponents for Has<T> {
 }
 
 #[derive(Debug)]
-pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub Row);
+pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub ArchetypeWorldIndex, pub Row);
 impl FetchComponents for ArchetypeName<'_> {
-    type Fetch<'w> = &'w Cow<'static, str>;
+    type Fetch<'w> = (&'w Cow<'static, str>, ArchetypeWorldIndex);
     type Item<'w> = ArchetypeName<'w>;
     type ReadOnly = ArchetypeName<'static>;
     type State = ();
@@ -529,12 +529,12 @@ impl FetchComponents for ArchetypeName<'_> {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        archetype.name()
+        (archetype.name(), archetype.index())
     }
 
     
     fn fetch<'w>(fetch: &mut Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        ArchetypeName(fetch, row)
+        ArchetypeName(fetch.0, fetch.1, row)
     }
 }
 

@@ -401,7 +401,7 @@ impl Debug for Archetype {
     }
 }
 #[derive(Debug, Default)]
-pub(crate) struct ArchetypeInfo {
+pub struct ArchetypeInfo {
     pub(crate) id: u128,
     pub(crate) sorted_components: Vec<ComponentInfo>,
 }

@@ -9,7 +9,7 @@ use pi_null::Null;
 
 use crate::{
     alter::{ArchetypeMapping, State},
-    archetype::{ArchetypeWorldIndex, Row},
+    archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row},
     insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
@@ -23,6 +23,7 @@ impl State {
         for i in am.add_indexs.clone().into_iter() {
             let (_, dst_i) = unsafe { self.adding.get_unchecked(i) };
             let dst_column = am.dst.get_column_unchecked(*dst_i);
+            println!("dst_column: {:?}", dst_column.info());
             let dst_data: *mut u8 = dst_column.load(dst_row);
             dst_column.info().default_fn.unwrap()(dst_data);
             dst_column.add_record(e, dst_row, tick)
@@ -37,9 +38,11 @@ impl<'w> EntityEditor<'w> {
     pub fn new(world: &'w mut World) -> Self {
         Self { world }
     }
-
     fn state(&mut self)-> &mut EditorState{
         &mut self.world.entity_editor_state
+    }
+    fn get_entity_prototype(&self, e: Entity) -> Option<(ArchetypeInfo, ArchetypeWorldIndex)> {
+        self.world.get_entity_prototype(e)
     }
     pub fn add_components(
         &mut self,
@@ -132,7 +135,7 @@ impl<'w> EntityEditor<'w> {
         let dst_row = mapping.dst.alloc();
 
         let tick = self.world.tick();
-
+        // println!("mapping: {}")
         state.insert_columns(mapping, dst_row, e, tick.clone());
 
         state.alter_row(&self.world, mapping, addr.row, dst_row, e, tick);
@@ -169,7 +172,7 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
 
-    pub fn alloc(&self) -> Entity {
+    pub fn alloc_entity(&self) -> Entity {
         self.world.alloc_entity()
     }
 
@@ -208,10 +211,14 @@ impl<'w> EntityEditor<'w> {
     pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
         self.world.init_component::<B>()
     }
+
+    pub fn contains_entity(&self, e: Entity) -> bool{
+        self.world.contains_entity(e)
+    }
 }
 
 #[derive(Default)]
-pub struct EditorState {
+pub(crate) struct EditorState {
     alter_map: HashMap<u64, State>, // sorted_add_removes的hash值
     archetype_map: HashMap<(ArchetypeWorldIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,

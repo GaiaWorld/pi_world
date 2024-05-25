@@ -182,10 +182,10 @@ pub fn print_e(
     println!("print_e: end");
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
 
 struct A(u32);
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Component)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
 struct B(u32);
 
 #[derive(Copy, Clone, Debug, Component)]
@@ -343,53 +343,54 @@ mod test_mod {
     }
     #[test]
     fn test_add_remove() {
-        // let mut world = World::new();
-        // let i = world.make_inserter::<(A,)>();
-        // let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
-        // world.collect();
-        // {
-        //     let mut alter = world.make_alterer::<(&A,), (With<A>,), (B,), ()>();
-        //     let mut it = alter.iter_mut();
-        //     while let Some(_) = it.next() {
-        //         let _ = it.alter((B(0),));
-        //     }
-        // }
-        // for e in &entities {
-        //     assert_eq!(world.get_component::<B>(*e).is_ok(), true)
-        // }
-        // {
-        //     let mut alter = world.make_alterer::<(&A,), (With<A>, With<B>), (), (B,)>();
-        //     let mut it = alter.iter_mut();
-        //     while let Some(_) = it.next() {
-        //         let _ = it.alter(());
-        //     }
-        // }
-        // for e in entities {
-        //     assert_eq!(world.get_component::<B>(e).is_err(), true)
-        // }
+        let mut world = World::new();
+        let i = world.make_inserter::<(A,)>();
+        let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
+        world.collect();
+        let index= world.init_component::<B>();
+        {
+            let mut editor = world.make_entity_editor();
+            
+            // let mut it = 
+            for entity in &entities {
+                editor.add_components(*entity, &[index]);
+            }
+        }
+        for e in &entities {
+            assert_eq!(world.get_component::<B>(*e).is_ok(), true)
+        }
+        {
+            let mut editor = world.make_entity_editor();
+            for entity in &entities {
+                editor.remove_components(*entity, &[index]);
+            }
+        }
+        for e in entities {
+            assert_eq!(world.get_component::<B>(e).is_err(), true)
+        }
 
-        // let mut info = ArchetypeDebug {
-        //     entitys: Some(20),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
-        //     ],
-        //     remove_columns: Some(1),
-        //     destroys_listeners: Some(0),
-        //     removes: Some(10),
-        // };
+        let mut info = ArchetypeDebug {
+            entitys: Some(20),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(10),
+        };
 
-        // let mut info1 = ArchetypeDebug {
-        //     entitys: Some(10),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("B")}),
-        //     ],
-        //     remove_columns: Some(0),
-        //     destroys_listeners: Some(0),
-        //     removes: Some(10),
-        // };
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(10),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("B")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(10),
+        };
 
-        // world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+        world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
     }
     #[bench]
     fn bench_heavy_compute(b: &mut Bencher) {
@@ -573,100 +574,95 @@ mod test_mod {
     }
     #[test]
     fn test_alter1() {
-        // let mut world = World::new();
-        // let i = world.make_inserter::<(Age1, Age0)>();
-        // let e1 = i.insert((Age1(2), Age0(1)));
-        // let e2 = i.insert((Age1(4), Age0(2)));
-        // world.collect();
-        // {
-        //     let mut alter = world.make_alterer::<(&Age1, &mut Age0), (), (Age2,), ()>();
-        //     let mut it = alter.iter_mut();
-        //     while let Some((a, mut b)) = it.next() {
-        //         if a.0 == 2 {
-        //             b.0 += 1;
-        //         } else {
-        //             it.alter((Age2(a.0),)).unwrap();
-        //         }
-        //     }
-        // }
-        // world.collect();
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age1, Age0)>();
+        let e1 = i.insert((Age1(2), Age0(1)));
+        let e2 = i.insert((Age1(4), Age0(2)));
+        world.collect();
+        {
+            let mut editor = world.make_entity_editor();
+            let index = editor.init_component::<Age2>();
 
-        // let mut info = ArchetypeDebug {
-        //     entitys: Some(1),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-        //     ],
-        //     remove_columns: Some(0),
-        //     destroys_listeners: Some(0),
-        //     removes: Some(0),
-        // };
+            // editor.add_components(e1, &[index]);
+            editor.add_components(e2, &[index]);
+        }
+        world.collect();
 
-        // let mut info1 = ArchetypeDebug {
-        //     entitys: Some(1),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
-        //     ],
-        //     remove_columns: Some(0),
-        //     destroys_listeners: Some(0),
-        //     removes: Some(0),
-        // };
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
 
-        // world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
+            ],
+            remove_columns: Some(0),
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
 
-        // assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 2);
-        // assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
-        // assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 2);
-        // assert_eq!(world.get_component::<Age1>(e2).unwrap().0, 4);
-        // assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 4);
+        world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+
+        assert_eq!(world.get_component::<Age0>(e1).unwrap().0, 1);
+        assert_eq!(world.get_component::<Age2>(e1).is_err(), true);
+        assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 2);
+        assert_eq!(world.get_component::<Age1>(e2).unwrap().0, 4);
+        assert_eq!(world.get_component::<Age2>(e2).unwrap().0, 0);
     }
     #[test]
     fn test_alter2() {
-        // println!("0");
-        // let mut world = World::new();
-        // let i = world.make_inserter::<(Age0,)>();
-        // let _entities = (0..1)
-        //     .map(|_| i.insert((Age0(0),)))
-        //     .collect::<Vec<_>>();
-        // world.collect();
-        // {
-        //     println!("1");
-        //     let mut alter = world.make_alterer::<(&Age0,), (), (Age1,), ()>();
-        //     let mut it = alter.iter_mut();
-        //     while let Some(_) = it.next() {
-        //         println!("2");
-        //         let _ = it.alter((Age1(0),));
-        //     }
-        // }
-        // {
-        //     let mut alter = world.make_alterer::<(), (With<Age0>, With<Age1>), (), (Age1,)>();
-        //     let mut it = alter.iter_mut();
-        //     while let Some(_) = it.next() {
-        //         let _ = it.alter(());
-        //     }
-        // }
+        println!("0");
+        let mut world = World::new();
+        let i = world.make_inserter::<(Age0,)>();
+        let _entities = (0..1)
+            .map(|_| i.insert((Age0(0),)))
+            .collect::<Vec<Entity>>();
+        world.collect();
+        let mut editor = world.make_entity_editor();
+        let index = editor.init_component::<Age1>();
+        {
+            println!("1");
+            
+            for e in &_entities{
+                    editor.add_components(*e, &[index]);
+            }
+            println!("2");
+        }
+        {
+            for e in &_entities {
+                editor.remove_components(*e, &[index]);
+            }
+        }
 
-        // let mut info = ArchetypeDebug {
-        //     entitys: Some(2),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-        //     ],
-        //     remove_columns: Some(1),
-        //     destroys_listeners: Some(0),
-        //     removes: Some(1),
-        // };
+        let mut info = ArchetypeDebug {
+            entitys: Some(2),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            ],
+            remove_columns: Some(1),
+            destroys_listeners: Some(0),
+            removes: Some(1),
+        };
 
-        // world.assert_archetype_arr(&[None, Some(info.clone()), None]);
+        world.assert_archetype_arr(&[None, Some(info.clone()), None]);
 
-        // info.entitys = Some(1);
-        // info.columns_info = vec![
-        //     Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-        //     Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
-        // ];
-        // info.remove_columns = Some(0);
-        // world.assert_archetype_arr(&[None, None, Some(info.clone()), ]);
+        info.entitys = Some(1);
+        info.columns_info = vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+            Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+        ];
+        info.remove_columns = Some(0);
+        world.assert_archetype_arr(&[None, None, Some(info.clone()), ]);
     }
 
     #[test]

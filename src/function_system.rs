@@ -127,6 +127,7 @@ impl<P: SystemParam> ParamSystem<P> {
     #[inline]
     pub(crate) fn initialize(&mut self, world: &mut World) {
         if self.param_state.is_none() {
+            // println!("self.system_meta: {:?}", self.system_meta);
             self.param_state = Some(P::init_state(world, &mut self.system_meta));
         }
     }

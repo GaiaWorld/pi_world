@@ -13,6 +13,7 @@ categories = ["data-structures", "memory-management", "ecs"]
 
 [features]
 single_thread = []
+trace = []
 
 [dependencies]
 pi_map = "0.2"
@@ -36,6 +37,7 @@ log = "0.4"
 downcast-rs = "1.2"
 bitvec = { version = "1.0", features = ["serde"] }
 pi_print_any = "0.1"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 
 [dev-dependencies]

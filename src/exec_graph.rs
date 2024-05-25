@@ -123,7 +123,7 @@ fn vec_set(vec: &mut Vec<NodeIndex>, index: usize, value: NodeIndex) {
     *unsafe { vec.get_unchecked_mut(index) } = value;
 }
 #[derive(Clone)]
-pub struct ExecGraph(Share<GraphInner>, String);
+pub struct ExecGraph(Share<GraphInner>, pub String);
 
 impl ExecGraph {
     pub fn new(name: String) -> Self {
@@ -275,14 +275,14 @@ impl ExecGraph {
                     sys.res_depend(world, tid, name, single, &mut result);
                     if result == Flags::READ {
                         // 如果只有读，则该system为该Res的to
-                        inner.add_edge(node_index, system_index);
+                        // inner.add_edge(node_index, system_index);
                         continue;
                     } else if result == Flags::WRITE {
                         // 有写，则该system为该Res的from，并根据system的次序调整写的次序
-                        inner.adjust_edge(system_index, node_index);
+                        // inner.adjust_edge(system_index, node_index);
                     } else if result == Flags::SHARE_WRITE {
                         // 共享写，则该system为该Res的from
-                        inner.add_edge(system_index, node_index);
+                        // inner.add_edge(system_index, node_index);
                     } else {
                         // 如果没有关联，则跳过
                         continue;
@@ -457,6 +457,13 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("run start===={:?}", sys.name());
+                    #[cfg(feature = "trace")]
+                    {
+                        use tracing::Instrument;
+                        let system_span = tracing::info_span!("system", name = &**sys.name());
+                        sys.run(world).instrument(system_span).await;
+                    }
+                    #[cfg(not(feature = "trace"))]
                     sys.run(world).await;
                     // println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, node_index)
