@@ -278,7 +278,7 @@ unsafe fn add_dirty_listeners(
     for ltype in listeners.iter() {
         match ltype {
             ListenType::Changed(index) => ar.add_changed_listener(*index, owner),
-            ListenType::Removed(index) => ar.add_removed_listener(*index, owner),
+            // ListenType::Removed(index) => ar.add_removed_listener(*index, owner),
             ListenType::Destroyed => ar.add_destroyed_listener(owner),
         }
     }
@@ -294,7 +294,7 @@ unsafe fn find_dirty_listeners(
     for ltype in listeners.iter() {
         match ltype {
             ListenType::Changed(index) => ar.find_changed_listener(*index, owner, vec),
-            ListenType::Removed(index) => ar.find_removed_listener(*index, owner, vec),
+            // ListenType::Removed(index) => ar.find_removed_listener(*index, owner, vec),
             ListenType::Destroyed => ar.find_destroyed_listener(owner, vec),
         }
     }

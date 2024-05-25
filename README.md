@@ -46,3 +46,7 @@
 # v0.5
 ## 调整了alter的代码，将泛型部分分离
 ## 将alter改为立即执行，这样可以更好的复用，并且在一个system内可连续修改（要求修改后的原型也要被Query捕获）
+
+# v0.6
+## alter还是改为延迟，EntityEditor的alter为立即执行
+## ComponentRemoved是一个SystemParam，可迭代出上次运行到这次的运行期间被删除的组件的实体

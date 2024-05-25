@@ -206,7 +206,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::TypeInfo, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -748,10 +748,10 @@ mod test_mod {
             }
             println!("alter1: end");
         }
-        pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>,)>) {
+        pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
             println!("removed_l");
-            for (e, age0, _) in q0.iter() {
-                println!("e {:?}, age0: {:?}", e, age0);
+            for e in removed.iter() {
+                println!("e:{:?}, q0: {:?}", e, q0.get(*e).unwrap());
             }
         
             println!("removed_l: end");
@@ -1056,10 +1056,10 @@ mod test_mod {
         }
         let mut app = MultiThreadApp::new();
         app.world.insert_single_res(A(1.0));
-        app.world.register_multi_res::<B>();
-        app.world.register_multi_res::<C>();
-        app.world.register_multi_res::<D>();
-        app.world.register_multi_res::<E>();
+        app.world.register_multi_res(TypeInfo::of::<B>());
+        app.world.register_multi_res(TypeInfo::of::<C>());
+        app.world.register_multi_res(TypeInfo::of::<D>());
+        app.world.register_multi_res(TypeInfo::of::<E>());
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -1530,11 +1530,11 @@ mod test_mod {
             println!("alter_add3 end");
         }
 
-        pub fn query(q: Query<(Entity, &Age1, &Age2, &Age3), (Removed<Age0>)>) {
+        pub fn query(q: Query<(&Age1, &Age2, &Age3)>, removed: ComponentRemoved<Age0>) {
             println!("query start!!!");
-            let iter = q.iter().next();
-            assert_eq!(iter.is_some(), true);
-            let (e, age1, age2, age3) = iter.unwrap();
+            let re = removed.iter().next();
+            assert_eq!(re.is_some(), true);
+            let (age1, age2, age3) = q.get(*re.unwrap()).unwrap();
             println!("query end!!!");
         }
 

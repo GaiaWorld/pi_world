@@ -428,7 +428,6 @@ impl ArchetypeInfo {
 
 pub const COMPONENT_TICK: u8 = 1;
 pub const COMPONENT_CHANGED: u8 = 2;
-pub const COMPONENT_REMOVED: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ComponentInfo {
@@ -477,9 +476,6 @@ impl ComponentInfo {
     }
     pub fn is_changed(&self) -> bool {
         self.tick_info & COMPONENT_CHANGED != 0
-    }
-    pub fn is_removed(&self) -> bool {
-        self.tick_info & COMPONENT_REMOVED != 0
     }
     pub fn calc_id(vec: &Vec<ComponentInfo>) -> u128 {
         let mut id = 0;
