@@ -195,13 +195,3 @@ impl Dirty {
         }
     }
 }
-#[inline(always)]
-pub(crate) const fn encode(low: u32, high: u32) -> u64 {
-    (low as u64) | ((high as u64) << 32)
-}
-#[inline(always)]
-pub(crate) const fn decode(value: u64) -> (u32, u32) {
-    let low = value & 0xffff_ffff;
-    let high = value >> 32;
-    (low as u32, high as u32)
-}

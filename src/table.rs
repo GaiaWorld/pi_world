@@ -177,43 +177,7 @@ impl Table {
             });
         }
     }
-    // /// 寻找所有被移除的组件列
-    // pub(crate) fn get_remove_columns(&self) -> &SafeVec<RemovedColumn> {
-    //     &self.remove_columns
-    // }
-    // /// 寻找指定组件列的脏位置
-    // pub(crate) fn find_remove_column_index(&self, range: Range<usize>, index: ComponentIndex) -> ColumnIndex {
-    //     let start = range.start;
-    //     for (i, t) in self.remove_columns.slice(range).enumerate() {
-    //         if t.index == index {
-    //             return (i + start).into()
-    //         }
-    //     }
-    //     ColumnIndex::null()
-    // }
-    // /// 添加被移除组件，返回其位置
-    // pub(crate) fn add_remove_column_index(&self, index: ComponentIndex) -> ColumnIndex {
-    //     let len = self.remove_columns.len();
-    //     let mut column_index = self.find_remove_column_index(0..len, index);
-    //     if column_index.is_null() {
-    //         // 没有找到，则先加锁，再次寻找，如果还没找到，则创建新的
-    //         let _ = self.lock.lock();
-    //         let new_len = self.remove_columns.len();
-    //         if len < new_len {
-    //             column_index = self.find_remove_column_index(0..new_len, index);
-    //             if column_index.is_null() {
-    //                 column_index = self.remove_columns.insert(RemovedColumn::new(index)).into();
-    //             }
-    //         } else {
-    //             column_index = self.remove_columns.insert(RemovedColumn::new(index)).into();
-    //         }
-    //     }
-    //     column_index
-    // }
-    // /// 寻找指定位置的组件列脏
-    // pub(crate) fn get_remove_column(&self, column_index: ColumnIndex) -> &RemovedColumn {
-    //     unsafe { self.remove_columns.get_unchecked(column_index.index()) }
-    // }
+
     /// 获得对应的脏列表, 及是否不检查entity是否存在
     pub(crate) fn get_dirty_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> DirtyIter<'a> {
          match dirty_index.dtype {
@@ -224,10 +188,6 @@ impl Table {
                 let r = self.get_column_unchecked(column_index);
                 DirtyIter::new(r.dirty.get_iter(dirty_index.listener_index, tick), Some(&r.ticks))
             },
-            // DirtyType::Removed(column_index) => {
-            //     let r = self.get_remove_column(column_index);
-            //     DirtyIter::new(r.dirty.get_iter(dirty_index.listener_index, tick), Some(&r.ticks))
-            // },
         }
     }
 

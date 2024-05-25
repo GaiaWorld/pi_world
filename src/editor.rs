@@ -138,7 +138,7 @@ impl<'w> EntityEditor<'w> {
         // println!("mapping: {}")
         state.insert_columns(mapping, dst_row, e, tick.clone());
 
-        state.alter_row(&self.world, mapping, addr.row, dst_row, e, tick);
+        state.alter_row(&self.world, mapping, addr.row, dst_row, e);
 
         Ok(())
     }

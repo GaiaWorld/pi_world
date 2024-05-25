@@ -358,7 +358,6 @@ impl<
             self.query.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
-            self.query.tick,
         );
     }
 }
@@ -520,7 +519,6 @@ impl State {
         world: &'a World,
         vec: &mut Vec<ArchetypeMapping>, // 记录所有的原型映射
         mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
-        tick: Tick,
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         for ar_index in mapping_dirtys.iter() {
@@ -537,7 +535,7 @@ impl State {
                 }
             }
             self.move_columns(am);
-            self.remove_columns(am, tick);
+            self.remove_columns(am);
             // 设置目标原型的entity及entity上的EntityAddr
             for (_, dst_row, e) in am.moves.iter() {
                 am.dst.set(*dst_row, *e);
@@ -575,7 +573,7 @@ impl State {
         }
     }
     // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
-    pub(crate) fn remove_columns(&self, am: &mut ArchetypeMapping, tick: Tick) {
+    pub(crate) fn remove_columns(&self, am: &mut ArchetypeMapping) {
         for i in am.removed_indexs.clone().into_iter() {
             let (_, column_index) = unsafe { self.removing.get_unchecked(i) };
             let column = am.src.get_column_unchecked(*column_index);
@@ -672,7 +670,6 @@ impl State {
         src_row: Row,
         dst_row: Row,
         e: Entity,
-        tick: Tick,
     ) {
         // println!("alter_row: {:?}", (&mapping.dst_index, ar_index, src_row, dst_row, e, tick));
         mapping.src.mark_remove(src_row);
