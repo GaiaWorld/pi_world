@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
-use crate::archetype::{Archetype, ComponentInfo, COMPONENT_CHANGED, COMPONENT_REMOVED, COMPONENT_TICK};
+use crate::archetype::{Archetype, ComponentInfo, COMPONENT_CHANGED, COMPONENT_TICK};
 use crate::system::SystemMeta;
 use crate::world::{ComponentIndex, World};
 
@@ -21,7 +21,7 @@ pub enum ListenType {
     #[default]
     Destroyed, // 实体销毁，用列表来记录变化
     Changed(ComponentIndex), // 组件改变，包括新增，用列表来记录变化
-    Removed(ComponentIndex), // 组件删除，用列表来记录变化
+    // Removed(ComponentIndex), // 组件删除，用列表来记录变化
 }
 
 pub trait FilterArchetype {
@@ -86,13 +86,13 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 }
 
-pub struct Removed<T: 'static>(PhantomData<T>);
-impl<T: 'static> FilterComponents for Removed<T> {
-    const LISTENER_COUNT: usize = 1;
-    fn init_listeners(world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_REMOVED)).0));
-    }
-}
+// pub struct Removed<T: 'static>(PhantomData<T>);
+// impl<T: 'static> FilterComponents for Removed<T> {
+//     const LISTENER_COUNT: usize = 1;
+//     fn init_listeners(world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
+//         listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_REMOVED)).0));
+//     }
+// }
 pub struct Destroyed;
 impl FilterComponents for Destroyed {
     const LISTENER_COUNT: usize = 1;

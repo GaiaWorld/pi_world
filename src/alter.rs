@@ -22,6 +22,7 @@ use std::mem::{transmute, MaybeUninit};
 use std::ops::{Deref, DerefMut, Range};
 
 use pi_null::Null;
+use pi_share::Share;
 
 use crate::archetype::*;
 use crate::column::Column;
@@ -30,6 +31,7 @@ use crate::filter::FilterComponents;
 use crate::insert::Bundle;
 use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
+use crate::event::ComponentRemovedRecord;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -110,7 +112,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         // self.state
-        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        AState::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -202,7 +204,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         // self.state
-        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        AState::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -356,7 +358,6 @@ impl<
             self.query.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
-            self.query.tick,
         );
     }
 }
@@ -368,7 +369,7 @@ pub struct ArchetypeMapping {
     pub(crate) add_indexs: Range<usize>,          // 目标原型上新增的组件的起始和结束位置
     pub(crate) move_indexs: Range<usize>,         // 源原型和目标原型的组件映射的起始和结束位置
     pub(crate) removed_indexs: Range<usize>,      // 源原型上被移除的组件的起始和结束位置
-    pub(crate) move_removed_indexs: Range<usize>, // 源原型上被移除的组件的起始和结束位置
+    // pub(crate) move_removed_indexs: Range<usize>, // 源原型上被移除的组件的起始和结束位置
     pub(crate) moves: Vec<(Row, Row, Entity)>,    // 本次标记移动的条目
 }
 
@@ -381,7 +382,7 @@ impl ArchetypeMapping {
             move_indexs: 0..0,
             add_indexs: 0..0,
             removed_indexs: 0..0,
-            move_removed_indexs: 0..0,
+            // move_removed_indexs: 0..0,
             moves: Default::default(),
         }
     }
@@ -433,59 +434,63 @@ impl ArchetypeMapping {
     pub(crate) fn remove_columns(
         &self,
         src_row: Row,
-        dst_row: Row,
         e: Entity,
-        tick: Tick,
-        removed_columns: &Vec<(ColumnIndex, ColumnIndex)>,
+        removing: &Vec<(ComponentIndex, ColumnIndex)>,
+        removed_columns: &Vec<Option<Share<ComponentRemovedRecord>>>,
     ) {
         for i in self.removed_indexs.clone().into_iter() {
-            let (src, dst) = unsafe { removed_columns.get_unchecked(i) };
-            let column = self.src.get_column_unchecked(*src);
+            let (_, column_index) = unsafe { removing.get_unchecked(i) };
+            let column = self.src.get_column_unchecked(*column_index);
             if column.needs_drop() {
                 column.drop_row_unchecked(src_row);
             }
-            if !dst.is_null() {
-                // 如果目标原型的移除列上有对应监听，则记录移除行的tick
-                let d = self.dst.get_remove_column(*dst);
-                *d.ticks.load_alloc(dst_row.index()) = tick;
-                // 在脏列表上记录移除行
-                d.dirty.record(e, dst_row, tick);
+            // if !dst.is_null() {
+            //     // 如果目标原型的移除列上有对应监听，则记录移除行的tick
+            //     let d = self.dst.get_remove_column(*dst);
+            //     *d.ticks.load_alloc(dst_row.index()) = tick;
+            //     // 在脏列表上记录移除行
+            //     d.dirty.record(e, dst_row, tick);
+            // }
+            // 如果移除列上有对应监听，则记录移除实体
+            if let Some(record) = unsafe { removed_columns.get_unchecked(i)} {
+                record.record(e);
             }
         }
     }
-    pub(crate) fn move_remove_columns(
-        &self,
-        src_row: Row,
-        dst_row: Row,
-        e: Entity,
-        move_removed_columns: &Vec<(ColumnIndex, ColumnIndex)>,
-    ) {
-        for i in self.move_removed_indexs.clone().into_iter() {
-            let column_index = unsafe { move_removed_columns.get_unchecked(i) };
-            let column = self.src.get_remove_column(column_index.0);
-            // 如果目标原型的移除列上有对应监听，则记录移除行
-            let d = self.dst.get_remove_column(column_index.1);
-            // 在脏列表上记录移除行
-            let tick = column
-                .ticks
-                .get_i(src_row.index())
-                .map_or(Tick::null(), |r| *r);
-            *d.ticks.load_alloc(dst_row.index()) = tick;
-            d.dirty.record_unchecked(e, dst_row);
-        }
-    }
+    // pub(crate) fn move_remove_columns(
+    //     &self,
+    //     src_row: Row,
+    //     dst_row: Row,
+    //     e: Entity,
+    //     move_removed_columns: &Vec<(ColumnIndex, ColumnIndex)>,
+    // ) {
+    //     for i in self.move_removed_indexs.clone().into_iter() {
+    //         let column_index = unsafe { move_removed_columns.get_unchecked(i) };
+    //         let column = self.src.get_remove_column(column_index.0);
+    //         // 如果目标原型的移除列上有对应监听，则记录移除行
+    //         let d = self.dst.get_remove_column(column_index.1);
+    //         // 在脏列表上记录移除行
+    //         let tick = column
+    //             .ticks
+    //             .get_i(src_row.index())
+    //             .map_or(Tick::null(), |r| *r);
+    //         *d.ticks.load_alloc(dst_row.index()) = tick;
+    //         d.dirty.record_unchecked(e, dst_row);
+    //     }
+    // }
 }
 
 #[derive(Debug)]
-pub struct State {
+pub struct AState {
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
     pub(crate) adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
     moving: Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>, // 两个ColumnIndex分别是源原型vec中的位置及目标原型vec中的位置
     removing: Vec<(ComponentIndex, ColumnIndex)>,            // ColumnIndex是组件在源原型vec中的位置
-    removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
-    move_removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的removed_column的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
+    removed_columns: Vec<Option<Share<ComponentRemovedRecord>>>, // 源原型的被移除的组件的移除记录
+    // removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
+    // move_removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的removed_column的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
 }
-impl State {
+impl AState {
     pub(crate) fn make(
         world: &mut World,
         add: Vec<ComponentInfo>,
@@ -505,7 +510,7 @@ impl State {
             moving: Default::default(),
             removing: Default::default(),
             removed_columns: Default::default(),
-            move_removed_columns: Default::default(),
+            // move_removed_columns: Default::default(),
         }
     }
     // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
@@ -514,10 +519,9 @@ impl State {
         world: &'a World,
         vec: &mut Vec<ArchetypeMapping>, // 记录所有的原型映射
         mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
-        tick: Tick,
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        for ar_index in mapping_dirtys.iter() {
+        for ar_index in mapping_dirtys.drain(..) {
             let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
@@ -531,8 +535,7 @@ impl State {
                 }
             }
             self.move_columns(am);
-            self.remove_columns(am, tick);
-            self.move_remove_columns(am);
+            self.remove_columns(am);
             // 设置目标原型的entity及entity上的EntityAddr
             for (_, dst_row, e) in am.moves.iter() {
                 am.dst.set(*dst_row, *e);
@@ -570,45 +573,42 @@ impl State {
         }
     }
     // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
-    pub(crate) fn remove_columns(&self, am: &mut ArchetypeMapping, tick: Tick) {
+    pub(crate) fn remove_columns(&self, am: &mut ArchetypeMapping) {
         for i in am.removed_indexs.clone().into_iter() {
-            let column_index = unsafe { self.removed_columns.get_unchecked(i) };
-            let src_column = am.src.get_column_unchecked(column_index.0);
-            if src_column.needs_drop() {
+            let (_, column_index) = unsafe { self.removing.get_unchecked(i) };
+            let column = am.src.get_column_unchecked(*column_index);
+            if column.needs_drop() {
                 for (src_row, _dst_row, _e) in am.moves.iter() {
-                    src_column.drop_row_unchecked(*src_row)
+                    column.drop_row_unchecked(*src_row)
                 }
             }
-            if column_index.1.is_null() {
-                continue;
-            }
-            // 如果目标原型的移除列上有对应监听，则记录移除行
-            let dst_removed_column = am.dst.get_remove_column(column_index.1);
-            for (_src_row, dst_row, e) in am.moves.iter() {
-                // 在脏列表上记录移除行
-                *dst_removed_column.ticks.load_alloc(dst_row.index()) = tick;
-                dst_removed_column.dirty.record(*e, *dst_row, tick);
+            // 如果移除列上有对应监听，则记录移除行
+            if let Some(record) = unsafe { self.removed_columns.get_unchecked(i)} {
+                for (_src_row, _dst_row, e) in am.moves.iter() {
+                    // 记录移除实体
+                    record.record(*e);
+                }
             }
         }
     }
-    // 移动移除组件的tick
-    pub(crate) fn move_remove_columns(&self, am: &mut ArchetypeMapping) {
-        for i in am.move_removed_indexs.clone().into_iter() {
-            let column_index = unsafe { self.move_removed_columns.get_unchecked(i) };
-            let src_removed_column = am.src.get_remove_column(column_index.0);
-            // 如果目标原型的移除列上有对应监听，则记录移除行
-            let dst_removed_column = am.dst.get_remove_column(column_index.1);
-            for (src_row, dst_row, e) in am.moves.iter() {
-                // 在脏列表上记录移除行
-                let tick = src_removed_column
-                    .ticks
-                    .get_i(src_row.index())
-                    .map_or(Tick::null(), |r| *r);
-                *dst_removed_column.ticks.load_alloc(dst_row.index()) = tick;
-                dst_removed_column.dirty.record(*e, *dst_row, tick);
-            }
-        }
-    }
+    // // 移动移除组件的tick
+    // pub(crate) fn move_remove_columns(&self, am: &mut ArchetypeMapping) {
+    //     for i in am.move_removed_indexs.clone().into_iter() {
+    //         let column_index = unsafe { self.move_removed_columns.get_unchecked(i) };
+    //         let src_removed_column = am.src.get_remove_column(column_index.0);
+    //         // 如果目标原型的移除列上有对应监听，则记录移除行
+    //         let dst_removed_column = am.dst.get_remove_column(column_index.1);
+    //         for (src_row, dst_row, e) in am.moves.iter() {
+    //             // 在脏列表上记录移除行
+    //             let tick = src_removed_column
+    //                 .ticks
+    //                 .get_i(src_row.index())
+    //                 .map_or(Tick::null(), |r| *r);
+    //             *dst_removed_column.ticks.load_alloc(dst_row.index()) = tick;
+    //             dst_removed_column.dirty.record(*e, *dst_row, tick);
+    //         }
+    //     }
+    // }
 
     // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
     pub(crate) fn find_mapping<'a>(
@@ -647,23 +647,25 @@ impl State {
         let (dst_index, dst) = world.find_archtype(info);
         mapping.dst = dst;
         mapping.dst_index = dst_index;
-        // 计算移除列在目标原型上RemovedColumns对应的位置
+        // 计算移除列及对应移除记录
         for i in mapping.removed_indexs.clone() {
-            let (component_index, column_index) = unsafe { self.removing.get_unchecked(i) };
-            // 获取被移除的组件在目标原型的移除列的位置
-            let remove_column_index = mapping.dst.add_remove_column_index(*component_index);
-            self.removed_columns
-                .push((*column_index, remove_column_index));
+            let (_, index) = unsafe { self.removing.get_unchecked(i) };
+            let c = mapping.src.get_column_unchecked(*index);
+            let crr = world.get_event_record(&c.info().type_id).map(|r| {
+                // todo 首次alter时，就state上记录crr。不需要removes_columns上记录很多次
+                Share::downcast::<ComponentRemovedRecord>(r.into_any()).unwrap()
+            });
+            self.removed_columns.push(crr);
         }
-        let move_removed_start = self.move_removed_columns.len();
-        // 计算源原型的RemovedColumns，在目标原型上RemovedColumns对应的位置
-        for (i, r) in mapping.src.get_remove_columns().iter().enumerate() {
-            // 获取被移除的组件在目标原型的移除列的位置
-            let remove_column_index = mapping.dst.add_remove_column_index(r.index);
-            self.move_removed_columns
-                .push((i.into(), remove_column_index));
-        }
-        mapping.move_removed_indexs = move_removed_start..self.move_removed_columns.len();
+        // let move_removed_start = self.move_removed_columns.len();
+        // // 计算源原型的RemovedColumns，在目标原型上RemovedColumns对应的位置
+        // for (i, r) in mapping.src.get_remove_columns().iter().enumerate() {
+        //     // 获取被移除的组件在目标原型的移除列的位置
+        //     let remove_column_index = mapping.dst.add_remove_column_index(r.index);
+        //     self.move_removed_columns
+        //         .push((i.into(), remove_column_index));
+        // }
+        // mapping.move_removed_indexs = move_removed_start..self.move_removed_columns.len();
         (true, true)
     }
     pub(crate) fn alter_row(
@@ -673,14 +675,13 @@ impl State {
         src_row: Row,
         dst_row: Row,
         e: Entity,
-        tick: Tick,
     ) {
         // println!("alter_row: {:?}", (&mapping.dst_index, ar_index, src_row, dst_row, e, tick));
         mapping.src.mark_remove(src_row);
         mapping.move_columns(src_row, dst_row, e, &self.moving);
-        mapping.remove_columns(src_row, dst_row, e, tick, &self.removed_columns);
-        // // 移动所有的RemoveColumn
-        mapping.move_remove_columns(src_row, dst_row, e, &self.move_removed_columns);
+        mapping.remove_columns(src_row,  e, &self.removing, &self.removed_columns);
+        // // // 移动所有的RemoveColumn
+        // mapping.move_remove_columns(src_row, dst_row, e, &self.move_removed_columns);
         // 写目标行的Entity
         mapping.dst.set(dst_row, e);
         // 更改entity上存的EntityAddr
@@ -714,10 +715,10 @@ pub struct AlterState<A: Bundle> {
     bundle_vec: Vec<MaybeUninit<A::Item>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
     mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
-    state: State,
+    state: AState,
 }
 impl<A: Bundle> Deref for AlterState<A> {
-    type Target = State;
+    type Target = AState;
 
     fn deref(&self) -> &Self::Target {
         &self.state
@@ -734,7 +735,7 @@ impl<A: Bundle> AlterState<A> {
         add: Vec<ComponentInfo>,
         remove: Vec<ComponentInfo>,
     ) -> Self {
-        let state = State::make(world, add, remove);
+        let state = AState::make(world, add, remove);
         Self {
             bundle_vec: Vec::new(),
             vec: Vec::new(),
@@ -806,7 +807,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
     /// 标记销毁当前迭代的实体
 
     pub fn destroy(&mut self) -> Result<bool, QueryError> {
-        State::destroy_row(&self.it.world, &self.it.ar, self.it.row)
+        AState::destroy_row(&self.it.world, &self.it.ar, self.it.row)
     }
 
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {

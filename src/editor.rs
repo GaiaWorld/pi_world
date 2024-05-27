@@ -8,7 +8,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{ArchetypeMapping, State},
+    alter::{ArchetypeMapping, AState},
     archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row},
     insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
@@ -18,7 +18,7 @@ use crate::{
     world::ComponentIndex,
 };
 
-impl State {
+impl AState {
     fn insert_columns(&self, am: &mut ArchetypeMapping, dst_row: Row, e: Entity, tick: Tick) {
         for i in am.add_indexs.clone().into_iter() {
             let (_, dst_i) = unsafe { self.adding.get_unchecked(i) };
@@ -125,7 +125,7 @@ impl<'w> EntityEditor<'w> {
         } else {
             editor_state
                 .alter_map
-                .insert(hash, State::new(editor_state.tmp.clone()));
+                .insert(hash, AState::new(editor_state.tmp.clone()));
             editor_state.alter_map.get_mut(&hash).unwrap()
         };
 
@@ -138,7 +138,7 @@ impl<'w> EntityEditor<'w> {
         // println!("mapping: {}")
         state.insert_columns(mapping, dst_row, e, tick.clone());
 
-        state.alter_row(&self.world, mapping, addr.row, dst_row, e, tick);
+        state.alter_row(&self.world, mapping, addr.row, dst_row, e);
 
         Ok(())
     }
@@ -167,7 +167,7 @@ impl<'w> EntityEditor<'w> {
         let ar_index = addr.archetype_index();
         let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
 
-        State::destroy_row(&self.world, ar, addr.row)?;
+        AState::destroy_row(&self.world, ar, addr.row)?;
 
         Ok(())
     }
@@ -219,7 +219,7 @@ impl<'w> EntityEditor<'w> {
 
 #[derive(Default)]
 pub(crate) struct EditorState {
-    alter_map: HashMap<u64, State>, // sorted_add_removes的hash值
+    alter_map: HashMap<u64, AState>, // sorted_add_removes的hash值
     archetype_map: HashMap<(ArchetypeWorldIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,
     tmp: Vec<(ComponentIndex, bool)>,

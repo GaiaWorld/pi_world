@@ -23,10 +23,11 @@ pub mod prelude {
         insert::{Insert, Bundle, Component},
         insert_batch::InsertBatchIter,
         alter::Alter,
+        event:: {Event, EventSender, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
-        filter::{Changed, Removed, Destroyed, Empty, With, Without, Or, FilterComponents},
+        filter::{Changed, Destroyed, Empty, With, Without, Or, FilterComponents},
         fetch::{Has, Mut, OrDefault, Ticker, ArchetypeName},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},
@@ -50,6 +51,7 @@ pub mod archetype;
 pub mod query;
 pub mod fetch;
 pub mod filter;
+pub mod event;
 pub mod param_set;
 pub mod single_res;
 pub mod multi_res;

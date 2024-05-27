@@ -44,10 +44,6 @@ impl World{
                     }
                 }
 
-                if let Some(remove_columns) = expect.remove_columns{
-                    assert_eq!(real.get_remove_columns().len(), remove_columns, "{:?}", real);
-                }
-
                 if let Some(destroys) = expect.destroys_listeners{
                     assert_eq!(unsafe{&*real.destroys.get()}.listener_len(), destroys, "{:?}", real);
                 }

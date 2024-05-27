@@ -22,7 +22,7 @@ pub enum DirtyType {
     #[default]
     Destroyed,
     Changed(ColumnIndex), // table.columns组件列的位置
-    Removed(ColumnIndex), // table.remove_columns组件列的位置
+    // Removed(ColumnIndex), // table.remove_columns组件列的位置
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -85,7 +85,7 @@ impl ListenerInfo {
 }
 #[derive(Debug, Default)]
 pub struct Dirty {
-    listeners: Vec<ListenerInfo>, // 每个监听器的TypeId和当前读取的长度
+    listeners: Vec<ListenerInfo>, // 每个监听器的唯一Id和当前读取的长度
     pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
     pub(crate) min_tick: Tick,            // 所有监听器的最小tick，用来快速剔除记录
 }
@@ -140,9 +140,10 @@ impl Dirty {
                 .listener_list()
                 .get_unchecked(listener_index as usize)
         };
-        let start = info.read_len.load(Ordering::Relaxed);
-        info.read_len.store(end, Ordering::Relaxed);
-        info.tick.store(tick.index(), Ordering::Relaxed);
+        let start = info.read_len.swap(end, Ordering::Relaxed);
+        if !tick.is_null() {
+            info.tick.store(tick.index(), Ordering::Relaxed);
+        }
         self.vec.slice(start..end)
     }
     /// 判断是否能够清空脏列表
@@ -179,7 +180,7 @@ impl Dirty {
         }
     }
     // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
-    pub(crate) fn collect(&mut self) -> bool {
+    pub(crate) fn settle(&mut self) -> bool {
         if self.listeners.is_empty() {
             return true;
         }

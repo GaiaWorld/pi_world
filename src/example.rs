@@ -206,7 +206,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::TypeInfo, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -227,7 +227,7 @@ mod test_mod {
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
         let mut action = Default::default();
-        c.collect(2, &mut action);
+        c.settle(2, &mut action);
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
     }
@@ -346,7 +346,7 @@ mod test_mod {
         let mut world = World::new();
         let i = world.make_inserter::<(A,)>();
         let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
-        world.collect();
+        world.settle();
         let index= world.init_component::<B>();
         {
             let mut editor = world.make_entity_editor();
@@ -417,7 +417,7 @@ mod test_mod {
                 Velocity(Vector3::unit_x()),
             )
         }));
-        world.collect();
+        world.settle();
         let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
         println!("query, {:?}", query.iter().size_hint());
         b.iter( || {
@@ -578,7 +578,7 @@ mod test_mod {
         let i = world.make_inserter::<(Age1, Age0)>();
         let e1 = i.insert((Age1(2), Age0(1)));
         let e2 = i.insert((Age1(4), Age0(2)));
-        world.collect();
+        world.settle();
         {
             let mut editor = world.make_entity_editor();
             let index = editor.init_component::<Age2>();
@@ -586,7 +586,7 @@ mod test_mod {
             // editor.add_components(e1, &[index]);
             editor.add_components(e2, &[index]);
         }
-        world.collect();
+        world.settle();
 
         let mut info = ArchetypeDebug {
             entitys: Some(1),
@@ -627,7 +627,7 @@ mod test_mod {
         let _entities = (0..1)
             .map(|_| i.insert((Age0(0),)))
             .collect::<Vec<Entity>>();
-        world.collect();
+        world.settle();
         let mut editor = world.make_entity_editor();
         let index = editor.init_component::<Age1>();
         {
@@ -744,10 +744,10 @@ mod test_mod {
             }
             println!("alter1: end");
         }
-        pub fn removed_l(q0: Query<(Entity, &mut Age0, &mut Age1), (Removed<Age3>,)>) {
+        pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
             println!("removed_l");
-            for (e, age0, _) in q0.iter() {
-                println!("e {:?}, age0: {:?}", e, age0);
+            for e in removed.iter() {
+                println!("e:{:?}, q0: {:?}", e, q0.get(*e).unwrap());
             }
         
             println!("removed_l: end");
@@ -842,7 +842,7 @@ mod test_mod {
         let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
         i.batch(it);
 
-        app.world.collect();
+        app.world.settle();
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -944,7 +944,7 @@ mod test_mod {
         let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
         i.batch(it);
 
-        app.world.collect();
+        app.world.settle();
         // app.schedule.add_async_system(ab5);
         // app.add_system(Update, ab);
         // app.add_system(Update, cd);
@@ -1050,12 +1050,12 @@ mod test_mod {
             e.0 += b.iter().count() as f32 + 1.0;
             c.0 += b.iter().count() as f32 + 1.0;
         }
-        let mut app = MultiThreadApp::new();
+        let mut app = SingleThreadApp::new();
         app.world.insert_single_res(A(1.0));
-        app.world.register_multi_res::<B>();
-        app.world.register_multi_res::<C>();
-        app.world.register_multi_res::<D>();
-        app.world.register_multi_res::<E>();
+        app.world.register_multi_res(TypeInfo::of::<B>());
+        app.world.register_multi_res(TypeInfo::of::<C>());
+        app.world.register_multi_res(TypeInfo::of::<D>());
+        app.world.register_multi_res(TypeInfo::of::<E>());
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -1072,7 +1072,7 @@ mod test_mod {
 
         assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);
         assert_eq!(app.world.get_multi_res::<C>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 8.0);
+        assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 4.0);
         assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
     }
 
@@ -1526,11 +1526,11 @@ mod test_mod {
             println!("alter_add3 end");
         }
 
-        pub fn query(q: Query<(Entity, &Age1, &Age2, &Age3), (Removed<Age0>)>) {
+        pub fn query(q: Query<(&Age1, &Age2, &Age3)>, removed: ComponentRemoved<Age0>) {
             println!("query start!!!");
-            let iter = q.iter().next();
-            assert_eq!(iter.is_some(), true);
-            let (e, age1, age2, age3) = iter.unwrap();
+            let re = removed.iter().next();
+            assert_eq!(re.is_some(), true);
+            let (age1, age2, age3) = q.get(*re.unwrap()).unwrap();
             println!("query end!!!");
         }
 
