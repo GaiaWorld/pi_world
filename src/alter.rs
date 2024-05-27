@@ -521,7 +521,7 @@ impl State {
         mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        for ar_index in mapping_dirtys.iter() {
+        for ar_index in mapping_dirtys.drain(..) {
             let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
