@@ -369,13 +369,13 @@ impl Archetype {
         self.get_columns().len() == 0
     }
     /// 整理方法
-    pub(crate) fn collect(
+    pub(crate) fn settle(
         &mut self,
         world: &World,
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) {
-        let _r = self.table.collect(world, action, set);
+        let _r = self.table.settle(world, action, set);
     }
 }
 

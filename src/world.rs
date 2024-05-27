@@ -11,7 +11,7 @@ use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::prelude::Mut;
 use crate::query::{QueryError, QueryState, Queryer};
-use crate::removed::ComponentRemovedRecord;
+use crate::event::EventRecord;
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use crate::system::TypeInfo;
 /// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
@@ -135,14 +135,14 @@ impl<T: Default> SetDefault for T {
     }
 }
 
-#[derive(Debug)]
 pub struct World {
     pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>, // 似乎只需要普通hashmap
     pub(crate) single_res_arr: AppendVec<Option<SingleResource>>, // todo 改成AppendVec<SingleResource>
     pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
+    pub(crate) event_map: HashMap<TypeId, Share<dyn EventRecord>>,
     pub(crate) component_map: DashMap<TypeId, ComponentIndex>, // 似乎只需要普通hashmap
     pub(crate) component_arr: SafeVec<ComponentInfo>, // todo 改成AppendVec<SingleResource>// 似乎只需要普通vec
-    pub(crate) component_removed_map: HashMap<ComponentIndex, Share<ComponentRemovedRecord>>, // 只需要普通hashmap
+    // pub(crate) component_removed_map: HashMap<ComponentIndex, Share<ComponentRemovedRecord>>, // 只需要普通hashmap
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u128, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
@@ -153,6 +153,15 @@ pub struct World {
     archetype_ok_key: EventListKey,
     // 世界当前的tick
     tick: ShareUsize,
+}
+impl Debug for World {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("World")
+            .field("entitys", &self.entities)
+            .field("component_arr", &self.component_arr)
+            .field("archetype_arr", &self.archetype_arr)
+            .finish()
+    }
 }
 impl World {
     pub fn new() -> Self {
@@ -170,10 +179,11 @@ impl World {
             single_res_map: DashMap::default(),
             single_res_arr: Default::default(),
             multi_res_map: DashMap::default(),
+            event_map: Default::default(),
             entities: SlotMap::default(),
             component_map: DashMap::new(),
             component_arr,
-            component_removed_map: Default::default(),
+            // component_removed_map: Default::default(),
             archetype_map,
             archetype_arr,
             empty_archetype,
@@ -519,16 +529,27 @@ impl World {
             .get(&tid)
             .map(|v| unsafe { transmute(v.get_unchecked::<T>(index)) })
     }
-    /// system初始化组件移除记录
-    pub(crate) fn init_component_removed_record(&mut self, index: ComponentIndex, type_name: Cow<'static, str>) -> Share<ComponentRemovedRecord> {
-        let r = self.component_removed_map.entry(index).or_insert_with(|| {
-            Share::new(ComponentRemovedRecord::new(type_name))
+    // /// system初始化组件移除记录
+    // pub(crate) fn init_component_removed_record(&mut self, index: ComponentIndex, type_name: Cow<'static, str>) -> Share<ComponentRemovedRecord> {
+    //     let r = self.component_removed_map.entry(index).or_insert_with(|| {
+    //         Share::new(ComponentRemovedRecord::new(type_name))
+    //     });
+    //     r.clone()
+    // }
+    // /// system初始化组件移除记录
+    // pub(crate) fn get_component_removed_record(&self, index: ComponentIndex) -> Option<Share<ComponentRemovedRecord>> {
+    //     self.component_removed_map.get(&index).map(|r| r.clone())
+    // }
+    /// 初始化事件记录
+    pub(crate) fn init_event_record(&mut self, type_id: TypeId, event_record: Share<dyn EventRecord>) -> Share<dyn EventRecord> {
+        let r = self.event_map.entry(type_id).or_insert_with(|| {
+            event_record
         });
         r.clone()
     }
-    /// system初始化组件移除记录
-    pub(crate) fn get_component_removed_record(&self, index: ComponentIndex) -> Option<Share<ComponentRemovedRecord>> {
-        self.component_removed_map.get(&index).map(|r| r.clone())
+    /// 获得事件记录
+    pub(crate) fn get_event_record(&self, type_id: &TypeId) -> Option<Share<dyn EventRecord>> {
+        self.event_map.get(type_id).map(|r| r.clone())
     }
 
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
@@ -857,20 +878,20 @@ impl World {
         addr.row = row;
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
-    pub fn collect(&mut self) {
-        self.collect_by(&mut Vec::new(), &mut FixedBitSet::new())
+    pub fn settle(&mut self) {
+        self.settle_by(&mut Vec::new(), &mut FixedBitSet::new())
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
-    pub fn collect_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
+    pub fn settle_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
         self.entities.collect();
-        self.archetype_arr.collect();
-        for rr in self.component_removed_map.iter_mut() {
-            let crr = unsafe { Share::get_mut_unchecked(rr.1) };
-            crr.collect();
+        self.archetype_arr.settle();
+        for aer in self.event_map.values_mut() {
+            let er = unsafe { Share::get_mut_unchecked(aer) };
+            er.settle();
         }
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
-            archetype.collect(self, action, set)
+            archetype.settle(self, action, set)
         }
     }
 }

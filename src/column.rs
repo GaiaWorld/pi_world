@@ -131,7 +131,7 @@ impl Column {
         self.dirty.reserve(additional);
     }
     /// 整理合并空位
-    pub(crate) fn collect(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
+    pub(crate) fn settle(&mut self, entity_len: usize, action: &Vec<(Row, Row)>) {
         for (src, dst) in action.iter() {
             unsafe {
                 // 整理合并指定的键

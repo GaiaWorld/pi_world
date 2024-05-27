@@ -1,9 +1,12 @@
-use std::{fmt::Debug, any::TypeId, borrow::Cow, collections::HashMap, future::Future, mem::take, pin::Pin};
+use std::{
+    any::TypeId, borrow::Cow, collections::HashMap, fmt::Debug, future::Future, mem::{replace, take}, pin::Pin,
+};
 
 use pi_share::Share;
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags}, world:: World,
+    archetype::{Archetype, ArchetypeDependResult, Flags},
+    world::{ComponentIndex, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -53,44 +56,47 @@ impl ReadWrite {
 }
 
 #[derive(Debug, Clone)]
-pub enum Relation {
-    With(TypeId),
-    Without(TypeId),
-    Read(TypeId),
-    Write(TypeId),
-    OptRead(TypeId),
-    OptWrite(TypeId),
+pub enum Relation<T: Eq> {
+    With(T),
+    Without(T),
+    Read(T),
+    Write(T),
+    OptRead(T),
+    OptWrite(T),
     Or,
     And,
     End,
 }
-impl Relation {
-    pub fn without(&self, type_id: &TypeId, r: RelateResult) -> RelateResult {
+impl<T: Eq> Relation<T> {
+    pub fn without(&self, type_id: &mut T) -> bool {
         match self {
-            Relation::With(id) if id == type_id => r.ok(Some(true)),
-            Relation::Read(id) if id == type_id => r.ok(Some(true)),
-            Relation::Write(id) if id == type_id => r.ok(Some(true)),
-            _ => r,
+            Relation::With(id) if id == type_id => false,
+            Relation::Read(id) if id == type_id => false,
+            Relation::Write(id) if id == type_id => false,
+            _ => true,
         }
     }
-    pub fn read(&self, type_id: &TypeId, r: RelateResult) -> RelateResult {
+    pub fn read(&self, type_id: &mut T) -> bool {
         match self {
-            Relation::Without(id) if id == type_id => r.ok(Some(false)),
-            Relation::Read(id) if id == type_id => r.ok(Some(true)),
-            Relation::Write(id) if id == type_id => r.ok(Some(false)),
-            Relation::OptRead(id) if id == type_id => r.ok(None),
-            Relation::OptWrite(id) if id == type_id => r.ok(None),
-            _ => r,
+            Relation::Write(id) if id == type_id => false,
+            Relation::OptWrite(id) if id == type_id => false,
+            _ => true,
         }
     }
-    pub fn write(type_id: TypeId, other: &Relation) -> RelateResult {
-        todo!()
-    }
-    pub fn is_start(&self) -> RelateResult {
+    pub fn write(&self, type_id: &mut T) -> bool {
         match self {
-            Relation::Or => RelateResult::start(false),
-            Relation::And => RelateResult::start(true),
-            _ => RelateResult::default(),
+            Relation::Read(id) if id == type_id => true,
+            Relation::OptRead(id) if id == type_id => false,
+            Relation::Write(id) if id == type_id => false,
+            Relation::OptWrite(id) if id == type_id => false,
+            _ => true,
+        }
+    }
+    pub fn node(&self) -> Option<bool> {
+        match self {
+            Relation::And => Some(true),
+            Relation::Or => Some(false),
+            _ => None,
         }
     }
     pub fn is_end(&self) -> bool {
@@ -99,166 +105,210 @@ impl Relation {
             _ => false,
         }
     }
-
 }
 #[derive(Debug, Default, Clone, Copy)]
-pub struct RelateResult {
-    result: Option<bool>,
-    and: Option<bool>,
+pub struct RelateNode {
+    is_and: bool,
+    result: bool,
 }
-impl RelateResult {
-    pub fn ok(mut self, result: Option<bool>) -> Self {
-        self.result = result;
-        self
-    }
-    pub fn end(mut self) -> Self {
-        self.result;
-        self
-    }
-    pub fn start(and: bool) -> Self {
+impl RelateNode {
+    pub fn new(is_and: bool) -> Self {
         Self {
-            result: None,
-            and: Some(and),
+            is_and,
+            result: is_and,
+        }
+    }
+    pub fn ok(&mut self, result: bool) {
+        if self.is_and {
+            self.result &= result;
+        } else {
+            self.result |= result;
         }
     }
 }
-
+/// 用指定的函数和参数，遍历关系列表
+pub fn traversal<T: Eq, F, A>(
+    vec: &Vec<Relation<T>>,
+    f: &F,
+    arg: &mut A,
+    start: &mut usize,
+    mut node: RelateNode,
+) -> bool
+where
+    F: Fn(&Relation<T>, &mut A) -> bool,
+{
+    while *start < vec.len() {
+        let r = unsafe { vec.get_unchecked(*start) };
+        *start += 1;
+        if r.is_end() {
+            // 返回node的结果
+            return node.result;
+        }
+        let b = if let Some(is_and) = r.node() {
+            // 创建新的node，递归遍历
+            traversal(vec, f, arg, start, RelateNode::new(is_and))
+        } else {
+            f(r, arg)
+        };
+        node.ok(b);
+    }
+    node.result
+}
 #[derive(Debug, Default)]
 pub struct Related {
-    pub(crate) vec: Vec<Relation>,
-    pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
+    pub(crate) vec: Vec<Relation<ComponentIndex>>,
+    // pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
 }
 impl Related {
-    pub fn read(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
-        if !self.contains(&type_info) {
-            
-        }
-        self.vec.push(Relation::Read(type_info.type_id));
-        return Ok(())
-    }
-    pub fn write(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
-        if !self.contains(&type_info) {
-        }
-        self.vec.push(Relation::Write(type_info.type_id));
-        return Ok(())
-    }
-    pub fn read_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
-        if !self.contains(&type_info) {
-        }
-        self.vec.push(Relation::OptRead(type_info.type_id));
-        return Ok(())
-    }
-    pub fn write_opt(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
-        if !self.contains(&type_info) {
-        }
-        self.vec.push(Relation::OptWrite(type_info.type_id));
-        return Ok(())
-    }
-    pub fn without(&mut self, type_info: TypeInfo) -> Result<(), Cow<'static, str>> {
-        if !self.contains(&type_info) {
-        }
-        self.vec.push(Relation::Without(type_info.type_id));
-        return Ok(())
-    }
-    pub fn contains(&mut self, type_info: &TypeInfo) -> bool {
-        match self.map.entry(type_info.type_id) {
-            std::collections::hash_map::Entry::Occupied(_) => true,
-            std::collections::hash_map::Entry::Vacant(e) => {
-                e.insert(type_info.name.clone());
-                false
-            },
-        }
-    }
-
-    pub fn check<F>(&self, f: &F, type_id: &TypeId, start: &mut usize, result: RelateResult) -> RelateResult
-    where
-        F: Fn(&Relation, &TypeId, RelateResult) -> RelateResult,
-    {
-        while *start < self.vec.len() {
-            let r = unsafe { self.vec.get_unchecked(*start) };
-            *start += 1;
-            if r.is_end() {
-                return result.end();
-            }
-            let re = r.is_start();
-            if re.and.is_some() {
-                let re = self.check(f, type_id, start, re);
-                if re.result.is_some() {
-                    
-                }
-            }
-            let result = f(r, type_id, result);
-            if result.result.is_some() {
-                return result;
-            }
-        }
-        result
-    }
+    // pub fn read(&mut self, type_info: TypeInfo){
+    //     if !self.contains(&type_info) {}
+    //     self.vec.push(Relation::Read(type_info.type_id));
+    // }
+    // pub fn write(&mut self, type_info: TypeInfo){
+    //     if !self.contains(&type_info) {}
+    //     self.vec.push(Relation::Write(type_info.type_id));
+    // }
+    // pub fn read_opt(&mut self, type_info: TypeInfo){
+    //     if !self.contains(&type_info) {}
+    //     self.vec.push(Relation::OptRead(type_info.type_id));
+    // }
+    // pub fn write_opt(&mut self, type_info: TypeInfo){
+    //     if !self.contains(&type_info) {}
+    //     self.vec.push(Relation::OptWrite(type_info.type_id));
+    // }
+    // pub fn without(&mut self, type_info: TypeInfo){
+    //     if !self.contains(&type_info) {}
+    //     self.vec.push(Relation::Without(type_info.type_id));
+    // }
+    // pub fn contains(&mut self, type_info: &TypeInfo) -> bool {
+    //     match self.map.entry(type_info.type_id) {
+    //         std::collections::hash_map::Entry::Occupied(_) => true,
+    //         std::collections::hash_map::Entry::Vacant(e) => {
+    //             e.insert(type_info.name.clone());
+    //             false
+    //         }
+    //     }
+    // }
+    
     // 检查新旧读写在reads或writes是否完全不重合
-    pub fn check_rw(&self, other: &Related, vec: &mut Vec<TypeId>) {
+    pub fn check_rw(&self, other: &Related) {
         // 先检查withouts
         if self.check_without(other) || other.check_without(self) {
             return;
         }
-        assert_eq!(self.check_w(other, false, true), None);
-        assert_eq!(self.check_w(other, true, true), None);
-        assert_eq!(self.check_w(other, true, false), None);
+        assert_eq!(self.check_w(other), true);
+        assert_eq!(other.check_w(self), true);
     }
-    // 检查other的每一个without，和self的with read或writes判断，表示查询完全不重合
+    // 检查other的每一个without，和self的with read或writes判断，返回true表示查询完全不重合
     pub fn check_without(&self, other: &Related) -> bool {
-        // 
         for w in other.vec.iter() {
             match w {
                 Relation::Without(t) => {
+                    let mut t = *t;
                     let mut start = 0;
-                    let r = self.check(&Relation::without, t, &mut start, RelateResult::start(true)).end();
-                    if r.result.is_some() && r.result.unwrap() {
+                    if traversal(
+                        &self.vec,
+                        &Relation::without,
+                        &mut t,
+                        &mut start,
+                        RelateNode::new(true),
+                    ) {
                         return true;
                     }
-                },
-                _ => ()
+                }
+                _ => (),
             }
         }
-        // for w in withouts.keys() {
-        //     if rw.reads.contains_key(w) || rw.writes.contains_key(w) || rw.withs.contains_key(w) {
-        //         return true;
-        //     }
-        // }
         false
     }
-    // 检查数据集是否和写冲突
-    pub fn check_w(&self, other: &Related, self_write: bool, other_write: bool) -> Option<Cow<'static, str>> {
-        // for t in map.iter() {
-        //     if writes.contains_key(t.0) {
-        //         return Some(t.1.clone());
-        //     }
-        // }
-        None
+    // 检查自身数据集是否读写冲突, 返回true表示冲突
+    pub fn check_self(&self) -> bool {
+        for i in 0..self.vec.len() {
+            let r = unsafe { self.vec.get_unchecked(i) };
+            match r {
+                Relation::Read(t) => {
+                    if !self.check_read(*t, i+1) {
+                        return true;
+                    }
+                }
+                Relation::OptRead(t) => {
+                    if !self.check_read(*t, i+1) {
+                        return true;
+                    }
+                }
+                Relation::Write(t) => {
+                    if !self.check_write(*t, i+1) {
+                        return true;
+                    }
+                }
+                Relation::OptWrite(t) => {
+                    if !self.check_write(*t, i+1) {
+                        return true;
+                    }
+                }
+                _ => (),
+            }
+        }
+        false
     }
-    
+    // 检查数据集是否读写冲突, 返回true表示冲突
+    pub fn check_w(&self, other: &Related) -> bool {
+        for w in other.vec.iter() {
+            match w {
+                Relation::Read(t) => {
+                    if !self.check_read(*t, 0) {
+                        return true;
+                    }
+                }
+                Relation::OptRead(t) => {
+                    if !self.check_read(*t, 0) {
+                        return true;
+                    }
+                }
+                Relation::Write(t) => {
+                    if !self.check_write(*t, 0) {
+                        return true;
+                    }
+                }
+                Relation::OptWrite(t) => {
+                    if !self.check_write(*t, 0) {
+                        return true;
+                    }
+                }
+                _ => (),
+            }
+        }
+        false
+    }
+    // 检查数据集是否读冲突
+    pub fn check_read(&self, mut t: ComponentIndex, mut start: usize) -> bool {
+        traversal(&self.vec, &Relation::read, &mut t, &mut start, RelateNode::new(true))
+    }
+    // 检查数据集是否读冲突
+    pub fn check_write(&self, mut t: ComponentIndex, mut start: usize) -> bool {
+        traversal(&self.vec, &Relation::write, &mut t, &mut start, RelateNode::new(true))
+    }
     // 判断该原型是否相关
     pub fn relate(&self, archetype: &Archetype) -> bool {
         true
     }
     // 获取该原型的每组件的读写依赖
-    pub fn depend(&self, archetype: &Archetype){
+    pub fn depend(&self, archetype: &Archetype) {
         todo!()
     }
-    
 }
 /// The metadata of a [`System`].
 pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
     pub(crate) vec: Vec<Share<Related>>, // 当前参数的读写依赖
-    pub(crate) cur_related: Related, // 当前参数的读写依赖
+    pub(crate) cur_related: Related,     // 当前参数的读写依赖
     pub(crate) res_map: HashMap<TypeId, (u8, Cow<'static, str>)>, // 参数集的读写依赖
     pub(crate) map: HashMap<TypeId, Cow<'static, str>>, // 当前参数的读写依赖
-    pub(crate) components: ReadWrite, // 该系统所有组件级读写依赖
-    pub(crate) cur_param: ReadWrite,  // 当前参数的读写依赖
-    pub(crate) param_set: ReadWrite,  // 参数集的读写依赖
+    pub(crate) components: ReadWrite,    // 该系统所有组件级读写依赖
+    pub(crate) cur_param: ReadWrite,     // 当前参数的读写依赖
+    pub(crate) param_set: ReadWrite,     // 参数集的读写依赖
     pub(crate) res_reads: HashMap<TypeId, Cow<'static, str>>, // 读Res
     pub(crate) res_writes: HashMap<TypeId, Cow<'static, str>>, // 写ResMut
-
 }
 
 impl SystemMeta {
@@ -287,7 +337,15 @@ impl SystemMeta {
     pub fn name(&self) -> &str {
         &self.type_info.name
     }
-
+    /// 用当前的关系表记录关系
+    pub fn record(&mut self, r: Relation<ComponentIndex>) {
+    }
+    /// 关系表结束
+    pub fn related_ok(&mut self) -> Share<Related> {
+        let ar = Share::new(take(&mut self.cur_related));
+        self.vec.push(ar.clone());
+        ar
+    }
     /// 当前参数检查通过
     pub fn cur_param_ok(&mut self) {
         // 检查前面查询的rw是否有组件读写冲突
@@ -340,7 +398,8 @@ impl SystemMeta {
         if self.res_writes.contains_key(&type_info.type_id) {
             panic!("res_read conflict, name:{}", type_info.name);
         }
-        self.res_reads.insert(type_info.type_id, type_info.name.clone());
+        self.res_reads
+            .insert(type_info.type_id, type_info.name.clone());
     }
     pub fn res_write(&mut self, type_info: &TypeInfo) {
         if self.res_reads.contains_key(&type_info.type_id) {
@@ -349,7 +408,8 @@ impl SystemMeta {
         if self.res_writes.contains_key(&type_info.type_id) {
             panic!("res_write write conflict, name:{}", type_info.name);
         }
-        self.res_writes.insert(type_info.type_id, type_info.name.clone());
+        self.res_writes
+            .insert(type_info.type_id, type_info.name.clone());
     }
 }
 
