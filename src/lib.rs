@@ -23,7 +23,7 @@ pub mod prelude {
         insert::{Insert, Bundle, Component},
         insert_batch::InsertBatchIter,
         alter::Alter,
-        removed:: ComponentRemoved,
+        event:: {Event, EventSender, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
@@ -51,7 +51,7 @@ pub mod archetype;
 pub mod query;
 pub mod fetch;
 pub mod filter;
-pub mod removed;
+pub mod event;
 pub mod param_set;
 pub mod single_res;
 pub mod multi_res;

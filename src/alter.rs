@@ -31,7 +31,7 @@ use crate::filter::FilterComponents;
 use crate::insert::Bundle;
 use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
-use crate::removed::ComponentRemovedRecord;
+use crate::event::ComponentRemovedRecord;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -112,7 +112,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         // self.state
-        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        AState::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -204,7 +204,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         // self.state
-        State::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
+        AState::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
@@ -481,7 +481,7 @@ impl ArchetypeMapping {
 }
 
 #[derive(Debug)]
-pub struct State {
+pub struct AState {
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
     pub(crate) adding: Vec<(ComponentIndex, ColumnIndex)>, // ColumnIndex是组件在目标原型vec中的位置
     moving: Vec<(ComponentIndex, ColumnIndex, ColumnIndex)>, // 两个ColumnIndex分别是源原型vec中的位置及目标原型vec中的位置
@@ -490,7 +490,7 @@ pub struct State {
     // removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的被移除的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
     // move_removed_columns: Vec<(ColumnIndex, ColumnIndex)>, // 源原型的removed_column的组件列位置列表及对应目标原型的removed_columns列位置, 如果为Null表示没有Tick及对应的监听
 }
-impl State {
+impl AState {
     pub(crate) fn make(
         world: &mut World,
         add: Vec<ComponentInfo>,
@@ -521,7 +521,7 @@ impl State {
         mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
-        for ar_index in mapping_dirtys.iter() {
+        for ar_index in mapping_dirtys.drain(..) {
             let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
@@ -649,8 +649,13 @@ impl State {
         mapping.dst_index = dst_index;
         // 计算移除列及对应移除记录
         for i in mapping.removed_indexs.clone() {
-            let (component_index, _) = unsafe { self.removing.get_unchecked(i) };
-            self.removed_columns.push(world.get_component_removed_record(*component_index));
+            let (_, index) = unsafe { self.removing.get_unchecked(i) };
+            let c = mapping.src.get_column_unchecked(*index);
+            let crr = world.get_event_record(&c.info().type_id).map(|r| {
+                // todo 首次alter时，就state上记录crr。不需要removes_columns上记录很多次
+                Share::downcast::<ComponentRemovedRecord>(r.into_any()).unwrap()
+            });
+            self.removed_columns.push(crr);
         }
         // let move_removed_start = self.move_removed_columns.len();
         // // 计算源原型的RemovedColumns，在目标原型上RemovedColumns对应的位置
@@ -710,10 +715,10 @@ pub struct AlterState<A: Bundle> {
     bundle_vec: Vec<MaybeUninit<A::Item>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
     mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
-    state: State,
+    state: AState,
 }
 impl<A: Bundle> Deref for AlterState<A> {
-    type Target = State;
+    type Target = AState;
 
     fn deref(&self) -> &Self::Target {
         &self.state
@@ -730,7 +735,7 @@ impl<A: Bundle> AlterState<A> {
         add: Vec<ComponentInfo>,
         remove: Vec<ComponentInfo>,
     ) -> Self {
-        let state = State::make(world, add, remove);
+        let state = AState::make(world, add, remove);
         Self {
             bundle_vec: Vec::new(),
             vec: Vec::new(),
@@ -802,7 +807,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
     /// 标记销毁当前迭代的实体
 
     pub fn destroy(&mut self) -> Result<bool, QueryError> {
-        State::destroy_row(&self.it.world, &self.it.ar, self.it.row)
+        AState::destroy_row(&self.it.world, &self.it.ar, self.it.row)
     }
 
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {

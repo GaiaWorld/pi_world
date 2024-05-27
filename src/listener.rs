@@ -162,8 +162,8 @@ impl ListenerMgr {
         self.notify_event(k, event);
     }
     pub fn collect(&mut self) {
-        self.listener_list.collect();
-        self.event_list.collect();
+        self.listener_list.settle();
+        self.event_list.settle();
     }
 }
 
@@ -185,7 +185,7 @@ impl<L: Listener<Event = E>, E: Clone> ListenerList<L, E> {
         }
     }
     pub fn collect(&mut self) {
-        self.vec.collect();
+        self.vec.settle();
     }
 }
 impl<L: Listener<Event = E>, E: Clone> Default for ListenerList<L, E> {
@@ -214,7 +214,7 @@ impl<E: Clone> EventList<E> {
         }
     }
     pub fn collect(&mut self) {
-        self.vec.collect();
+        self.vec.settle();
     }
 }
 

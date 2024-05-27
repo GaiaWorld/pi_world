@@ -91,8 +91,14 @@ impl<T> SafeVec<T> {
     pub fn slice(&self, range: Range<usize>) -> SafeVecIter<'_, T> {
         SafeVecIter(self.vec.slice(range))
     }
+    pub fn vec_capacity(&self) -> usize {
+        self.vec.vec_capacity()
+    }
+    pub unsafe fn vec_reserve(&mut self, additional: usize) {
+        self.vec.vec_reserve(additional)
+    }
     #[inline(always)]
-    pub fn collect(&mut self) {
+    pub fn settle(&mut self) {
         self.vec.collect();
     }
 

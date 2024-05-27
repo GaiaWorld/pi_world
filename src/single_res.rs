@@ -38,7 +38,7 @@ impl<'w, T: 'static> SingleRes<'w, T> {
 }
 
 impl<T: 'static> SystemParam for SingleRes<'_, T> {
-    type State = (SingleResource, Tick);
+    type State = (SingleResource, Tick); // todo 改成SingleResource<T>
     type Item<'w> = SingleRes<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {

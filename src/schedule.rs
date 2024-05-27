@@ -183,7 +183,7 @@ impl Schedule {
         }
 
         if schedule == &MainSchedule.intern() {
-            world.collect_by(&mut self.action, &mut self.set);
+            world.settle_by(&mut self.action, &mut self.set);
         }
     }
     async fn async_run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
@@ -220,7 +220,7 @@ impl Schedule {
         //     self.add_system_config(stage_label, system_config);
         // }
         
-        Share::get_mut(&mut self.systems).unwrap().collect();
+        Share::get_mut(&mut self.systems).unwrap().settle();
         // 首先初始化所有的system，有Insert的会产生对应的原型
         // for sys in self.systems.iter() {
         //     sys.initialize(world);

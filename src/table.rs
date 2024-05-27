@@ -332,7 +332,7 @@ impl Table {
     /// 尝试清空所有列的脏列表，所有的脏都被成功的处理和清理后，才能进行row调整
     /// 调整Row，将空位的entity换到尾部，将entitys变紧凑，没有空位。
     /// 在整理前，Row都是递增的。
-    pub(crate) fn collect(
+    pub(crate) fn settle(
         &mut self,
         world: &World,
         action: &mut Vec<(Row, Row)>,
@@ -345,7 +345,7 @@ impl Table {
         let mut r = true;
         // 先整理每个列，如果所有列的脏列表成功清空
         for c in self.sorted_columns.iter_mut() {
-            r &= c.dirty.collect();
+            r &= c.dirty.settle();
         }
         if !r {
             // 有失败的脏，不调整row，返回
@@ -377,7 +377,7 @@ impl Table {
         // 整理全部的列
         for c in self.sorted_columns.iter_mut() {
             // 整理合并空位
-            c.collect(new_entity_len, &action);
+            c.settle(new_entity_len, &action);
         }
         // 整理全部的列ticks
         for c in self.sorted_columns.iter_mut() {

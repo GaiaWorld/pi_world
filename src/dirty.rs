@@ -180,7 +180,7 @@ impl Dirty {
         }
     }
     // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
-    pub(crate) fn collect(&mut self) -> bool {
+    pub(crate) fn settle(&mut self) -> bool {
         if self.listeners.is_empty() {
             return true;
         }
