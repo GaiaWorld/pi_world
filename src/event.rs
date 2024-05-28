@@ -318,7 +318,7 @@ fn init_state<E: 'static>(
     let info = TypeInfo::of::<Event<E>>();
     let r = world.get_event_record(&info.type_id);
     if let Some(er) = r {
-        Share::downcast::<EventRecordVec<E>>(unsafe { std::mem::transmute(er) }).unwrap()
+        Share::downcast::<EventRecordVec<E>>(er.into_any()).unwrap()
     } else {
         let r = Share::new(EventRecordVec::<E>::new(info.name.clone()));
         world.init_event_record(info.type_id, r.clone());
