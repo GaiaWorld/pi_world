@@ -206,7 +206,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::TypeInfo, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -253,6 +253,48 @@ mod test_mod {
         let len = Table::removes_action(&removes, removes.len(), size, &mut action, &mut set);
         assert_eq!(len, asset_len, "{:?}", action);
         println!("action: {:?}", action)
+    }
+    #[test]
+    fn test_system_meta() {
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查自身
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::With(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查without读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.param_set_start();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Write(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.param_set_end();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::With(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查ParamSet读写
     }
 
     #[test]
@@ -1076,6 +1118,32 @@ mod test_mod {
         assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
     }
 
+    #[test]
+    fn test_event() {
+        struct A(f32);
+        #[derive(Clone, Copy, Default)]
+        struct B(f32);
+
+        fn ab(a: SingleRes<A>, mut b: EventSender<B>) {
+            b.send(B(a.0 + 1.0));
+        }
+
+        fn cd(b: Event<B>) {
+            println!("cd start");
+            for i in b.iter() {
+                assert_eq!(i.0, 2.0);
+            }
+            println!("cd end");
+        }
+
+        let mut app = SingleThreadApp::new();
+        app.world.insert_single_res(A(1.0));
+        app.add_system(Update, ab);
+        app.add_system(Update, cd);
+
+        app.run();
+        app.run();
+    }
     #[test]
     fn test_ticker() {
         pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {

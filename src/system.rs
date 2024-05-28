@@ -1,5 +1,12 @@
 use std::{
-    any::TypeId, borrow::Cow, collections::HashMap, fmt::Debug, future::Future, mem::{replace, take}, pin::Pin,
+    any::TypeId,
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    future::Future,
+    mem::{replace, take},
+    ops::Range,
+    pin::Pin,
 };
 
 use pi_share::Share;
@@ -68,27 +75,27 @@ pub enum Relation<T: Eq> {
     End,
 }
 impl<T: Eq> Relation<T> {
-    pub fn without(&self, type_id: &mut T) -> bool {
+    pub fn without(&self, arg: &mut T) -> bool {
         match self {
-            Relation::With(id) if id == type_id => false,
-            Relation::Read(id) if id == type_id => false,
-            Relation::Write(id) if id == type_id => false,
+            Relation::With(id) if id == arg => true,
+            Relation::Read(id) if id == arg => true,
+            Relation::Write(id) if id == arg => true,
+            _ => false,
+        }
+    }
+    pub fn read(&self, arg: &mut T) -> bool {
+        match self {
+            Relation::Write(id) if id == arg => false,
+            Relation::OptWrite(id) if id == arg => false,
             _ => true,
         }
     }
-    pub fn read(&self, type_id: &mut T) -> bool {
+    pub fn write(&self, arg: &mut T) -> bool {
         match self {
-            Relation::Write(id) if id == type_id => false,
-            Relation::OptWrite(id) if id == type_id => false,
-            _ => true,
-        }
-    }
-    pub fn write(&self, type_id: &mut T) -> bool {
-        match self {
-            Relation::Read(id) if id == type_id => true,
-            Relation::OptRead(id) if id == type_id => false,
-            Relation::Write(id) if id == type_id => false,
-            Relation::OptWrite(id) if id == type_id => false,
+            Relation::Read(id) if id == arg => true,
+            Relation::OptRead(id) if id == arg => false,
+            Relation::Write(id) if id == arg => false,
+            Relation::OptWrite(id) if id == arg => false,
             _ => true,
         }
     }
@@ -160,44 +167,14 @@ pub struct Related {
     // pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
 }
 impl Related {
-    // pub fn read(&mut self, type_info: TypeInfo){
-    //     if !self.contains(&type_info) {}
-    //     self.vec.push(Relation::Read(type_info.type_id));
-    // }
-    // pub fn write(&mut self, type_info: TypeInfo){
-    //     if !self.contains(&type_info) {}
-    //     self.vec.push(Relation::Write(type_info.type_id));
-    // }
-    // pub fn read_opt(&mut self, type_info: TypeInfo){
-    //     if !self.contains(&type_info) {}
-    //     self.vec.push(Relation::OptRead(type_info.type_id));
-    // }
-    // pub fn write_opt(&mut self, type_info: TypeInfo){
-    //     if !self.contains(&type_info) {}
-    //     self.vec.push(Relation::OptWrite(type_info.type_id));
-    // }
-    // pub fn without(&mut self, type_info: TypeInfo){
-    //     if !self.contains(&type_info) {}
-    //     self.vec.push(Relation::Without(type_info.type_id));
-    // }
-    // pub fn contains(&mut self, type_info: &TypeInfo) -> bool {
-    //     match self.map.entry(type_info.type_id) {
-    //         std::collections::hash_map::Entry::Occupied(_) => true,
-    //         std::collections::hash_map::Entry::Vacant(e) => {
-    //             e.insert(type_info.name.clone());
-    //             false
-    //         }
-    //     }
-    // }
-    
     // 检查新旧读写在reads或writes是否完全不重合
-    pub fn check_rw(&self, other: &Related) {
+    pub fn check_conflict(&self, other: &Related) {
         // 先检查withouts
         if self.check_without(other) || other.check_without(self) {
             return;
         }
-        assert_eq!(self.check_w(other), true);
-        assert_eq!(other.check_w(self), true);
+        assert_eq!(self.check_rw(other), None);
+        assert_eq!(other.check_rw(self), None);
     }
     // 检查other的每一个without，和self的with read或writes判断，返回true表示查询完全不重合
     pub fn check_without(&self, other: &Related) -> bool {
@@ -211,7 +188,7 @@ impl Related {
                         &Relation::without,
                         &mut t,
                         &mut start,
-                        RelateNode::new(true),
+                        RelateNode::new(false),
                     ) {
                         return true;
                     }
@@ -221,72 +198,85 @@ impl Related {
         }
         false
     }
-    // 检查自身数据集是否读写冲突, 返回true表示冲突
-    pub fn check_self(&self) -> bool {
+    // 检查自身数据集是否读写冲突, 返回Some(ComponentIndex)表示冲突
+    pub fn check_self(&self) -> Option<ComponentIndex> {
         for i in 0..self.vec.len() {
             let r = unsafe { self.vec.get_unchecked(i) };
             match r {
                 Relation::Read(t) => {
-                    if !self.check_read(*t, i+1) {
-                        return true;
+                    if !self.check_read(*t, i + 1) {
+                        return Some(*t);
                     }
                 }
                 Relation::OptRead(t) => {
-                    if !self.check_read(*t, i+1) {
-                        return true;
+                    if !self.check_read(*t, i + 1) {
+                        return Some(*t);
                     }
                 }
                 Relation::Write(t) => {
-                    if !self.check_write(*t, i+1) {
-                        return true;
+                    if !self.check_write(*t, i + 1) {
+                        return Some(*t);
                     }
                 }
                 Relation::OptWrite(t) => {
-                    if !self.check_write(*t, i+1) {
-                        return true;
+                    if !self.check_write(*t, i + 1) {
+                        return Some(*t);
                     }
                 }
                 _ => (),
             }
         }
-        false
+        None
     }
-    // 检查数据集是否读写冲突, 返回true表示冲突
-    pub fn check_w(&self, other: &Related) -> bool {
+    // 检查数据集是否读写冲突, 返回Some(ComponentIndex)表示冲突
+    pub fn check_rw(&self, other: &Related) -> Option<ComponentIndex> {
         for w in other.vec.iter() {
             match w {
                 Relation::Read(t) => {
                     if !self.check_read(*t, 0) {
-                        return true;
+                        return Some(*t);
                     }
                 }
                 Relation::OptRead(t) => {
                     if !self.check_read(*t, 0) {
-                        return true;
+                        return Some(*t);
                     }
                 }
                 Relation::Write(t) => {
                     if !self.check_write(*t, 0) {
-                        return true;
+                        return Some(*t);
                     }
                 }
                 Relation::OptWrite(t) => {
                     if !self.check_write(*t, 0) {
-                        return true;
+                        return Some(*t);
                     }
                 }
                 _ => (),
             }
         }
-        false
+        None
     }
     // 检查数据集是否读冲突
     pub fn check_read(&self, mut t: ComponentIndex, mut start: usize) -> bool {
-        traversal(&self.vec, &Relation::read, &mut t, &mut start, RelateNode::new(true))
+        // println!("check_read {:?}", (t, start));
+        traversal(
+            &self.vec,
+            &Relation::read,
+            &mut t,
+            &mut start,
+            RelateNode::new(true),
+        )
     }
     // 检查数据集是否读冲突
     pub fn check_write(&self, mut t: ComponentIndex, mut start: usize) -> bool {
-        traversal(&self.vec, &Relation::write, &mut t, &mut start, RelateNode::new(true))
+        traversal(
+            &self.vec,
+            &Relation::write,
+            &mut t,
+            &mut start,
+            RelateNode::new(true),
+        )
     }
     // 判断该原型是否相关
     pub fn relate(&self, archetype: &Archetype) -> bool {
@@ -300,8 +290,10 @@ impl Related {
 /// The metadata of a [`System`].
 pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
-    pub(crate) vec: Vec<Share<Related>>, // 当前参数的读写依赖
-    pub(crate) cur_related: Related,     // 当前参数的读写依赖
+    pub(crate) vec: Vec<Share<Related>>, // SystemParam参数的组件关系列表
+    pub(crate) cur_related: Related,     // 当前SystemParam参数的关系
+    pub(crate) param_set_locations: Vec<Range<usize>>, // 参数集在vec的位置
+    pub(crate) res_related: Share<Related>, // Res资源的关系
     pub(crate) res_map: HashMap<TypeId, (u8, Cow<'static, str>)>, // 参数集的读写依赖
     pub(crate) map: HashMap<TypeId, Cow<'static, str>>, // 当前参数的读写依赖
     pub(crate) components: ReadWrite,    // 该系统所有组件级读写依赖
@@ -317,6 +309,8 @@ impl SystemMeta {
             type_info,
             vec: Default::default(),
             cur_related: Default::default(),
+            param_set_locations: Default::default(),
+            res_related: Default::default(),
             res_map: Default::default(),
             map: Default::default(),
             components: Default::default(),
@@ -338,13 +332,21 @@ impl SystemMeta {
         &self.type_info.name
     }
     /// 用当前的关系表记录关系
-    pub fn record(&mut self, r: Relation<ComponentIndex>) {
+    pub fn record_related(&mut self, r: Relation<ComponentIndex>) {
+        self.cur_related.vec.push(r);
     }
     /// 关系表结束
     pub fn related_ok(&mut self) -> Share<Related> {
         let ar = Share::new(take(&mut self.cur_related));
         self.vec.push(ar.clone());
         ar
+    }
+    pub fn param_set_start(&mut self) {
+        self.param_set_locations
+            .push(self.vec.len()..self.vec.len());
+    }
+    pub fn param_set_end(&mut self) {
+        self.param_set_locations.last_mut().unwrap().end = self.vec.len();
     }
     /// 当前参数检查通过
     pub fn cur_param_ok(&mut self) {
@@ -363,6 +365,34 @@ impl SystemMeta {
         self.components.merge(take(&mut self.param_set));
     }
 
+    // 检查冲突
+    pub fn check_conflict(&self) {
+        for r in self.vec.iter() {
+            // 先检查自身
+            assert_eq!(r.check_self(), None);
+        }
+        let mut range_it = self.param_set_locations.iter();
+        let mut set_loc = range_it.next();
+        for mut i in 0..self.vec.len() {
+            let r = &self.vec[i];
+            if let Some(range) = set_loc {
+                if range.end == i {
+                    // 本次param_set_location结束，跳到下一个param_set_location
+                    set_loc = range_it.next();
+                } else if range.start <= i {
+                    // 跳过参数集内的检查
+                    i = range.end - 1;
+                }
+            }
+            i += 1;
+            // 依次和后面的Related比较
+            for j in i..self.vec.len() {
+                let r2 = &self.vec[j];
+                r.check_conflict(r2);
+            }
+        }
+    }
+    // 检查withouts，without在reads或writes中，表示查询完全不重合
     // 检查新旧读写在reads或writes是否完全不重合
     pub fn check_rw(old: &ReadWrite, rw: &ReadWrite) {
         // 先检查withouts
@@ -373,7 +403,6 @@ impl SystemMeta {
         assert_eq!(Self::check_w(&old.writes, &rw.writes), None);
         assert_eq!(Self::check_w(&rw.reads, &old.writes), None);
     }
-    // 检查withouts，without在reads或writes中，表示查询完全不重合
     pub fn check_without(withouts: &HashMap<TypeId, Cow<'static, str>>, rw: &ReadWrite) -> bool {
         for w in withouts.keys() {
             if rw.reads.contains_key(w) || rw.writes.contains_key(w) || rw.withs.contains_key(w) {
