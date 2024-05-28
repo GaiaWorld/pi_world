@@ -14,6 +14,8 @@
 ## 将脏监听及owner和Related放到world上，原型创建或脏监听创建，都彼此扫描，确保列上有对应tick和脏。 这样可以不使用监听器模式，但还是要解决判断查询是否和原型相关的问题。SystemMeta要有1个Related列表(组件 读写 或)，用于判断查询是否和原型相关。
 ## 优化原型名字的表达，类似use 模块。
 ## 可查看出整个world的原型内存状态。过程包括（insert alter)，
+## 修改Arr为Arr和FixedArr, Column的blob和ticks都改为Arr(24字节), 加Box的dirty，Column(64字节)，Table上columns直接放Column，Query的fetch减少1次跳转
+## 在EntityEditor上提供一个fetch函数，直接跳过Query的本地map检查
 
 
 # v0.1.11 

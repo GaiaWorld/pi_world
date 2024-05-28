@@ -247,7 +247,9 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetEl
 impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
     fn drop(&mut self) {
         self.state.last_run = self.tick;
-        // self.state.cache_mapping = *self.cache_mapping.get_mut();
+        if let Some(t) = &self.state.share_last_run {
+            t.store(self.tick.index(), Ordering::Relaxed);
+        }
     }
 }
 /// 监听原型创建， 添加record
@@ -332,7 +334,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
     pub(crate) last_run: Tick,                                         // 上次运行的tick
-    pub(crate) share_last_run: Option<Share<ShareUsize>>,                                         // 给脏列表共享的上次迭代时的tick
+    pub(crate) share_last_run: Option<Share<ShareUsize>>,                                         // 给脏列表共享的上次运行的tick
     _k: PhantomData<F>,
 }
 

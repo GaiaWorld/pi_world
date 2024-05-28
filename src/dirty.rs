@@ -72,16 +72,16 @@ impl Null for EntityRow {
 // 监听器信息
 #[derive(Debug, Default)]
 pub struct ListenerInfo {
-    owner: Tick, // 监听器id，也是QueryState.id, 由world上分配的唯一tick
     read_len: Share<ShareUsize>, // 已读取的长度 todo 优化成Share<>
     tick: Share<ShareUsize>, // 读取时的tick todo 优化成System上的Share<>
+    owner: Tick, // 监听器id，也是QueryState.id, 由world上分配的唯一tick
 }
 impl ListenerInfo {
     pub fn new(owner: Tick, tick: Share<ShareUsize>) -> Self {
         Self {
-            owner,
             read_len: Share::new(ShareUsize::new(0)),
             tick,
+            owner,
         }
     }
 }
