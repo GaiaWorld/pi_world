@@ -23,7 +23,7 @@ impl AState {
         for i in am.add_indexs.clone().into_iter() {
             let (_, dst_i) = unsafe { self.adding.get_unchecked(i) };
             let dst_column = am.dst.get_column_unchecked(*dst_i);
-            println!("dst_column: {:?}", dst_column.info());
+            // println!("dst_column: {:?}", dst_column.info());
             let dst_data: *mut u8 = dst_column.load(dst_row);
             dst_column.info().default_fn.unwrap()(dst_data);
             dst_column.add_record(e, dst_row, tick)
