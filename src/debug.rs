@@ -43,10 +43,6 @@ impl World{
                     }
                 }
 
-                if let Some(destroys) = expect.destroys_listeners{
-                    assert_eq!(unsafe{&*real.destroys.get()}.listener_len(), destroys, "{:?}", real);
-                }
-
                 if let Some(removes) = expect.removes{
                     assert_eq!(real.removes.len(), removes, "{:?}", real);
                 } 

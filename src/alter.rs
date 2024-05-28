@@ -688,7 +688,7 @@ impl AState {
         world.replace(e, mapping.dst_index, dst_row);
     }
 
-    /// 标记销毁实体
+    /// 销毁实体
     fn destroy(
         // &self,
         world: &World,
@@ -700,9 +700,9 @@ impl AState {
         let ar = unsafe { &vec.get_unchecked(local_index.index()).src };
         Self::destroy_row(world, ar, addr.row)
     }
-    /// 标记销毁
+    /// 销毁
     pub(crate) fn destroy_row(world: &World, ar: &Archetype, row: Row) -> Result<bool, QueryError> {
-        let e = ar.mark_destroy(row);
+        let e = ar.destroy(row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }

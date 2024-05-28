@@ -1516,7 +1516,6 @@ mod test_mod {
     //     app.world.assert_archetype_arr(&[None, Some(info1), Some(info2)]);
     //     // app.run();
     // }
-
     #[test]
     fn test_editor() {
         let mut app = SingleThreadApp::new();
@@ -1622,6 +1621,98 @@ mod test_mod {
         app.run();
         app.run();
         app.run();
+    }
+
+    #[test]
+    fn test_editor_settle() {
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(mut edit: EntityEditor) {
+            let mut scomponents = [
+                edit.init_component::<Age0>(), 
+                edit.init_component::<Age1>()
+            ];
+
+            let e = edit.insert_components(&scomponents).unwrap();
+        }
+
+        pub fn alter_add2(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age1, &Age0), (Changed<Age1>, Changed<Age0>)>,
+        ) {
+            // assert_eq!(q.is_empty(), false);
+            let mut iter = q.iter();
+            let r = iter.next(); 
+            assert_eq!(r.is_some(), true);
+            let (e, age1, age0) = r.unwrap();
+            assert_eq!(iter.next(), None);
+
+            edit.alter_components(e, &[
+                (edit.init_component::<Age2>(), true),
+                (edit.init_component::<Age3>(), true),
+                (edit.init_component::<Age0>(), false),
+            ]).unwrap();
+        }
+
+        pub fn alter_add3(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age0), (Changed<Age1>)>,
+        ) {
+            // assert_eq!(q.is_empty(), false);
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+        }
+
+        pub fn query(q: Query<(&Age1, &Age2, &Age3)>, removed: ComponentRemoved<Age0>) {
+            let re = removed.iter().next();
+            assert_eq!(re.is_some(), true);
+            let (age1, age2, age3) = q.get(*re.unwrap()).unwrap();
+        }
+
+        pub fn query2(q: Query<(Entity, &Age1, &Age2, &Age3, ), (Changed<Age3>)>, editor: EntityEditor) {
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age2, age3) = iter.unwrap();
+            editor.destroy(e);
+        }
+
+        pub fn query3(q: Query<(Entity, &Age1, &Age2, &Age3,)>,) {
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+        }
+
+        app.add_system(Update, alter_add);
+        app.add_system(Update, alter_add2);
+        app.add_system(Update, alter_add3);
+        app.add_system(Update, query);
+        app.add_system(Update, query2);
+        app.add_system(Update, query3);
+
+        app.run();
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 2, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}), 
+            ],
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+        let mut info2 = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age3")}), 
+            ],
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info1), Some(info2)]);
+        for _ in 0..10_000 {
+            app.run();
+        }
     }
 
     // #[test] 

@@ -5,18 +5,17 @@
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
 use std::any::TypeId;
-use std::cell::SyncUnsafeCell;
 use std::mem::{replace, transmute};
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
 use pi_null::Null;
-use smallvec::SmallVec;
+use pi_share::{Share, ShareUsize};
 
 use crate::archetype::ComponentInfo;
 use crate::archetype::{ColumnIndex, Row};
 use crate::column::Column;
-use crate::dirty::{Dirty, DirtyIndex, DirtyIter, DirtyType, EntityRow};
+use crate::dirty::EntityRow;
 use crate::world::{ComponentIndex, Entity, World, Tick};
 
 pub struct Table {
@@ -25,7 +24,7 @@ pub struct Table {
     column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
     // remove_columns: SafeVec<RemovedColumn>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
     // lock: SpinLock<()>, // 用于保护多线程下两个alter同时添加相同组件的情况
-    pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
+    // pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
     pub(crate) removes: AppendVec<Row>,                    // 整理前被移除的实例
 }
 impl Table {
@@ -49,7 +48,7 @@ impl Table {
             column_map: column_map,
             // remove_columns: Default::default(),
             // lock: SpinLock::new(()),
-            destroys: SyncUnsafeCell::new(Dirty::default()),
+            // destroys: SyncUnsafeCell::new(Dirty::default()),
             removes: AppendVec::default(),
         }
     }
@@ -110,10 +109,11 @@ impl Table {
         unsafe { self.sorted_columns.get_unchecked(index.index())}
     }
     /// 添加changed监听器，原型刚创建时调用
-    pub fn add_changed_listener(&self, index: ComponentIndex, owner: Tick) {
+    pub fn add_listener(&self, index: ComponentIndex, owner: Tick,
+        tick: Share<ShareUsize>,) {
         // println!("add_changed_listener!! self: {:p}, index: {:?}", self, index);
         if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
-            c.dirty.insert_listener(owner)
+            c.dirty.insert_listener(owner, tick)
         }
     }
     // /// 添加removed监听器，原型刚创建时调用
@@ -125,24 +125,18 @@ impl Table {
     //     r.dirty.insert_listener(owner);
     // }
     /// 添加destroyed监听器，原型刚创建时调用
-    pub fn add_destroyed_listener(&self, owner: Tick) {
-        unsafe { &mut *self.destroys.get() }.insert_listener(owner)
-    }
+    // pub fn add_destroyed_listener(&self, owner: Tick) {
+    //     unsafe { &mut *self.destroys.get() }.insert_listener(owner)
+    // }
     /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
-    pub(crate) fn find_changed_listener(
+    pub(crate) fn find_listener(
         &self,
         index: ComponentIndex,
         owner: Tick,
-        vec: &mut SmallVec<[DirtyIndex; 1]>,
+        result: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>,
     ) {
-        if let Some((c, column_index)) = unsafe { self.get_column_mut(index) } {
-            let listener_index = c.dirty.find_listener_index(owner);
-            if !listener_index.is_null() {
-                vec.push(DirtyIndex {
-                    listener_index,
-                    dtype: DirtyType::Changed(column_index),
-                });
-            }
+        if let Some((c, column_index)) = self.get_column(index) {
+            c.dirty.find_listener(column_index, owner, result);
         }
     }
     // /// 查询在同步到原型时，寻找自己添加的removed监听器，并记录组件位置和监听器位置
@@ -150,7 +144,7 @@ impl Table {
     //     &self,
     //     index: ComponentIndex,
     //     owner: Tick,
-    //     vec: &mut SmallVec<[DirtyIndex; 1]>,
+    //     vec: &mut Vec<DirtyIndex>,
     // ) {
     //     let column_index = self.add_remove_column_index(index);
     //     let r = self.get_remove_column(column_index);
@@ -163,33 +157,33 @@ impl Table {
     //     }
     // }
     /// 查询在同步到原型时，寻找自己添加的destroyed监听器，并记录监听器位置
-    pub(crate) fn find_destroyed_listener(
-        &self,
-        owner: Tick,
-        vec: &mut SmallVec<[DirtyIndex; 1]>,
-    ) {
-        let list = unsafe { &*self.destroys.get() };
-        let listener_index = list.find_listener_index(owner);
-        if !listener_index.is_null() {
-            vec.push(DirtyIndex {
-                listener_index,
-                dtype: DirtyType::Destroyed,
-            });
-        }
-    }
+    // pub(crate) fn find_destroyed_listener(
+    //     &self,
+    //     owner: Tick,
+    //     vec: &mut Vec<DirtyIndex>,
+    // ) {
+    //     let list = unsafe { &*self.destroys.get() };
+    //     let listener_index = list.find_listener_index(owner);
+    //     if !listener_index.is_null() {
+    //         vec.push(DirtyIndex {
+    //             listener_index,
+    //             dtype: DirtyType::Destroyed,
+    //         });
+    //     }
+    // }
 
     /// 获得对应的脏列表, 及是否不检查entity是否存在
-    pub(crate) fn get_dirty_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> DirtyIter<'a> {
-         match dirty_index.dtype {
-            DirtyType::Destroyed => {
-                let r = unsafe { &*self.destroys.get() };
-                DirtyIter::new(r.get_iter(dirty_index.listener_index, Tick::null()), None)},
-            DirtyType::Changed(column_index) => {
-                let r = self.get_column_unchecked(column_index);
-                DirtyIter::new(r.dirty.get_iter(dirty_index.listener_index, tick), Some(&r.ticks))
-            },
-        }
-    }
+    // pub(crate) fn get_dirty_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> DirtyIter<'a> {
+    //      match dirty_index.dtype {
+    //         DirtyType::Destroyed => {
+    //             let r = unsafe { &*self.destroys.get() };
+    //             DirtyIter::new(r.get_iter(dirty_index.listener_index, Tick::null()), None)},
+    //         DirtyType::Changed(column_index) => {
+    //             let r = self.get_column_unchecked(column_index);
+    //             DirtyIter::new(r.dirty.get_iter(dirty_index.listener_index, tick), Some(&r.ticks))
+    //         },
+    //     }
+    // }
 
     /// 扩容
     pub fn reserve(&mut self, additional: usize) {
@@ -203,15 +197,16 @@ impl Table {
     pub fn alloc(&self) -> Row {
         Row(self.entities.alloc_index(1) as u32)
     }
-    /// 标记销毁，用于destroy
-    /// mark removes a key from the archetype, returning the value at the key if the
-    /// key was not previously removed.
-    pub(crate) fn mark_destroy(&self, row: Row) -> Entity {
+    /// 销毁，用于destroy
+    pub(crate) fn destroy(&self, row: Row) -> Entity {
         let e = self.entities.load_alloc(row.index());
         if e.is_null() {
             return *e;
         }
-        { unsafe { &*self.destroys.get() } }.record(*e, row, Tick::max());
+        for t in self.sorted_columns.iter() {
+            t.drop_row(row);
+        }
+        self.removes.insert(row);
         replace(e, Entity::null())
     }
     /// 标记移出，用于alter
@@ -225,33 +220,33 @@ impl Table {
         self.removes.insert(row);
         replace(e, Entity::null())
     }
-    // 处理标记移除的条目，返回true，表示所有监听器都已经处理完毕，然后可以清理destroys
-    fn clear_destroy(&mut self) -> bool {
-        let dirty = unsafe { &mut *self.destroys.get() };
-        let len = match dirty.can_clear() {
-            Some(len) => {
-                if len == 0 {
-                    return true;
-                }
-                len
-            }
-            _ => return false,
-        };
-        for e in dirty.vec.iter() {
-            self.removes.insert(e.row);
-        }
-        self.drop_vec(&dirty.vec);
-        dirty.clear(len);
-        true
-    }
+    // // 处理标记移除的条目，返回true，表示所有监听器都已经处理完毕，然后可以清理destroys
+    // fn clear_destroy(&mut self) -> bool {
+    //     let dirty = unsafe { &mut *self.destroys.get() };
+    //     let len = match dirty.can_clear() {
+    //         Some(len) => {
+    //             if len == 0 {
+    //                 return true;
+    //             }
+    //             len
+    //         }
+    //         _ => return false,
+    //     };
+    //     for e in dirty.vec.iter() {
+    //         self.removes.insert(e.row);
+    //     }
+    //     self.drop_vec(&dirty.vec);
+    //     dirty.clear(len);
+    //     true
+    // }
     /// 删除全部组件
-    pub(crate) fn drop_vec(&self, vec: &AppendVec<EntityRow>) {
-        for t in self.sorted_columns.iter() {
-            for e in vec.iter() {
-                t.drop_row(e.row);
-            }
-        }
-    }
+    // pub(crate) fn drop_vec(&self, vec: &AppendVec<EntityRow>) {
+    //     for t in self.sorted_columns.iter() {
+    //         for e in vec.iter() {
+    //             t.drop_row(e.row);
+    //         }
+    //     }
+    // }
     /// 获得移除数组产生的动作， 返回新entitys的长度
     pub(crate) fn removes_action(
         removes: &AppendVec<Row>,
@@ -338,10 +333,10 @@ impl Table {
         action: &mut Vec<(Row, Row)>,
         set: &mut FixedBitSet,
     ) -> bool {
-        if !self.clear_destroy() {
-            // 如果清理destroys不成功，不调整row，返回
-            return false;
-        }
+        // if !self.clear_destroy() {
+        //     // 如果清理destroys不成功，不调整row，返回
+        //     return false;
+        // }
         let mut r = true;
         // 先整理每个列，如果所有列的脏列表成功清空
         for c in self.sorted_columns.iter_mut() {
@@ -435,7 +430,6 @@ impl Debug for Table {
         f.debug_struct("Table")
             .field("entitys", &self.entities)
             .field("sorted_columns", &self.sorted_columns)
-            .field("destroys", unsafe { &*self.destroys.get() })
             .field("removes", &self.removes)
             .finish()
     }

@@ -854,7 +854,7 @@ impl World {
             self.archetype_arr
                 .get_unchecked(addr.archetype_index().index())
         };
-        let e = ar.mark_destroy(addr.row);
+        let e = ar.destroy(addr.row);
         if e.is_null() {
             return Err(QueryError::NoSuchRow);
         }
