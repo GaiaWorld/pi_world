@@ -132,7 +132,7 @@ impl Schedule {
         }
 
         if schedule == &MainSchedule.intern() {
-            // world.collect_by(&mut self.action, &mut self.set);
+            world.settle_by(&mut self.action, &mut self.set);
         }
     }
     fn run_graph<A: AsyncRuntime + AsyncRuntimeExt>(
@@ -152,8 +152,8 @@ impl Schedule {
             g.run(s, &rt2, w).await.unwrap();
             #[cfg(feature = "trace")] 
             {  
-                let _collect_span = tracing::warn_span!("collect").entered();
-                g.collect();
+                let _collect_span = tracing::warn_span!("settle").entered();
+                g.settle();
             }
         });
     }
@@ -196,7 +196,7 @@ impl Schedule {
         let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
         g.run(s, rt, w).await.unwrap();
       
-        g.collect();
+        g.settle();
     }
 
     fn try_initialize(&mut self, world: &mut World) {

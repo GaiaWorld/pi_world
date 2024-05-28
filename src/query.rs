@@ -8,12 +8,13 @@ use std::cell::UnsafeCell;
 // use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
+use std::ops::Range;
 
 use crate::archetype::{
     Archetype, ArchetypeDepend, ArchetypeDependResult, ArchetypeWorldIndex, Flags, Row,
     ShareArchetype,
 };
-use crate::dirty::{DirtyIndex, DirtyIter};
+use crate::dirty::{DirtyIndex, DirtyIter, EntityRow};
 use crate::fetch::FetchComponents;
 use crate::filter::{FilterComponents, ListenType};
 use crate::listener::Listener;
@@ -23,6 +24,7 @@ use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
+use pi_append_vec::AppendVec;
 use pi_null::*;
 use pi_share::Share;
 use smallvec::SmallVec;
@@ -331,9 +333,12 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) id: Tick, // 由world上分配的唯一tick
     pub(crate) listeners: SmallVec<[ListenType; 1]>,
     pub(crate) vec: Vec<ArchetypeQueryState<Q::State>>, // 每原型、查询状态及对应的脏监听
+    pub(crate) archetypes: Vec<(Archetype, Range<u32>)>, // 每原型及对应的脏监听范围
+    pub(crate) archetype_listeners: Vec<(Share<usize>, Share<AppendVec<EntityRow>>)>, // 所有原型的脏监听列表， 迭代时先判断Archetype的长度，然后判断AppendVec的长度
     pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引
     pub(crate) last_run: Tick,                                         // 上次运行的tick
+    pub(crate) share_last_run: Option<Share<usize>>,                                         // 给脏列表共享的上次迭代时的tick
     _k: PhantomData<F>,
 }
 
@@ -369,9 +374,12 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             id,
             listeners,
             vec: Vec::new(),
+            archetypes: Vec::new(),
+            archetype_listeners: Vec::new(),
             archetypes_len: 0,
             map: Default::default(),
             last_run: Tick::default(),
+            share_last_run: None,
             _k: PhantomData,
         }
     }
@@ -598,23 +606,29 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 }
                 continue;
             }
-            // 当前的原型已经迭代完毕
-            if self.ar_index.0 == 0 {
-                // 所有原型都迭代过了
-                return None;
+            loop {
+                // 当前的原型已经迭代完毕
+                if self.ar_index.0 == 0 {
+                    // 所有原型都迭代过了
+                    return None;
+                }
+                // 下一个原型
+                self.ar_index.0 -= 1;
+                let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
+                self.ar = &arqs.ar;
+                self.row = self.ar.len();
+                if self.row.0 == 0 {
+                    continue;
+                }
+                self.fetch = MaybeUninit::new(Q::init_fetch(
+                    self.world,
+                    self.ar,
+                    &arqs.state,
+                    self.tick,
+                    self.state.last_run,
+                ));
+                break;
             }
-            // 下一个原型
-            self.ar_index.0 -= 1;
-            let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-            self.ar = &arqs.ar;
-            self.fetch = MaybeUninit::new(Q::init_fetch(
-                self.world,
-                self.ar,
-                &arqs.state,
-                self.tick,
-                self.state.last_run,
-            ));
-            self.row = self.ar.len();
         }
     }
 
@@ -681,7 +695,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     // }
 
     fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
-        loop {
+        'large: loop {
             if let Some(d) = self.dirty.it.next() {
                 self.row = d.row;
                 if self.dirty.ticks.is_none() {
@@ -725,7 +739,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
                 let d_index = unsafe { *arqs.listeners.get_unchecked(self.dirty_index) };
                 self.dirty = arqs.ar.get_dirty_iter(&d_index, self.tick);
-                continue;
+                continue 'large;
             }
             // 当前的原型已经迭代完毕
             if self.ar_index.0 == 0 {
@@ -735,9 +749,12 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // 下一个原型
             self.ar_index.0 -= 1;
             let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-            if arqs.listeners.len() == 0 {
+            let len = arqs.ar.len().index();
+            if arqs.listeners.len() == 0 || len == 0 {
                 continue;
             }
+            // 监听被脏组件
+            self.dirty_index = arqs.listeners.len() - 1;
             self.ar = &arqs.ar;
             self.fetch = MaybeUninit::new(Q::init_fetch(
                 self.world,
@@ -746,11 +763,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 self.tick,
                 self.state.last_run,
             ));
-            // 监听被脏组件
-            self.dirty_index = arqs.listeners.len() - 1;
             let d_index = unsafe { arqs.listeners.get_unchecked(self.dirty_index) };
             self.dirty = arqs.ar.get_dirty_iter(&d_index, self.tick);
-            let len = arqs.ar.len().index();
             if self.bitset.len() < len {
                 self.bitset = FixedBitSet::with_capacity(len);
             } else {

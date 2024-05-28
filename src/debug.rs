@@ -4,7 +4,6 @@ use crate::prelude::World;
 pub struct ArchetypeDebug {
     pub entitys: Option<usize>,   // 原型的对应的实体数量
     pub columns_info: Vec<Option<ColumnDebug>>,   // 原型的对应的列数量
-    pub remove_columns: Option<usize>,
     pub destroys_listeners: Option<usize>,
     pub removes: Option<usize>,
 }

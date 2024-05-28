@@ -382,7 +382,7 @@ impl Table {
         // 整理全部的列ticks
         for c in self.sorted_columns.iter_mut() {
             if c.info().is_tick() {
-                collect_ticks(&mut c.ticks, new_entity_len, &action);
+                settle_ticks(&mut c.ticks, new_entity_len, &action);
             }
         }
         // // 整理全部的RemovedColumn列ticks
@@ -406,7 +406,7 @@ impl Table {
             self.entities.set_len(new_entity_len);
         };
         // 整理合并内存
-        self.entities.collect();
+        self.entities.settle();
         true
     }
 }
@@ -442,7 +442,7 @@ impl Debug for Table {
 }
 
 /// 整理合并空位
-pub(crate) fn collect_ticks(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
+pub(crate) fn settle_ticks(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
     for (src, dst) in action.iter() {
         if let Some(tick) = ticks.get_i(src.index()) {
             *ticks.load_alloc(dst.index()) = *tick;
@@ -451,5 +451,5 @@ pub(crate) fn collect_ticks(ticks: &mut AppendVec<Tick>, entity_len: usize, acti
     if entity_len <= ticks.vec_capacity() {
         return;
     }
-    ticks.collect_raw(entity_len, 0);
+    ticks.settle_raw(entity_len, 0);
 }

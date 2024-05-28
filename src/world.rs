@@ -883,7 +883,7 @@ impl World {
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn settle_by(&mut self, action: &mut Vec<(Row, Row)>, set: &mut FixedBitSet) {
-        self.entities.collect();
+        self.entities.settle();
         self.archetype_arr.settle();
         for aer in self.event_map.values_mut() {
             let er = unsafe { Share::get_mut_unchecked(aer) };

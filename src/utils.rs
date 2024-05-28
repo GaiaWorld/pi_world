@@ -16,7 +16,6 @@ impl<T: Null + Clone> VecExt<T> for Vec<T> {
     fn insert_value(&mut self, index: usize, value: T) {
         let t = T::null();
         if index >= self.len() {
-            println!("{:p}: index + 1: {}", self, index + 1);
             self.resize(index + 1, t);
         }
         unsafe { *self.get_unchecked_mut(index) = value; };

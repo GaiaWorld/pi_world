@@ -71,8 +71,8 @@ impl Null for EntityRow {
 #[derive(Debug, Default)]
 pub struct ListenerInfo {
     owner: Tick, // 监听器id，也是QueryState.id, 由world上分配的唯一tick
-    read_len: ShareUsize, // 已读取的长度
-    tick: ShareUsize, // 读取时的tick
+    read_len: ShareUsize, // 已读取的长度 todo 优化成Share<>
+    tick: ShareUsize, // 读取时的tick todo 优化成System上的Share<>
 }
 impl ListenerInfo {
     pub fn new(owner: Tick) -> Self {
@@ -86,7 +86,7 @@ impl ListenerInfo {
 #[derive(Debug, Default)]
 pub struct Dirty {
     listeners: Vec<ListenerInfo>, // 每个监听器的唯一Id和当前读取的长度
-    pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复
+    pub(crate) vec: AppendVec<EntityRow>,            // 记录的脏Row，不重复 todo 优化成Share<>
     pub(crate) min_tick: Tick,            // 所有监听器的最小tick，用来快速剔除记录
 }
 unsafe impl Sync for Dirty {}
