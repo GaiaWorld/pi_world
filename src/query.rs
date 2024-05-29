@@ -287,7 +287,7 @@ unsafe fn add_dirty_listeners(
 }
 
 // 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
-unsafe fn find_dirty_listeners(
+fn find_dirty_listeners(
     ar: &Archetype,
     owner: Tick,
     changed_listeners: &Vec<ComponentIndex>,
@@ -421,13 +421,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
         let start = self.archetype_listeners.len() as u32;
         if F::LISTENER_COUNT > 0 {
-            unsafe {
-                find_dirty_listeners(&ar, self.id, &self.listeners, &mut self.archetype_listeners)
-            };
-            // if vec.len() == 0 {
-            //     // 表示该原型没有监听的组件，本查询可以不关心该原型
-            //     return;
-            // }
+            find_dirty_listeners(&ar, self.id, &self.listeners, &mut self.archetype_listeners)
         }
         self.map
             .insert_value(index.index(), self.vec.len().into());
@@ -447,7 +441,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // println!("get1======{:?}", (entity, self.map.len()));
         let (addr, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
 
-        let arqs = unsafe { &self.vec.get_unchecked(local_index.index()) };
+        let arqs = unsafe { self.vec.get_unchecked(local_index.index()) };
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  arch.name()));
         let mut fetch = Q::init_fetch(world, &arqs.ar, &arqs.state, tick, self.last_run);
         Ok(Q::fetch(&mut fetch, addr.row, entity))
