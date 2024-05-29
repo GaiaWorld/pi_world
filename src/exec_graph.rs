@@ -123,14 +123,14 @@ fn vec_set(vec: &mut Vec<NodeIndex>, index: usize, value: NodeIndex) {
     *unsafe { vec.get_unchecked_mut(index) } = value;
 }
 #[derive(Clone)]
-pub struct ExecGraph(Share<GraphInner>, pub String);
+pub struct ExecGraph(Share<GraphInner>, pub String, pub Vec<usize>/*toop排序*/);
 
 impl ExecGraph {
     pub fn new(name: String) -> Self {
-        Self(Default::default(), name)
+        Self(Default::default(), name, Vec::new())
     }
 
-    pub fn check(&self) {
+    pub fn check(&self) -> Vec<usize> {
         let graph = self.0.as_ref();
         let mut ngraph = NGraph::default();
         for n in graph.nodes.iter().enumerate() {
@@ -144,9 +144,14 @@ impl ExecGraph {
         }
 
         let cycle_keys = ngraph.build();
-        if cycle_keys.len() > 0 {
-            let cycle: Vec<(usize, &Node)> = cycle_keys.iter().map(|k| {(k.clone(), graph.nodes.get(*k).unwrap())}).collect();
-            panic!("cycle=========={:?}", cycle);
+        match cycle_keys {
+            Ok(r) => r,
+            Err(cycle_keys) => if cycle_keys.len() > 0 {
+                let cycle: Vec<(usize, &Node)> = cycle_keys.iter().map(|k| {(k.clone(), graph.nodes.get(*k).unwrap())}).collect();
+                panic!("cycle=========={:?}", cycle);
+            } else {
+                Vec::default()
+            },
         }
     }
 
@@ -244,6 +249,10 @@ impl ExecGraph {
         //     self.froms(),
         //     self.to_len()
         // );
+        
+        // toop 排序
+        self.2 = self.check();
+
     }
     // 添加单例和多例节点，添加单例多例和system的依赖关系产生的边。
     // 只会在初始化时调用一次。
@@ -386,23 +395,23 @@ impl ExecGraph {
         world: &'static World,
     ) -> std::result::Result<(), RecvError> {
         let inner = self.0.as_ref();
-        let to_len = inner.to_len.load(Ordering::Relaxed);
-        if to_len == 0 {
-            return Ok(());
-        }
-        inner.to_count.store(to_len, Ordering::Relaxed);
+        // let to_len = inner.to_len.load(Ordering::Relaxed);
+        // if to_len == 0 {
+        //     return Ok(());
+        // }
+        // inner.to_count.store(to_len, Ordering::Relaxed);
        
 
         // 确保看见每节点上的from_len, from_len被某个system的Alter设置时，system结束时也会调用fence(Ordering::Release)
-        fence(Ordering::Acquire);
+        // fence(Ordering::Acquire);
         // 将所有节点的状态设置为Wait
         // 将graph.nodes的from_count设置为from_len
-        for node in inner.nodes.iter() {
-            node.status.store(NODE_STATUS_WAIT, Ordering::Relaxed);
-            node.from_count
-                .store(node.edge(Direction::From).0, Ordering::Relaxed);
+        // for node in inner.nodes.iter() {
+        //     node.status.store(NODE_STATUS_WAIT, Ordering::Relaxed);
+        //     node.from_count
+        //         .store(node.edge(Direction::From).0, Ordering::Relaxed);
             
-        }
+        // }
     
         // println!("graph run:---------------, to_len:{}, systems_len:{}, node_len: {:?}, \ndiff: {:?}", to_len, systems.len(), inner.nodes.len(), 
         //     inner.nodes.iter().enumerate().filter(|r| {
@@ -419,16 +428,53 @@ impl ExecGraph {
 
         // 从graph的froms开始执行
         // println!("run !!!!===={:?}", (&self.1, inner.froms.len(), inner.froms.iter().map(|r| {r.index()}).collect::<Vec<usize>>()));
-        for i in inner.froms.iter() {
-            let node = unsafe { inner.nodes.load_unchecked(i.index()) };
-            self.exec(systems, rt, world, *i, node);
+        
+        for i in self.2.iter() {
+            let node = unsafe { inner.nodes.load_unchecked(*i) };
+            
+            match node.label {
+                NodeType::System(sys_index, _) => {
+                    // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
+                    // let rt1 = rt.clone();
+                    // let g = self.clone();
+                    // let inner = g.0.as_ref();
+                    let sys = unsafe { systems.load_unchecked(sys_index) };
+                    // let old_status = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
+                    // 如果node为要执行的system，并且未被锁定原型，则执行对齐原型
+                    // if old_status & NODE_STATUS_ALIGN_MASK == 0 {
+                        sys.align(world);
+                    // }
+                    // NODE_STATUS_RUNNING
+                    // node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
+                    // println!("run start===={:?}", sys.name());
+                    #[cfg(feature = "trace_info")]
+                    {
+                        use tracing::Instrument;
+                        let system_span = tracing::info_span!("system", name = &**sys.name());
+                        sys.run(world).instrument(system_span).await;
+                    }
+                    #[cfg(not(feature = "trace_info"))]
+                    sys.run(world).await;
+                }
+                _ => {
+                    // RUN_START + RUNNING
+                    // node.status
+                    //     .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
+                    // self.exec_end(systems, rt, world, node, node_index)
+                }
+            }
+
         }
         // println!("run1 !!!!===={}", inner.froms.len());
-        let r = inner.receiver.recv().await;
+        // let r = inner.receiver.recv().await;
         // println!("run2 !!!!===={}", inner.froms.len());
-        r
+        // r
+        Ok(())
         
     }
+
+
     fn exec<A: AsyncRuntime>(
         &self,
         systems: &'static SafeVec<BoxedSystem>,
@@ -457,13 +503,13 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("run start===={:?}", sys.name());
-                    #[cfg(feature = "trace")]
+                    #[cfg(feature = "trace_info")]
                     {
                         use tracing::Instrument;
                         let system_span = tracing::info_span!("system", name = &**sys.name());
                         sys.run(world).instrument(system_span).await;
                     }
-                    #[cfg(not(feature = "trace"))]
+                    #[cfg(not(feature = "trace_info"))]
                     sys.run(world).await;
                     // println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, node_index)
@@ -1107,7 +1153,7 @@ impl NGraph {
         after_node.from.push(before);
     }
 
-    pub fn build(&mut self) -> Vec<usize> {
+    pub fn build(&mut self) -> std::result::Result<Vec<usize>, Vec<usize>>  {
         let mut queue = std::collections::VecDeque::new();
         let mut counts: VecMap<usize> = VecMap::with_capacity(self.nodes.len());
         for k in self.nodes.iter().enumerate() {
@@ -1145,7 +1191,7 @@ impl NGraph {
 		// 如果拓扑排序列表的节点数等于图中的总节点数，则返回拓扑排序列表，否则返回空列表（说明图中存在环路）
 		if topological_len == nodes.len() {
 			// topological = topos;
-			return Default::default();
+			return Ok(topological);
 		}
 
 		let not_contains = nodes.iter().enumerate().map(|k|{k.clone()}).filter(|r| {
@@ -1165,11 +1211,11 @@ impl NGraph {
 			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::new(), HashSet::default());
 
 			if cycle_keys.len() > 0 {
-				return cycle_keys;
+				return Err(cycle_keys);
 			}
 		}
 
-        Default::default()
+        Err(Default::default())
     }
 
     // 寻找循环依赖

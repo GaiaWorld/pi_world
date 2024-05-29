@@ -165,6 +165,10 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     pub fn len(&self) -> usize {
         self.state.len()
     }
+
+    pub fn archetypes_len(&self) -> usize {
+        self.state.archetypes_len()
+    }
     
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         QueryIter::new(self.world, self.state.as_readonly(), self.tick)
@@ -460,6 +464,10 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             len += arqs.ar.len().index();
         }
         len
+    }
+
+    pub fn archetypes_len(&self) -> usize {
+        self.vec.len()
     }
 }
 

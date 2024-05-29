@@ -141,7 +141,7 @@ impl Schedule {
         g: &mut ExecGraph,
         systems: &Share<SafeVec<BoxedSystem>>
     ) {
-        #[cfg(feature = "trace")] 
+        #[cfg(feature = "trace_warn")] 
         let run_span = tracing::warn_span!("run {:?}", name = &g.1).entered();
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
@@ -150,7 +150,7 @@ impl Schedule {
         let _ = rt.block_on(async move {
             let rt2 = rt1;
             g.run(s, &rt2, w).await.unwrap();
-            #[cfg(feature = "trace")] 
+            #[cfg(feature = "trace_warn")] 
             {  
                 let _collect_span = tracing::warn_span!("settle").entered();
                 g.settle();
