@@ -13,8 +13,7 @@ categories = ["data-structures", "memory-management", "ecs"]
 
 [features]
 single_thread = []
-trace_warn = []
-trace_info = []
+trace = []
 
 [dependencies]
 pi_map = "0.2"
