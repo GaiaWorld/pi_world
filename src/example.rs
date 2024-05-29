@@ -202,11 +202,11 @@ struct Velocity([f32; 3]);
  
 #[cfg(test)]
 mod test_mod {
-
+ 
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::TypeInfo, table::Table
+        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -254,6 +254,48 @@ mod test_mod {
         assert_eq!(len, asset_len, "{:?}", action);
         println!("action: {:?}", action)
     }
+    #[test]
+    fn test_system_meta() {
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查自身
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::With(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查without读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.param_set_start();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.record_related(Relation::Write(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.param_set_end();
+        meta.record_related(Relation::Read(1usize.into()));
+        meta.record_related(Relation::Write(2usize.into()));
+        meta.record_related(Relation::With(3usize.into()));
+        meta.related_ok();
+        meta.check_conflict(); // 检查ParamSet读写
+    }
 
     #[test]
     fn test_removes() {
@@ -297,7 +339,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -332,7 +373,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -374,7 +414,6 @@ mod test_mod {
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
             ],
-            remove_columns: Some(1),
             destroys_listeners: Some(0),
             removes: Some(10),
         };
@@ -385,7 +424,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("A")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("B")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(10),
         };
@@ -482,7 +520,6 @@ mod test_mod {
                     Some(ColumnDebug{change_listeners: 0, name: Some("Rotation")}),
                     Some(ColumnDebug{change_listeners: 0, name: Some("Velocity")}),
                 ],
-                remove_columns: Some(0),
                 destroys_listeners: Some(0),
                 removes: Some(0),
             };
@@ -512,7 +549,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -523,7 +559,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -545,14 +580,13 @@ mod test_mod {
         app.run();
 
         let mut info = ArchetypeDebug {
-            entitys: Some(1),
+            entitys: Some(0),
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
-            removes: Some(1),
+            removes: Some(0),
         };
 
         let mut info1 = ArchetypeDebug {
@@ -562,7 +596,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -594,7 +627,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -606,7 +638,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -649,7 +680,6 @@ mod test_mod {
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(1),
             destroys_listeners: Some(0),
             removes: Some(1),
         };
@@ -661,7 +691,6 @@ mod test_mod {
             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
         ];
-        info.remove_columns = Some(0);
         world.assert_archetype_arr(&[None, None, Some(info.clone()), ]);
     }
 
@@ -681,7 +710,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 1, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -705,18 +733,17 @@ mod test_mod {
         app.run();
 
         let mut info = ArchetypeDebug {
-            entitys: Some(1),
+            entitys: Some(0),
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}),
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
-            removes: Some(1),
+            removes: Some(0),
         };
 
         app.world.assert_archetype_arr(&[None, Some(info.clone()), None]);
-
+        info.entitys = Some(1);
         info.columns_info = vec![
             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
             Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}),
@@ -764,22 +791,18 @@ mod test_mod {
         app.run();
 
         let mut info = ArchetypeDebug {
-            entitys: Some(1),
+            entitys: Some(0),
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(1),
             destroys_listeners: Some(0),
-            removes: Some(1),
+            removes: Some(0),
         };
         app.world.assert_archetype_arr(&[None, Some(info.clone()), None]);
 
         app.run();
-
-        info.entitys = Some(2);
-        info.removes = Some(2);
 
         let mut info1 = ArchetypeDebug {
             entitys: Some(2),
@@ -787,7 +810,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
             ],
-            remove_columns: Some(1),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -853,7 +875,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -956,7 +977,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -1077,6 +1097,32 @@ mod test_mod {
     }
 
     #[test]
+    fn test_event() {
+        struct A(f32);
+        #[derive(Clone, Copy, Default)]
+        struct B(f32);
+
+        fn ab(a: SingleRes<A>, mut b: EventSender<B>) {
+            b.send(B(a.0 + 1.0));
+        }
+
+        fn cd(b: Event<B>) {
+            println!("cd start");
+            for i in b.iter() {
+                assert_eq!(i.0, 2.0);
+            }
+            println!("cd end");
+        }
+
+        let mut app = SingleThreadApp::new();
+        app.world.insert_single_res(A(1.0));
+        app.add_system(Update, ab);
+        app.add_system(Update, cd);
+
+        app.run();
+        app.run();
+    }
+    #[test]
     fn test_ticker() {
         pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
             println!("insert1 is now");
@@ -1133,7 +1179,6 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -1146,66 +1191,65 @@ mod test_mod {
         app.world.assert_archetype_arr(&[None, Some(info)]);
     }
 
-    #[test]
-    fn test_destroyed() { 
-        pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
-            println!("insert1 is now");
-            let e = i0.insert((Age3(3), Age1(1), Age0(0)));
-            println!("insert1 is end, e:{:?}", e);
-        }
-        pub fn alter(
-            mut i0: Alter<&Age1, (), (), ()>,
-            q0: Query<(Entity, &mut Age0, &Age1), ()>,
-        ) {
-            println!("alter1 it:{:?}", q0.iter().size_hint());
-            let item = q0.iter().next();
-            assert_eq!(item.is_some(), true);
-            let (e, _, _) = item.unwrap(); 
-            let _r = i0.destroy(e);
-            dbg!(_r);
+    // #[test]
+    // fn test_destroyed() { 
+    //     pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
+    //         println!("insert1 is now");
+    //         let e = i0.insert((Age3(3), Age1(1), Age0(0)));
+    //         println!("insert1 is end, e:{:?}", e);
+    //     }
+    //     pub fn alter(
+    //         mut i0: Alter<&Age1, (), (), ()>,
+    //         q0: Query<(Entity, &mut Age0, &Age1), ()>,
+    //     ) {
+    //         println!("alter1 it:{:?}", q0.iter().size_hint());
+    //         let item = q0.iter().next();
+    //         assert_eq!(item.is_some(), true);
+    //         let (e, _, _) = item.unwrap(); 
+    //         let _r = i0.destroy(e);
+    //         dbg!(_r);
             
-            println!("alter1: end");
-        }
-        pub fn destroyed(q0: Query<(Entity, &mut Age0, &mut Age1), Destroyed>) {
-            println!("destroyed");
-            let item = q0.iter().next();
-            assert_eq!(item.is_some(), true);
-            let (e, age0, _) = item.unwrap();
-            println!("e {:?}, age0: {:?}", e, age0);
+    //         println!("alter1: end");
+    //     }
+    //     pub fn destroyed(q0: Query<(Entity, &mut Age0, &mut Age1), Destroyed>) {
+    //         println!("destroyed");
+    //         let item = q0.iter().next();
+    //         assert_eq!(item.is_some(), true);
+    //         let (e, age0, _) = item.unwrap();
+    //         println!("e {:?}, age0: {:?}", e, age0);
         
-            println!("destroyed: end");
-        }
-        let mut app = SingleThreadApp::new();
-        app.add_system(Update, insert);
-        app.add_system(Update, print_changed_entities);
-        app.add_system(Update, alter);
-        app.add_system(Update, destroyed);
-        app.add_system(Update, print_info);
+    //         println!("destroyed: end");
+    //     }
+    //     let mut app = SingleThreadApp::new();
+    //     app.add_system(Update, insert);
+    //     app.add_system(Update, print_changed_entities);
+    //     app.add_system(Update, alter);
+    //     app.add_system(Update, destroyed);
+    //     app.add_system(Update, print_info);
         
-        app.world.assert_archetype_arr(&[None]);
+    //     app.world.assert_archetype_arr(&[None]);
 
-        app.run();
+    //     app.run();
 
-        let mut info = ArchetypeDebug {
-            entitys: Some(1),
-            columns_info: vec![
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
-            ],
-            remove_columns: Some(0),
-            destroys_listeners: Some(1),
-            removes: Some(0),
-        };
+    //     let mut info = ArchetypeDebug {
+    //         entitys: Some(1),
+    //         columns_info: vec![
+    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}), 
+    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+    //         ],
+    //         destroys_listeners: Some(1),
+    //         removes: Some(0),
+    //     };
 
-        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+    //     app.world.assert_archetype_arr(&[None, Some(info.clone())]);
 
-        app.run();
+    //     app.run();
 
-        info.entitys = Some(2);
+    //     info.entitys = Some(2);
 
-        app.world.assert_archetype_arr(&[None, Some(info)]);
-    }
+    //     app.world.assert_archetype_arr(&[None, Some(info)]);
+    // }
 
     // #[test]
     // fn alter(){ 
@@ -1267,7 +1311,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(1),
     //     };
@@ -1277,7 +1320,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
     //         ],
-    //         remove_columns: Some(1),
     //         destroys_listeners: Some(0),
     //         removes: Some(0),
     //     };
@@ -1306,7 +1348,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(0),
     //     };
@@ -1385,7 +1426,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(1),
     //     };
@@ -1395,7 +1435,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
     //         ],
-    //         remove_columns: Some(1),
     //         destroys_listeners: Some(0),
     //         removes: Some(0),
     //     };
@@ -1460,7 +1499,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 1, name: Some("Age1")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(1),
     //     };
@@ -1471,7 +1509,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //             Some(ColumnDebug{change_listeners: 1, name: Some("Age2")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(0),
     //     };
@@ -1479,7 +1516,6 @@ mod test_mod {
     //     app.world.assert_archetype_arr(&[None, Some(info1), Some(info2)]);
     //     // app.run();
     // }
-
     #[test]
     fn test_editor() {
         let mut app = SingleThreadApp::new();
@@ -1500,9 +1536,10 @@ mod test_mod {
         ) {
             println!("alter_add2 start!!");
             // assert_eq!(q.is_empty(), false);
-            let iter = q.iter().next();
-            assert_eq!(iter.is_some(), true);
-            let (e, age1, age0) = iter.unwrap();
+            let mut iter = q.iter();
+            let r = iter.next(); 
+            assert_eq!(r.is_some(), true);
+            let (e, age1, age0) = r.unwrap();
 
             println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
             edit.alter_components(e, &[
@@ -1565,18 +1602,16 @@ mod test_mod {
                 Some(ColumnDebug{change_listeners: 2, name: Some("Age1")}), 
                 Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}), 
             ],
-            remove_columns: Some(0),
             destroys_listeners: Some(0),
-            removes: Some(1),
+            removes: Some(1), // alter2中，由于iter没有迭代干净，所以Changed<Age1>的dirty没有读取，所以settle时无法清理removes
         };
         let mut info2 = ArchetypeDebug {
-            entitys: Some(1),
+            entitys: Some(0),
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
                 Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
                 Some(ColumnDebug{change_listeners: 1, name: Some("Age3")}), 
             ],
-            remove_columns: Some(1),
             destroys_listeners: Some(0),
             removes: Some(0),
         };
@@ -1586,6 +1621,98 @@ mod test_mod {
         app.run();
         app.run();
         app.run();
+    }
+
+    #[test]
+    fn test_editor_settle() {
+        let mut app = SingleThreadApp::new();
+        pub fn alter_add(mut edit: EntityEditor) {
+            let mut scomponents = [
+                edit.init_component::<Age0>(), 
+                edit.init_component::<Age1>()
+            ];
+
+            let e = edit.insert_components(&scomponents).unwrap();
+        }
+
+        pub fn alter_add2(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age1, &Age0), (Changed<Age1>, Changed<Age0>)>,
+        ) {
+            // assert_eq!(q.is_empty(), false);
+            let mut iter = q.iter();
+            let r = iter.next(); 
+            assert_eq!(r.is_some(), true);
+            let (e, age1, age0) = r.unwrap();
+            assert_eq!(iter.next(), None);
+
+            edit.alter_components(e, &[
+                (edit.init_component::<Age2>(), true),
+                (edit.init_component::<Age3>(), true),
+                (edit.init_component::<Age0>(), false),
+            ]).unwrap();
+        }
+
+        pub fn alter_add3(
+            mut edit: EntityEditor,
+            q: Query<(Entity, &Age0), (Changed<Age1>)>,
+        ) {
+            // assert_eq!(q.is_empty(), false);
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+        }
+
+        pub fn query(q: Query<(&Age1, &Age2, &Age3)>, removed: ComponentRemoved<Age0>) {
+            let re = removed.iter().next();
+            assert_eq!(re.is_some(), true);
+            let (age1, age2, age3) = q.get(*re.unwrap()).unwrap();
+        }
+
+        pub fn query2(q: Query<(Entity, &Age1, &Age2, &Age3, ), (Changed<Age3>)>, editor: EntityEditor) {
+            let iter = q.iter().next();
+            assert_eq!(iter.is_some(), true);
+            let (e, age1, age2, age3) = iter.unwrap();
+            editor.destroy(e);
+        }
+
+        pub fn query3(q: Query<(Entity, &Age1, &Age2, &Age3,)>,) {
+            let iter = q.iter().next();
+            assert_eq!(iter.is_null(), true);
+        }
+
+        app.add_system(Update, alter_add);
+        app.add_system(Update, alter_add2);
+        app.add_system(Update, alter_add3);
+        app.add_system(Update, query);
+        app.add_system(Update, query2);
+        app.add_system(Update, query3);
+
+        app.run();
+
+        let mut info1 = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 2, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}), 
+            ],
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+        let mut info2 = ArchetypeDebug {
+            entitys: Some(0),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+                Some(ColumnDebug{change_listeners: 1, name: Some("Age3")}), 
+            ],
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
+
+        app.world.assert_archetype_arr(&[None, Some(info1), Some(info2)]);
+        for _ in 0..10_000 {
+            app.run();
+        }
     }
 
     // #[test] 
@@ -1630,7 +1757,6 @@ mod test_mod {
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
     //         ],
-    //         remove_columns: Some(0),
     //         destroys_listeners: Some(0),
     //         removes: Some(0),
     //     };

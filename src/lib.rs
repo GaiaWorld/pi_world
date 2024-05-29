@@ -27,7 +27,7 @@ pub mod prelude {
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
-        filter::{Changed, Destroyed, Empty, With, Without, Or, FilterComponents},
+        filter::{Changed, With, Without, Or, FilterComponents},
         fetch::{Has, Mut, OrDefault, Ticker, ArchetypeName},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
         system_params::{SystemParam, Local},

@@ -99,7 +99,7 @@ impl<T> SafeVec<T> {
     }
     #[inline(always)]
     pub fn settle(&mut self) {
-        self.vec.collect();
+        self.vec.settle();
     }
 
     #[inline(always)]

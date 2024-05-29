@@ -4,7 +4,6 @@ use crate::prelude::World;
 pub struct ArchetypeDebug {
     pub entitys: Option<usize>,   // 原型的对应的实体数量
     pub columns_info: Vec<Option<ColumnDebug>>,   // 原型的对应的列数量
-    pub remove_columns: Option<usize>,
     pub destroys_listeners: Option<usize>,
     pub removes: Option<usize>,
 }
@@ -42,10 +41,6 @@ impl World{
     
                         assert_eq!(real_column.dirty.listener_len(), expect_column.change_listeners, "[{}]:{:?}", j, real_column.dirty);
                     }
-                }
-
-                if let Some(destroys) = expect.destroys_listeners{
-                    assert_eq!(unsafe{&*real.destroys.get()}.listener_len(), destroys, "{:?}", real);
                 }
 
                 if let Some(removes) = expect.removes{

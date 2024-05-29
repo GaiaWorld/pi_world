@@ -223,8 +223,8 @@ impl ExecGraph {
         self.check();
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
-        inner.nodes.collect();
-        inner.edges.collect();
+        inner.nodes.settle();
+        inner.edges.settle();
         let mut to_len = 0;
         // 计算froms节点和to_len
         for (index, node) in inner.nodes.iter().enumerate() {
@@ -242,7 +242,7 @@ impl ExecGraph {
             let notify = Notify(self.clone(), systems, true, PhantomData);
             world.listener_mgr.register_event(Share::new(notify));
             // 整理world的监听器，合并内存
-            world.listener_mgr.collect();
+            world.listener_mgr.settle();
         }
         // println!(
         //     "graph initialized, froms: {:?},  to_len:{}",
@@ -580,10 +580,10 @@ impl ExecGraph {
         node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
 }
     // 图的整理方法， 将图和边的内存连续，去除原子操作
-    pub fn collect(&mut self) {
+    pub fn settle(&mut self) {
         let inner = unsafe { Share::get_mut_unchecked(&mut self.0) };
-        inner.nodes.collect();
-        inner.edges.collect();
+        inner.nodes.settle();
+        inner.edges.settle();
     }
 }
 

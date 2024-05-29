@@ -8,7 +8,6 @@
 
 use pi_null::Null;
 use pi_proc_macros::all_tuples;
-use smallvec::SmallVec;
 use std::any::TypeId;
 use std::marker::PhantomData;
 
@@ -34,7 +33,7 @@ pub trait FilterComponents {
     /// initializes ReadWrite for this [`FilterComponents`] type.
     fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {}
     /// initializes listener for this [`FilterComponents`] type
-    fn init_listeners(_world: &mut World, _listeners: &mut SmallVec<[ListenType; 1]>) {}
+    fn init_listeners(_world: &mut World, _listeners: &mut Vec<ComponentIndex>) {}
     fn archetype_filter(_world: &World, _archetype: &Archetype) -> bool {
         false
     }
@@ -81,25 +80,25 @@ impl<T: 'static> FilterComponents for With<T> {
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
     const LISTENER_COUNT: usize = 1;
-    fn init_listeners(world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Changed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK | COMPONENT_CHANGED)).0));
+    fn init_listeners(world: &mut World, listeners: &mut Vec<ComponentIndex>) {
+        listeners.push(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK | COMPONENT_CHANGED)).0);
     }
 }
 
 // pub struct Removed<T: 'static>(PhantomData<T>);
 // impl<T: 'static> FilterComponents for Removed<T> {
 //     const LISTENER_COUNT: usize = 1;
-//     fn init_listeners(world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
+//     fn init_listeners(world: &mut World, listeners: &mut Vec<ComponentIndex>) {
 //         listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_REMOVED)).0));
 //     }
 // }
-pub struct Destroyed;
-impl FilterComponents for Destroyed {
-    const LISTENER_COUNT: usize = 1;
-    fn init_listeners(_world: &mut World, listeners: &mut SmallVec<[ListenType; 1]>) {
-        listeners.push(ListenType::Destroyed);
-    }
-}
+// pub struct Destroyed;
+// impl FilterComponents for Destroyed {
+//     const LISTENER_COUNT: usize = 1;
+//     fn init_listeners(_world: &mut World, listeners: &mut Vec<ComponentIndex>) {
+//         listeners.push(ListenType::Destroyed);
+//     }
+// }
 macro_rules! impl_tuple_filter {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
@@ -110,7 +109,7 @@ macro_rules! impl_tuple_filter {
 	        fn init_read_write(_world: &mut World, _meta: &mut SystemMeta) {
                 ($($name::init_read_write(_world, _meta),)*);
             }
-            fn init_listeners(_world: &mut World, _listeners: &mut SmallVec<[ListenType; 1]>) {
+            fn init_listeners(_world: &mut World, _listeners: &mut Vec<ComponentIndex>) {
                 ($($name::init_listeners(_world, _listeners),)*);
             }
             fn archetype_filter(_world: &World, _archetype: &Archetype) -> bool {
