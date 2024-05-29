@@ -49,4 +49,4 @@ rand = "0.8"
 members = ["macros"]
 
 [patch.crates-io]
-pi_append_vec = {path = "../pi_append_vec"}
+# pi_append_vec = {path = "../pi_append_vec"}

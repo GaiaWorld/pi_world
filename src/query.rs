@@ -35,6 +35,7 @@ pub enum QueryError {
     NoMatchArchetype,
     NoMatchEntity(Entity),
     NoSuchEntity,
+    NullEntity,
     NoSuchRow,
     NoSuchRes,
     RepeatAlter,
@@ -139,13 +140,16 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     
     pub fn contains(&self, entity: Entity) -> bool {
-        check(self.world, entity, &self.state.map).is_ok()
+        (!entity.is_null()) && check(self.world, entity, &self.state.map).is_ok()
     }
     
     pub fn get(
         &self,
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         self.state
             .as_readonly()
             .get(self.world, self.tick, e, /* unsafe {
@@ -154,6 +158,9 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
     
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         self.state
             .get(self.world, self.tick, e, /* self.cache_mapping.get_mut() */)
     }

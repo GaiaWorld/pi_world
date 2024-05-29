@@ -42,6 +42,9 @@ impl<'w> EntityEditor<'w> {
         &mut self.world.entity_editor_state
     }
     fn get_entity_prototype(&self, e: Entity) -> Option<(ArchetypeInfo, ArchetypeWorldIndex)> {
+        if e.is_null() {
+            return None;
+        }
         self.world.get_entity_prototype(e)
     }
     pub fn add_components(
@@ -49,6 +52,9 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push((*item, true));
@@ -61,6 +67,9 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push((*item, false));
@@ -73,6 +82,9 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[(ComponentIndex, bool)],
     ) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push(*item)
@@ -82,6 +94,9 @@ impl<'w> EntityEditor<'w> {
     }
 
     fn alter_components_impl(&mut self, e: Entity) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         let ptr: *const EditorState = &self.world.entity_editor_state;
         let editor_state = unsafe { &mut *(ptr as *mut EditorState) };
         editor_state.tmp.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
@@ -159,6 +174,9 @@ impl<'w> EntityEditor<'w> {
     }
 
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         let addr = match self.world.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity),

@@ -111,11 +111,17 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     /// 标记销毁实体
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         // self.state
         AState::destroy(&self.query.world, &self.state.vec, e, &self.query.state.map)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
         let (addr, local_index) = check_mark(
             &self.query.world,
             e,
