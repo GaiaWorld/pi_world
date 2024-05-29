@@ -13,7 +13,8 @@ categories = ["data-structures", "memory-management", "ecs"]
 
 [features]
 single_thread = []
-trace = []
+trace_warn = []
+trace_info = []
 
 [dependencies]
 pi_map = "0.2"
@@ -46,3 +47,6 @@ rand = "0.8"
 
 [workspace]
 members = ["macros"]
+
+[patch.crates-io]
+pi_append_vec = {path = "../pi_append_vec"}
