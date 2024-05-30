@@ -2,8 +2,8 @@
 //! A collection of helper types and functions for working on macros within the Bevy ecosystem.
 
 extern crate proc_macro;
-#[macro_use]
-extern crate lazy_static;
+// #[macro_use]
+// extern crate lazy_static;
 
 mod label;
 mod manifest;
@@ -591,10 +591,9 @@ pub(crate) fn ecs_path() -> syn::Path {
 //     path.clone()
 // }
 
-lazy_static! {
-    static ref ECS_PATH: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    // static ref BEVY_UTILS: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-}
+
+static ECS_PATH: Mutex<Option<String>> = Mutex::new(None);
+
 
 fn get_idents(fmt_string: fn(usize) -> String, count: usize) -> Vec<Ident> {
     (0..count)
