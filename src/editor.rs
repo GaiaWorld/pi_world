@@ -8,14 +8,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{ArchetypeMapping, AState},
-    archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row},
-    insert::Bundle,
-    prelude::{Entity, Mut, QueryError, Tick, World},
-    query::ArchetypeLocalIndex,
-    system::SystemMeta,
-    system_params::SystemParam,
-    world::ComponentIndex,
+    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row}, insert::Bundle, param_set::ParamSetElement, prelude::{Entity, Mut, QueryError, Tick, World}, query::ArchetypeLocalIndex, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
 impl AState {
@@ -257,7 +250,6 @@ impl SystemParam for EntityEditor<'_> {
     type Item<'w> = EntityEditor<'w>;
 
     fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        // 如果world上没有找到对应的原型，则创建并放入world中
         ()
     }
 
@@ -280,5 +272,12 @@ impl SystemParam for EntityEditor<'_> {
         tick: Tick,
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+    }
+}
+
+impl<'w> ParamSetElement for EntityEditor<'w> 
+{
+    fn init_set_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+        ()
     }
 }
