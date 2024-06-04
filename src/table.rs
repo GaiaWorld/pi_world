@@ -11,25 +11,25 @@ use pi_append_vec::AppendVec;
 use pi_null::Null;
 use pi_share::Share;
 
-use crate::archetype::ArchetypeWorldIndex;
+use crate::archetype::ArchetypeIndex;
 use crate::archetype::Row;
 use crate::column::Column;
-use crate::world::{ComponentIndex, Entity, World, Tick};
+use crate::world::{ComponentIndex, Entity, Tick, World};
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
-    pub(crate) index: ArchetypeWorldIndex,
-    sorted_columns: Vec<Share<Column>>,        // 每个组件
-    bit_set: FixedBitSet,                           // 记录组件是否在table中
+    pub(crate) index: ArchetypeIndex,
+    sorted_columns: Vec<Share<Column>>, // 每个组件
+    bit_set: FixedBitSet,               // 记录组件是否在table中
     // column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
-    pub(crate) removes: AppendVec<Row>,                    // 整理前被移除的实例
+    pub(crate) removes: AppendVec<Row>, // 整理前被移除的实例
 }
 impl Table {
     pub fn new(sorted_columns: Vec<Share<Column>>) -> Self {
         let len = sorted_columns.len();
         let max = if len > 0 {
             unsafe { sorted_columns.get_unchecked(len - 1).info().index.index() + 1 }
-        }else{
+        } else {
             0
         };
         // let mut column_map = Vec::with_capacity(max);
@@ -37,11 +37,11 @@ impl Table {
         // let mut sorted_columns = Vec::with_capacity(len);
         let mut bit_set = FixedBitSet::with_capacity(max);
         for c in sorted_columns.iter() {
-            bit_set.set(c.info().index.index(), true);
+            unsafe { bit_set.set_unchecked(c.info().index.index(), true) };
         }
         Self {
             entities: AppendVec::default(),
-            index: ArchetypeWorldIndex::null(),
+            index: ArchetypeIndex::null(),
             sorted_columns,
             bit_set,
             // column_map: column_map,
@@ -72,6 +72,13 @@ impl Table {
     pub fn get_columns(&self) -> &Vec<Share<Column>> {
         &self.sorted_columns
     }
+    // 初始化原型对应列的blob
+    pub fn init_blobs(&self) {
+        for c in self.sorted_columns.iter() {
+            c.init_blob(self.index);
+        }
+    }
+
     // 判断指定组件索引的组件是否在table中
     #[inline(always)]
     pub fn contains(&self, index: ComponentIndex) -> bool {
@@ -112,7 +119,7 @@ impl Table {
     //     None
     // }
     pub(crate) fn get_column_unchecked(&self, index: usize) -> &Share<Column> {
-        unsafe { self.sorted_columns.get_unchecked(index)}
+        unsafe { self.sorted_columns.get_unchecked(index) }
     }
     // /// 添加changed监听器，原型刚创建时调用
     // pub fn add_listener(&self, index: ComponentIndex, owner: Tick,
@@ -402,12 +409,8 @@ impl Table {
         // }
         // 再移动entitys的空位
         for (src, dst) in action.iter() {
-            let e = unsafe {
-                replace(
-                    self.entities.get_unchecked_mut(src.index()),
-                    Entity::null(),
-                )
-            };
+            let e =
+                unsafe { replace(self.entities.get_unchecked_mut(src.index()), Entity::null()) };
             *unsafe { self.entities.get_unchecked_mut(dst.index()) } = e;
             // 修改world上entity的地址
             world.replace_row(e, *dst);

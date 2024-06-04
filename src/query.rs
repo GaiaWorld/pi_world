@@ -4,20 +4,22 @@ use core::fmt::*;
 use core::result::Result;
 use std::cell::UnsafeCell;
 use std::mem::{transmute, MaybeUninit};
+use std::ops::{Deref, DerefMut};
 
-use crate::archetype::{Archetype, ArchetypeWorldIndex, Row, ShareArchetype};
+use crate::archetype::{Archetype, ArchetypeIndex, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
 use crate::filter::{self, FilterComponents};
 use crate::system::{Related, SystemMeta};
 use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
+use fixedbitset::FixedBitSet;
 use pi_null::*;
 use pi_share::Share;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum QueryError {
-    MissingComponent(ComponentIndex, ArchetypeWorldIndex),
+    MissingComponent(ComponentIndex, ArchetypeIndex),
     NoMatchArchetype,
     NoMatchEntity(Entity),
     NoSuchComponent(ComponentIndex),
@@ -32,12 +34,12 @@ pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + '
     pub(crate) state: QueryState<Q, F>,
     pub(crate) tick: Tick,
     // 缓存上次的索引映射关系
-    pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
+    pub(crate) cache_mapping: UnsafeCell<(ArchetypeIndex, ArchetypeLocalIndex)>,
 }
 impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'world, Q, F> {
     pub(crate) fn new(world: &'world World, state: QueryState<Q, F>) -> Self {
         let tick = world.increment_tick();
-        let cache_mapping = UnsafeCell::new((ArchetypeWorldIndex::null(), ArchetypeLocalIndex(0)));
+        let cache_mapping = UnsafeCell::new((ArchetypeIndex::null(), ArchetypeLocalIndex(0)));
         Self {
             world,
             state,
@@ -47,17 +49,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
 
     pub fn contains(&self, entity: Entity) -> bool {
-        if let Ok((addr, local_index)) = check(
-            self.world,
-            entity,
-            // unsafe { &mut *self.cache_mapping.get() },
-            &self.state.map,
-        ) {
-            unsafe { *self.cache_mapping.get() = (addr.archetype_index(), local_index) };
-            return true;
-        } else {
-            return false;
-        }
+        self.state.check(self.world, entity).is_ok()
     }
 
     pub fn get(
@@ -123,7 +115,7 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
     }
 
     pub fn contains(&self, entity: Entity) -> bool {
-        check(self.world, entity, &self.state.map).is_ok()
+        self.state.check(self.world, entity).is_ok()
     }
 
     pub fn get(
@@ -230,25 +222,21 @@ impl pi_null::Null for ArchetypeLocalIndex {
 }
 #[derive(Debug)]
 pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-    // pub(crate) id: Tick, // 由world上分配的唯一tick
-    pub(crate) related: Share<Related>,         // 组件关系表
-    pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
-    pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
-    pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引 todo 改成bit_set
-    pub(crate) last_run: Tick,        // 上次运行的tick
-    // pub(crate) share_last_run: Option<Share<ShareUsize>>,                                         // 给脏列表共享的上次运行的tick
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
+    pub(crate) qstate: QState,
 }
 
-
-#[derive(Debug)]
-pub struct QState {
-    pub(crate) related: Share<Related>,         // 组件关系表
-    pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
-    pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
-    pub(crate) map: Vec<ArchetypeLocalIndex>, // world上的原型索引对于本地的原型索引 todo 改成bit_set
-    pub(crate) last_run: Tick,        // 上次运行的tick
+impl<Q: FetchComponents + 'static, F: FilterComponents + 'static> Deref for QueryState<Q, F> {
+    type Target = QState;
+    fn deref(&self) -> &Self::Target {
+        &self.qstate
+    }
+}
+impl<Q: FetchComponents + 'static, F: FilterComponents + 'static> DerefMut for QueryState<Q, F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.qstate
+    }
 }
 
 impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
@@ -259,19 +247,57 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // let id = world.increment_tick();
         let fetch_state = Q::init_state(world, system_meta);
         let filter_state = F::init_state(world, system_meta);
+        Self {
+            fetch_state,
+            filter_state,
+            qstate: QState::new(system_meta),
+        }
+    }
+    pub fn get<'w>(
+        &'w self,
+        world: &'w World,
+        tick: Tick,
+        entity: Entity,
+        // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+    ) -> Result<Q::Item<'w>, QueryError> {
+        // println!("get1======{:?}", (entity, self.map.len()));
+        let addr = *self.check(world, entity /* cache_mapping, */)?;
+
+        let ar = unsafe { world.get_archetype_unchecked(addr.archetype_index()) };
+        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  ar.name()));
+        let filter = F::init_filter(world, &self.filter_state, ar, tick, self.last_run);
+        if F::filter(&filter, addr.row, entity) {
+            return Err(QueryError::NoMatchEntity(entity));
+        }
+        let mut fetch = Q::init_fetch(world, &self.fetch_state, ar, tick, self.last_run);
+        Ok(Q::fetch(&mut fetch, addr.row, entity))
+    }
+}
+
+#[derive(Debug)]
+pub struct QState {
+    pub(crate) related: Share<Related>,         // 组件关系表
+    pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
+    pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
+    pub(crate) bit_set: FixedBitSet,  // world上的原型索引是否在本地
+    pub(crate) bit_set_start: usize,
+    pub(crate) last_run: Tick, // 上次运行的tick
+}
+
+impl QState {
+    pub fn new(system_meta: &mut SystemMeta) -> Self {
         let related = system_meta.related_ok();
-        system_meta.cur_param_ok();
         Self {
             // id,
             related,
             archetypes_len: 0,
             archetypes: Vec::new(),
-            map: Default::default(),
+            bit_set: Default::default(),
+            bit_set_start: 0,
             last_run: Tick::default(),
-            fetch_state,
-            filter_state,
         }
     }
+
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();
@@ -286,35 +312,40 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         self.archetypes_len = len;
     }
     // 新增的原型
-    pub fn add_archetype(&mut self, ar: &ShareArchetype, index: ArchetypeWorldIndex) {
+    pub fn add_archetype(&mut self, ar: &ShareArchetype, index: ArchetypeIndex) {
         // 判断原型是否和查询相关
         if !self.related.relate(ar, 0) {
             return;
         }
-        self.map
-            .insert_value(index.index(), self.archetypes.len().into());
+        if self.archetypes.len() == 0 {
+            self.bit_set_start = index.index();
+        }
+        let index = index.index() - self.bit_set_start;
+        self.bit_set.grow(index + 1);
+        unsafe { self.bit_set.set_unchecked(index, true) };
         self.archetypes.push(ar.clone());
     }
-    pub fn get<'w>(
-        &'w self,
+    // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
+    pub(crate) fn check<'w>(
+        &self,
         world: &'w World,
-        tick: Tick,
         entity: Entity,
-        // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
-    ) -> Result<Q::Item<'w>, QueryError> {
-        // println!("get1======{:?}", (entity, self.map.len()));
-        let (addr, local_index) = check(world, entity, /* cache_mapping, */ &self.map)?;
-
-        let ar = unsafe { self.archetypes.get_unchecked(local_index.index()) };
-        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  ar.name()));
-        let filter = F::init_filter(world, &self.filter_state, ar, tick, self.last_run);
-        if F::filter(&filter, addr.row, entity) {
-            return Err(QueryError::NoMatchEntity(entity));
+    ) -> Result<&'w mut EntityAddr, QueryError> {
+        // assert!(!entity.is_null());
+        let addr = match world.entities.load(entity) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity(entity)),
+        };
+        // println!("addr======{:?}", (entity, addr));
+        if !self.bit_set.contains(
+            addr.archetype_index()
+                .index()
+                .wrapping_sub(self.bit_set_start),
+        ) {
+            return Err(QueryError::NoMatchArchetype);
         }
-        let mut fetch = Q::init_fetch(world, &self.fetch_state, ar, tick, self.last_run);
-        Ok(Q::fetch(&mut fetch, addr.row, entity))
+        Ok(addr)
     }
-
     pub fn is_empty(&self) -> bool {
         if self.archetypes.is_empty() {
             return true;
@@ -342,32 +373,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
 //     state: S,
 //     range: Range<u32>,
 // }
-
-// 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
-pub(crate) fn check<'w>(
-    world: &'w World,
-    entity: Entity,
-    map: &Vec<ArchetypeLocalIndex>,
-) -> Result<(EntityAddr, ArchetypeLocalIndex), QueryError> {
-    // assert!(!entity.is_null());
-    let addr = match world.entities.get(entity) {
-        Some(v) => *v,
-        None => return Err(QueryError::NoSuchEntity(entity)),
-    };
-    // println!("addr======{:?}", (entity, addr));
-
-    let local_index = match map.get(addr.archetype_index().index()) {
-        Some(v) => {
-            if v.is_null() {
-                return Err(QueryError::NoMatchArchetype);
-            } else {
-                *v
-            }
-        }
-        None => return Err(QueryError::NoMatchArchetype),
-    };
-    Ok((addr, local_index))
-}
 
 pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
     pub(crate) world: &'w World,
@@ -443,7 +448,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                     if F::filter(unsafe { &self.fetch.assume_init_mut().1 }, self.row, self.e) {
                         continue;
                     }
-                    let item = Q::fetch(unsafe { &self.fetch.assume_init_mut().0 }, self.row, self.e);
+                    let item =
+                        Q::fetch(unsafe { &self.fetch.assume_init_mut().0 }, self.row, self.e);
                     return Some(item);
                 }
                 continue;
@@ -457,79 +463,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             self.next_archetype();
         }
     }
-
-    // fn iter_dirtys(&mut self) -> Option<Q::Item<'w>> {
-    //     'outer: loop {
-    //         if let Some(d) = self.dirty.it.next() {
-    //             self.e = self.ar.get(d.row);
-    //             // 要求条目不为空
-    //             if !self.e.is_null() {
-    //                 // 检查tick
-    //                 let tick = self.dirty.ticks.load(d.row.index()).unwrap();
-    //                 if self.state.last_run < *tick {
-    //                     if self.bitset.contains(d.row.index()) {
-    //                         continue;
-    //                     }
-    //                     self.bitset.set(d.row.index(), true);
-    //                     let item = Q::fetch(unsafe { self.fetch.assume_init_mut() }, d.row, self.e);
-    //                     return Some(item);
-    //                 }
-    //                 self.row = d.row;
-    //             }
-    //             continue;
-    //         }
-    //         let mut entitys_len = 0; // 记录新原型的实体长度
-    //         loop {
-    //             // 检查当前原型的下一个被脏组件
-    //             while !self.dirty_range.is_empty() {
-    //                 self.dirty_range.end -= 1;
-    //                 let (column_index, read_len, vec) = unsafe { self.state.archetype_listeners.get_unchecked(self.dirty_range.end as usize) };
-    //                 let end = vec.len(); // 取脏列表的长度
-    //                 if end > 0 {
-    //                     let start = read_len.swap(end,  Ordering::Relaxed); // 交换读取的长度
-    //                     if start < end {
-    //                         self.dirty.it = vec.slice(start..end);
-    //                         let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-    //                         let c = arqs.ar.get_column_unchecked(*column_index);
-    //                         self.dirty.ticks = &c.ticks;
-    //                         if entitys_len > 0 { // 表示换了新的原型，并且原型有脏数据
-    //                             // 获取该原型的fetch
-    //                             self.fetch = MaybeUninit::new(Q::init_fetch(
-    //                                 self.world,
-    //                                 self.ar,
-    //                                 &arqs.state,
-    //                                 self.tick,
-    //                                 self.state.last_run,
-    //                             ));
-    //                             if self.bitset.len() < entitys_len {
-    //                                 self.bitset = FixedBitSet::with_capacity(entitys_len);
-    //                             } else {
-    //                                 self.bitset.clear();
-    //                             }
-    //                         }
-    //                         continue 'outer;
-    //                     }
-    //                 }
-    //             }
-    //             loop {
-    //                 // 当前的原型已经迭代完毕
-    //                 if self.ar_index.0 == 0 {
-    //                     // 所有原型都迭代过了
-    //                     return None;
-    //                 }
-    //                 // 下一个原型
-    //                 self.ar_index.0 -= 1;
-    //                 let arqs = unsafe { &self.state.vec.get_unchecked(self.ar_index.index()) };
-    //                 entitys_len = arqs.ar.len().index();
-    //                 if entitys_len > 0 { // 当前原型有实体
-    //                     self.ar = &arqs.ar;
-    //                     self.dirty_range = arqs.range.clone();
-    //                     break
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 
     fn size_hint_normal(&self) -> (usize, Option<usize>) {
         let it = self.state.archetypes[0..self.ar_index.index()].iter();

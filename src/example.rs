@@ -202,7 +202,7 @@ struct Velocity([f32; 3]);
  
 #[cfg(test)]
 mod test_mod {
-
+ 
     use std::any::TypeId;
 
     use super::*;
@@ -312,6 +312,7 @@ mod test_mod {
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         let r = meta.related_ok();
         assert_eq!(true, r.relate(&ar, 0));
+        assert_eq!(true, r.relate(&w.empty_archetype, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
@@ -338,6 +339,7 @@ mod test_mod {
         meta.relate(Relation::End);
         let r = meta.related_ok();
         assert_eq!(true, r.relate(&ar, 0));
+        assert_eq!(false, r.relate(&w.empty_archetype, 0));
 
     }
  
@@ -811,7 +813,8 @@ mod test_mod {
         ) {
             println!("alter1 it:{:?}", q0.iter().size_hint());
             for (e, _, _) in q0.iter() {
-                let _r = i0.alter(e, ());
+                let r = i0.alter(e, ());
+                println!("alter1 it1111:{:?}", r);
             }
             println!("alter1: end");
         }

@@ -5,7 +5,7 @@ use pi_arr::Arr;
 use pi_null::Null;
 
 use crate::{
-    archetype::{ArchetypeWorldIndex, ComponentInfo, Row},
+    archetype::{ArchetypeIndex, ComponentInfo, Row},
     world::{Tick, Entity},
 };
 
@@ -29,12 +29,17 @@ impl Column {
     pub fn info_mut(&mut self) -> &mut ComponentInfo {
         &mut self.info
     }
+    // 初始化原型对应列的blob
+    pub fn init_blob(&self, index: ArchetypeIndex) {
+        // todo self.arr.load_alloc(index.index())
+    }
+    
     #[inline(always)]
-    pub fn blob_ref(&self, index: ArchetypeWorldIndex) -> BlobRef<'_> {
+    pub fn blob_ref(&self, index: ArchetypeIndex) -> BlobRef<'_> {
         BlobRef::new(self.arr.load_alloc(index.index()), &self.info)
     }
     /// 整理合并空位
-    pub(crate) fn settle(&mut self, index: ArchetypeWorldIndex, len: usize, additional: usize, action: &Vec<(Row, Row)>) {
+    pub(crate) fn settle(&mut self, index: ArchetypeIndex, len: usize, additional: usize, action: &Vec<(Row, Row)>) {
         // 判断ticks，进行ticks的整理
         let b = unsafe { self.arr.get_unchecked_mut(index.index()) };
         let r = BlobRef::new(b, &self.info);

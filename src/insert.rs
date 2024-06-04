@@ -93,18 +93,6 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
         let s = I::init_item(world, &ar);
         (ar, s)
     }
-    // fn archetype_depend(
-    //     world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     archetype: &Archetype,
-    //     depend: &mut ArchetypeDependResult,
-    // ) {
-    //     // todo 似乎可以使用state上的ShareArchetype
-    //     let components = I::components(Vec::new());
-    //     depend.insert(archetype, world, components);
-    // }
-
     #[inline]
     fn get_param<'world>(
         world: &'world World,

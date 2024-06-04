@@ -30,7 +30,7 @@ use pi_share::{Share, ShareBool};
 use crate::column::Column;
 use crate::system::TypeInfo;
 use crate::table::Table;
-use crate::world::{ComponentIndex, Entity, SetDefault, World};
+use crate::world::{ComponentIndex, SetDefault, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
@@ -61,23 +61,23 @@ impl pi_null::Null for Row {
     }
 }
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ArchetypeWorldIndex(pub(crate) i32);
-impl ArchetypeWorldIndex {
+pub struct ArchetypeIndex(pub(crate) i32);
+impl ArchetypeIndex {
     pub fn index(&self) -> usize {
         self.0 as usize
     }
 }
-impl From<u32> for ArchetypeWorldIndex {
+impl From<u32> for ArchetypeIndex {
     fn from(index: u32) -> Self {
         Self(index as i32)
     }
 }
-impl From<usize> for ArchetypeWorldIndex {
+impl From<usize> for ArchetypeIndex {
     fn from(index: usize) -> Self {
         Self(index as i32)
     }
 }
-impl pi_null::Null for ArchetypeWorldIndex {
+impl pi_null::Null for ArchetypeIndex {
     fn null() -> Self {
         Self(i32::null())
     }
@@ -247,13 +247,13 @@ impl Archetype {
     }
     // 获得所在的World原型index
     #[inline(always)]
-    pub(crate) fn set_index(&mut self, index: ArchetypeWorldIndex) {
+    pub(crate) fn set_index(&mut self, index: ArchetypeIndex) {
         self.table.index = index;
     }
     
     // 获得所在的World原型index
     #[inline(always)]
-    pub fn index(&self) -> ArchetypeWorldIndex {
+    pub fn index(&self) -> ArchetypeIndex {
         self.table.index
     }
     #[inline(always)]
@@ -363,14 +363,6 @@ impl Archetype {
     #[inline(always)]
     pub fn is_empty_columns(&self) -> bool {
         self.get_columns().len() == 0
-    }
-    /// 标记移出，用于alter todo 移到table
-    pub(crate) fn mark_remove(&self, row: Row) -> Entity {
-        if self.table.index.index() > 0 {
-            self.table.mark_remove(row)
-        }else{
-            Entity::null()
-        }
     }
     /// 整理方法 todo 删掉
     pub(crate) fn settle(

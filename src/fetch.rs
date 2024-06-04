@@ -8,7 +8,7 @@ use pi_proc_macros::all_tuples;
 use pi_share::Share;
 
 use crate::archetype::{
-    Archetype, ArchetypeWorldIndex, ComponentInfo, Row,
+    Archetype, ArchetypeIndex, ComponentInfo, Row,
     COMPONENT_TICK,
 };
 use crate::column::{BlobRef, Column};
@@ -472,9 +472,9 @@ impl<T: 'static> FetchComponents for Has<T> {
 }
 
 #[derive(Debug)]
-pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub ArchetypeWorldIndex, pub Row);
+pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub ArchetypeIndex, pub Row);
 impl FetchComponents for ArchetypeName<'_> {
-    type Fetch<'w> = (&'w Cow<'static, str>, ArchetypeWorldIndex);
+    type Fetch<'w> = (&'w Cow<'static, str>, ArchetypeIndex);
     type Item<'w> = ArchetypeName<'w>;
     type ReadOnly = ArchetypeName<'static>;
     type State = ();

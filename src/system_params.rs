@@ -1,9 +1,9 @@
-use std::{any::TypeId, borrow::Cow, mem::transmute, ops::{Deref, DerefMut}};
+use std::{mem::transmute, ops::{Deref, DerefMut}};
 
 /// 系统参数的定义
 ///
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags}, prelude::FromWorld, system::SystemMeta, world::{Tick, World}
+    prelude::FromWorld, system::SystemMeta, world::{Tick, World}
 };
 
 use pi_proc_macros::all_tuples;
@@ -159,7 +159,7 @@ impl SystemParam for &mut World {
     type Item<'world> = &'world mut World;
 
     fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        //TODO
+        //TODO meta上增加world的类型
         ()
     }
 

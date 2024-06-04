@@ -1,6 +1,6 @@
 use crate::alter::{AlterState, Alterer};
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeWorldIndex, ComponentInfo, Row, ShareArchetype,
+    Archetype, ArchetypeInfo, ArchetypeIndex, ComponentInfo, Row, ShareArchetype,
     COMPONENT_CHANGED, COMPONENT_TICK,
 };
 use crate::column::{BlobRef, Column};
@@ -118,7 +118,7 @@ pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
 #[derive(Clone, Debug)]
 pub struct ArchetypeOk<'a>(
     pub &'a ShareArchetype,
-    pub ArchetypeWorldIndex,
+    pub ArchetypeIndex,
     pub &'a World,
 );
 
@@ -168,8 +168,10 @@ impl World {
         let listener_mgr = ListenerMgr::default();
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
-        let empty_archetype = ShareArchetype::new(Archetype::new(Default::default()));
-        empty_archetype.ready.store(true, Ordering::Relaxed);
+        let mut empty = Archetype::new(Default::default());
+        empty.set_index(0usize.into());
+        empty.ready.store(true, Ordering::Relaxed);
+        let empty_archetype = ShareArchetype::new(empty);
         let component_arr = SafeVec::with_capacity(1);
         let archetype_map = DashMap::new();
         archetype_map.insert(0, empty_archetype.clone());
@@ -223,7 +225,7 @@ impl World {
         EntityEditor::new(self)
     }
     /// 获得实体的原型信息
-    pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeWorldIndex)> {
+    pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.entities.get(entity).map(|e| {
             let ar_index = e.archetype_index();
             let ar = self.archetype_arr.get(ar_index.index()).unwrap();
@@ -345,7 +347,7 @@ impl World {
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
-        Alterer::<Q, F, A, D>::state_align(self, &mut alter_state, &query_state);
+        alter_state.align(self,  &query_state.archetypes);
         Alterer::new(self, query_state, alter_state)
     }
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
@@ -775,8 +777,11 @@ impl World {
     // pub fn get_archetype(&self, id: u128) -> Option<Ref<u128, ShareArchetype>> {
     //     self.archetype_map.get(&id)
     // }
-    pub fn index_archetype(&self, index: ArchetypeWorldIndex) -> Option<&ShareArchetype> {
+    pub fn index_archetype(&self, index: ArchetypeIndex) -> Option<&ShareArchetype> {
         self.archetype_arr.get(index.0 as usize)
+    }
+    pub(crate) unsafe fn get_archetype_unchecked(&self, index: ArchetypeIndex) -> &ShareArchetype {
+        self.archetype_arr.get_unchecked(index.0 as usize)
     }
     pub fn archetype_list<'a>(&'a self) -> SafeVecIter<'a, ShareArchetype> {
         self.archetype_arr.iter()
@@ -815,8 +820,7 @@ impl World {
         } else {
             // 循环等待原型就绪
             loop {
-                let index = ar.index();
-                if index.is_null() {
+                if !ar.ready() {
                     std::hint::spin_loop();
                 }
                 return ar;
@@ -824,23 +828,24 @@ impl World {
         }
     }
     // 先事件通知调度器，将原型放入数组，之后其他system可以看到该原型
-    pub(crate) fn archtype_ok(&self, ar: &mut ShareArchetype) -> ArchetypeWorldIndex {
+    pub(crate) fn archtype_ok(&self, ar: &mut ShareArchetype) -> ArchetypeIndex {
         let entry = self.archetype_arr.alloc_entry();
         let index = entry.index();
         let mut_ar = unsafe { Share::get_mut_unchecked(ar) };
         mut_ar.set_index(index.into());
+        mut_ar.init_blobs(); // 初始化原型中的blob
         ar.ready.store(true, Ordering::Relaxed);
-        entry.insert(ar.clone()); // 确保其他线程一定可以看见
+        entry.insert(ar.clone()); // entry销毁后， 其他线程通过archetype_arr就可以看见该原型
         index.into()
     }
     /// 插入一个新的Entity
     #[inline(always)]
-    pub(crate) fn insert(&self, ar_index: ArchetypeWorldIndex, row: Row) -> Entity {
+    pub(crate) fn insert(&self, ar_index: ArchetypeIndex, row: Row) -> Entity {
         self.entities.insert(EntityAddr::new(ar_index, row))
     }
     /// 替换Entity的原型及行
     #[inline(always)]
-    pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeWorldIndex, row: Row) -> EntityAddr {
+    pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeIndex, row: Row) -> EntityAddr {
         let addr = unsafe { self.entities.load_unchecked(e) };
         mem::replace(addr, EntityAddr::new(ar_index, row))
     }
@@ -854,6 +859,10 @@ impl World {
             Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity(e)),
         };
+        if addr.row.is_null() {
+            self.entities.remove(e).unwrap();
+            return Ok(());
+        }
         let ar = unsafe {
             self.archetype_arr
                 .get_unchecked(addr.archetype_index().index())
@@ -869,7 +878,7 @@ impl World {
     /// 创建一个新的实体
     pub(crate) fn alloc_entity(&self) -> Entity {
         self.entities
-            .insert(EntityAddr::new(ArchetypeWorldIndex::null(), Row(0)))
+            .insert(EntityAddr::new(0usize.into(), Row::null()))
     }
     /// 初始化指定组件
     pub fn init_component<T: 'static>(&self) -> ComponentIndex {
@@ -1000,7 +1009,7 @@ unsafe impl Sync for MultiResource {}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EntityAddr {
-    index: ArchetypeWorldIndex,
+    index: ArchetypeIndex,
     pub(crate) row: Row,
 }
 unsafe impl Sync for EntityAddr {}
@@ -1008,7 +1017,7 @@ unsafe impl Send for EntityAddr {}
 
 impl EntityAddr {
     #[inline(always)]
-    pub(crate) fn new(index: ArchetypeWorldIndex, row: Row) -> Self {
+    pub(crate) fn new(index: ArchetypeIndex, row: Row) -> Self {
         EntityAddr {
             index,
             row,
@@ -1020,14 +1029,14 @@ impl EntityAddr {
     }
     #[inline(always)]
     pub(crate) fn mark(&mut self) {
-        self.index = ArchetypeWorldIndex(-self.index.0 - 1);
+        self.index = ArchetypeIndex(-self.index.0 - 1);
     }
     #[inline(always)]
-    pub fn archetype_index(&self) -> ArchetypeWorldIndex {
+    pub fn archetype_index(&self) -> ArchetypeIndex {
         if self.index.0 >= 0 || self.index.is_null() {
             self.index
         } else {
-            ArchetypeWorldIndex(-self.index.0 - 1)
+            ArchetypeIndex(-self.index.0 - 1)
         }
     }
 }

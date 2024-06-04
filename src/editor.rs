@@ -1,13 +1,16 @@
 use std::{
-    borrow::Cow, fmt::Debug, hash::{DefaultHasher, Hash, Hasher}, mem::transmute
+    borrow::Cow,
+    fmt::Debug,
+    hash::{DefaultHasher, Hash, Hasher},
+    mem::transmute,
 };
 
 use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{ArchetypeMapping, AState},
-    archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row},
+    alter::{AState, ArchetypeMapping},
+    archetype::{ArchetypeIndex, ArchetypeInfo, Row},
     insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
@@ -36,10 +39,10 @@ impl<'w> EntityEditor<'w> {
     pub fn new(world: &'w mut World) -> Self {
         Self { world }
     }
-    fn state(&mut self)-> &mut EditorState{
+    fn state(&mut self) -> &mut EditorState {
         &mut self.world.entity_editor_state
     }
-    fn get_entity_prototype(&self, e: Entity) -> Option<(&Cow<'static, str>, ArchetypeWorldIndex)> {
+    fn get_entity_prototype(&self, e: Entity) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.world.get_entity_prototype(e)
     }
     pub fn add_components(
@@ -96,7 +99,8 @@ impl<'w> EntityEditor<'w> {
         let ar_index = addr.archetype_index();
         let mut ar = &self.world.empty_archetype;
 
-        if !ar_index.is_null() {
+        if !addr.row.is_null() {
+            // todo 似乎state.alter_row内判断了，这里可以不用判断和mark_remove
             ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
             let ae = ar.mark_remove(addr.row);
             if e != ae {
@@ -104,19 +108,20 @@ impl<'w> EntityEditor<'w> {
             }
         }
 
-        let local_index = if let Some(local_index) = editor_state.archetype_map.get(&(ar_index, hash))
-        {
-            *local_index
-        } else {
-            editor_state.vec.push(ArchetypeMapping::new(
-                ar.clone(),
-                self.world.empty_archetype.clone(),
-            ));
-            let local_index = ArchetypeLocalIndex::from(editor_state.vec.len() - 1);
-            editor_state.archetype_map
-                .insert((ar_index, hash), local_index);
-            local_index
-        };
+        let local_index =
+            if let Some(local_index) = editor_state.archetype_map.get(&(ar_index, hash)) {
+                *local_index
+            } else {
+                editor_state.vec.push(ArchetypeMapping::new(
+                    ar.clone(),
+                    self.world.empty_archetype.clone(),
+                ));
+                let local_index = ArchetypeLocalIndex::from(editor_state.vec.len() - 1);
+                editor_state
+                    .archetype_map
+                    .insert((ar_index, hash), local_index);
+                local_index
+            };
 
         let state = if let Some(state) = editor_state.alter_map.get_mut(&hash) {
             state
@@ -132,7 +137,7 @@ impl<'w> EntityEditor<'w> {
 
         let (_, dst_row) = mapping.dst.alloc();
         // println!("edit: {:?}", (e, addr.row, dst_row, &mapping.dst));
- 
+
         let tick = self.world.tick();
         // println!("mapping: {}")
         state.insert_columns(mapping, dst_row.into(), e, tick.clone());
@@ -142,13 +147,11 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
     // todo 参数components改为sort_components或&mut自己排序
-    pub fn insert_entity(
-        &mut self,
-        components: &[ComponentIndex],
-    ) -> Result<Entity, QueryError> {
-        let components = components.iter().map(|index| {
-            self.world.get_column(*index).unwrap().clone()
-        }).collect();
+    pub fn insert_entity(&mut self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+        let components = components
+            .iter()
+            .map(|index| self.world.get_column(*index).unwrap().clone())
+            .collect();
         let info = ArchetypeInfo::sort(components);
         // todo 将Archetype的id改为[ComponentIndex]的hash值，这样尝试获取原型
         let ar = self.world.find_archtype(info);
@@ -167,7 +170,10 @@ impl<'w> EntityEditor<'w> {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity(e)),
         };
-
+        if addr.row.is_null() {
+            self.world.entities.remove(e).unwrap();
+            return Ok(());
+        }
         let ar_index = addr.archetype_index();
         let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
 
@@ -184,7 +190,10 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component::<B>(e)
     }
 
-    pub fn get_component_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Result<Mut<B>, QueryError> {
+    pub fn get_component_mut<B: Bundle + 'static>(
+        &mut self,
+        e: Entity,
+    ) -> Result<Mut<B>, QueryError> {
         self.world.get_component_mut::<B>(e)
     }
 
@@ -196,19 +205,35 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_mut::<B>(e).unwrap()
     }
 
-    pub fn get_component_by_index<B: Bundle + 'static>(&self, e: Entity, index: ComponentIndex) -> Result<&B, QueryError> {
+    pub fn get_component_by_index<B: Bundle + 'static>(
+        &self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Result<&B, QueryError> {
         self.world.get_component_by_index::<B>(e, index)
     }
 
-    pub fn get_component_mut_by_id<B: Bundle + 'static>(&mut self, e: Entity, index: ComponentIndex) -> Result<Mut<B>, QueryError> {
+    pub fn get_component_mut_by_id<B: Bundle + 'static>(
+        &mut self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Result<Mut<B>, QueryError> {
         self.world.get_component_mut_by_index(e, index)
     }
 
-    pub fn get_component_unchecked_by_index<B: Bundle + 'static>(&self, e: Entity, index: ComponentIndex) ->&B { 
+    pub fn get_component_unchecked_by_index<B: Bundle + 'static>(
+        &self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> &B {
         self.world.get_component_by_index::<B>(e, index).unwrap()
     }
 
-    pub fn get_component_unchecked_mut_by_id<B: Bundle + 'static>(&mut self, e: Entity, index: ComponentIndex) -> Mut<B> {
+    pub fn get_component_unchecked_mut_by_id<B: Bundle + 'static>(
+        &mut self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Mut<B> {
         self.world.get_component_mut_by_index(e, index).unwrap()
     }
 
@@ -216,7 +241,7 @@ impl<'w> EntityEditor<'w> {
         self.world.init_component::<B>()
     }
 
-    pub fn contains_entity(&self, e: Entity) -> bool{
+    pub fn contains_entity(&self, e: Entity) -> bool {
         self.world.contains_entity(e)
     }
 }
@@ -224,7 +249,7 @@ impl<'w> EntityEditor<'w> {
 #[derive(Default)]
 pub(crate) struct EditorState {
     alter_map: HashMap<u64, AState>, // sorted_add_removes的hash值
-    archetype_map: HashMap<(ArchetypeWorldIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+    archetype_map: HashMap<(ArchetypeIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,
     tmp: Vec<(ComponentIndex, bool)>,
 }
@@ -255,7 +280,7 @@ impl SystemParam for EntityEditor<'_> {
         _tick: Tick,
     ) -> Self::Item<'world> {
         let ptr: *const World = world;
-        let world = unsafe { &mut *(ptr as *mut World) }; 
+        let world = unsafe { &mut *(ptr as *mut World) };
         world.make_entity_editor()
     }
     #[inline]
