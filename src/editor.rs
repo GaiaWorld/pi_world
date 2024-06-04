@@ -243,7 +243,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        B::add_components(self, e, components)
+        B::add_components2(self, e, components)
     }
 
     /// 插入多个组件，返回对应的实体
@@ -252,7 +252,7 @@ impl<'w> EntityEditor<'w> {
         components: B,
     ) -> Result<Entity, QueryError> {
         let e = self.world.alloc_entity();
-        B::add_components(self, e, components)?;
+        B::add_components2(self, e, components)?;
         Ok(e)
     }
 }

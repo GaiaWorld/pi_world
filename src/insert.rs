@@ -160,6 +160,7 @@ pub trait Bundle {
 
 pub trait BundleExt: Bundle {
     fn add_components(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
+    fn add_components2(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
 }
 
 pub struct TypeItem<T: 'static>(pub *const Column, PhantomData<T>);
@@ -218,7 +219,7 @@ macro_rules! impl_tuple_add {
         #[allow(non_snake_case)]
         #[allow(clippy::unused_unit)]
 
-        impl<$($name: 'static + Bundle),*> BundleExt for ($($name,)*) {
+        impl<$($name: 'static + BundleExt),*> BundleExt for ($($name,)*) {
             fn add_components(editor: &mut EntityEditor, e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
                 let components_index = [
                     $(
@@ -233,6 +234,16 @@ macro_rules! impl_tuple_add {
  
                 $(
                     *editor.get_component_unchecked_mut_by_id(e, $name1.0) = $item;
+                )*
+               
+                Ok(())
+            }
+
+            fn add_components2(_editor: &mut EntityEditor, _e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
+                let ($($item,)*) = components;
+    
+                $(
+                    <$name as BundleExt>::add_components2(_editor, _e, $item)?;
                 )*
                
                 Ok(())
