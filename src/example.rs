@@ -22,7 +22,7 @@ pub struct Age6(usize);
 #[derive(Component)]
 pub struct Age7(usize);
 #[derive(Component)]
-pub struct Age8(usize);
+pub struct Age8(usize); 
 #[derive(Component)]
 pub struct Age9(usize);
 #[derive(Component, Debug, Default)]

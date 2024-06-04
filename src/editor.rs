@@ -132,7 +132,7 @@ impl<'w> EntityEditor<'w> {
 
         let (_, dst_row) = mapping.dst.alloc();
         // println!("edit: {:?}", (e, addr.row, dst_row, &mapping.dst));
-
+ 
         let tick = self.world.tick();
         // println!("mapping: {}")
         state.insert_columns(mapping, dst_row.into(), e, tick.clone());
