@@ -8,7 +8,9 @@ use pi_slot::SlotMap;
 
 use crate::archetype::*;
 use crate::column::Column;
+use crate::editor::EntityEditor;
 use crate::param_set::ParamSetElement;
+use crate::prelude::QueryError;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -156,6 +158,10 @@ pub trait Bundle {
     fn insert(item: &Self::Item, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
+pub trait BundleExt: Bundle {
+    fn add_components(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
+}
+
 pub struct TypeItem<T: 'static>(pub *const Column, PhantomData<T>);
 unsafe impl<T> Sync for TypeItem<T> {}
 unsafe impl<T> Send for TypeItem<T> {}
@@ -206,3 +212,32 @@ macro_rules! impl_tuple_insert {
     };
 }
 all_tuples!(impl_tuple_insert, 0, 32, F, S);
+
+macro_rules! impl_tuple_add {
+    ($(($name: ident, $item:ident, $name1:ident)),*) => {
+        #[allow(non_snake_case)]
+        #[allow(clippy::unused_unit)]
+
+        impl<$($name: 'static + Bundle),*> BundleExt for ($($name,)*) {
+            fn add_components(editor: &mut EntityEditor, e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
+                let components_index = [
+                    $(
+                        (editor.init_component::<$name>(), true),
+                    )*
+                ];
+            
+                editor.alter_components_by_index(e, &components_index)?;
+
+                let ($($item,)*) = components;
+                let [$($name1,)*] = components_index;
+ 
+                $(
+                    *editor.get_component_unchecked_mut_by_id(e, $name1.0) = $item;
+                )*
+               
+                Ok(())
+            }
+        }
+    };
+}
+all_tuples!(impl_tuple_add, 0, 32, F, S, n);

@@ -2,6 +2,8 @@ use std::mem::size_of;
 
 use pi_null::Null;
 
+use crate::{insert::Bundle, prelude::World, world::ComponentIndex};
+
 pub trait VecExt<T> {
     fn insert_value(&mut self, index: usize, value: T);
 }

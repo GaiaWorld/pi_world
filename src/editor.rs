@@ -8,7 +8,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row}, insert::Bundle, param_set::ParamSetElement, prelude::{Entity, Mut, QueryError, Tick, World}, query::ArchetypeLocalIndex, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
+    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeInfo, ArchetypeWorldIndex, Row}, insert::{Bundle, BundleExt}, param_set::ParamSetElement, prelude::{Entity, Mut, QueryError, Tick, World}, query::ArchetypeLocalIndex, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
 impl AState {
@@ -40,7 +40,7 @@ impl<'w> EntityEditor<'w> {
         }
         self.world.get_entity_prototype(e)
     }
-    pub fn add_components(
+    pub fn add_components_by_index(
         &mut self,
         e: Entity,
         components: &[ComponentIndex],
@@ -55,7 +55,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    pub fn remove_components(
+    pub fn remove_components_by_index(
         &mut self,
         e: Entity,
         components: &[ComponentIndex],
@@ -70,7 +70,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    pub fn alter_components(
+    pub fn alter_components_by_index(
         &mut self,
         e: Entity,
         components: &[(ComponentIndex, bool)],
@@ -151,7 +151,7 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
 
-    pub fn insert_components(
+    pub fn insert_components_by_index(
         &mut self,
         components: &[ComponentIndex],
     ) -> Result<Entity, QueryError> {
@@ -225,6 +225,29 @@ impl<'w> EntityEditor<'w> {
 
     pub fn contains_entity(&self, e: Entity) -> bool{
         self.world.contains_entity(e)
+    }
+
+    pub fn add_components<B: BundleExt + 'static>(
+        &mut self,
+        e: Entity,
+        components: B,
+    ) -> Result<(), QueryError> {
+        if e.is_null() {
+            return Err(QueryError::NullEntity);
+        }
+        let r = (0i32, 1u32, 2u64, 3i64);
+        
+
+        B::add_components(self, e, components)
+    }
+
+    pub fn insert_components<B: BundleExt + 'static>(
+        &mut self,
+        components: B,
+    ) -> Result<Entity, QueryError> {
+        let e = self.world.alloc_entity();
+        B::add_components(self, e, components)?;
+        Ok(e)
     }
 }
 
