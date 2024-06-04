@@ -28,7 +28,7 @@ pub struct EntityEditor<'w> {
 }
 
 impl<'w> EntityEditor<'w> {
-    pub fn new(world: &'w mut World) -> Self {
+    pub(crate) fn new(world: &'w mut World) -> Self {
         Self { world }
     }
     fn state(&mut self)-> &mut EditorState{
@@ -40,6 +40,7 @@ impl<'w> EntityEditor<'w> {
         }
         self.world.get_entity_prototype(e)
     }
+    /// 根据ComponentIndex增加组件
     pub fn add_components_by_index(
         &mut self,
         e: Entity,
@@ -55,6 +56,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
+    /// 根据ComponentIndex删除组件
     pub fn remove_components_by_index(
         &mut self,
         e: Entity,
@@ -70,6 +72,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
+    /// 根据ComponentIndex增加和删除组件(true为增加false为删除)
     pub fn alter_components_by_index(
         &mut self,
         e: Entity,
@@ -151,6 +154,7 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
 
+    /// 根据ComponentIndex插入组件，返回对应的实体
     pub fn insert_components_by_index(
         &mut self,
         components: &[ComponentIndex],
@@ -166,6 +170,7 @@ impl<'w> EntityEditor<'w> {
         Ok(e)
     }
 
+    /// 删除实体
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
         if e.is_null() {
             return Err(QueryError::NullEntity);
@@ -183,10 +188,12 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
 
+    /// 创建实体
     pub fn alloc_entity(&self) -> Entity {
         self.world.alloc_entity()
     }
 
+    /// 获取实体
     pub fn get_component<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
         self.world.get_component::<B>(e)
     }
@@ -203,6 +210,7 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_mut1::<B>(e).unwrap()
     }
 
+    /// 根据ComponentIndex获取实体
     pub fn get_component_by_index<B: Bundle + 'static>(&self, e: Entity, index: ComponentIndex) -> Result<&B, QueryError> {
         self.world.get_component_by_index::<B>(e, index)
     }
@@ -219,28 +227,26 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_by_index_mut(e, index).unwrap()
     }
 
+    /// 获取组件的ComponentIndex
     pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
         self.world.init_component::<B>()
     }
 
+    /// 判断是否包含实体
     pub fn contains_entity(&self, e: Entity) -> bool{
         self.world.contains_entity(e)
     }
 
+    /// 添加多个组件
     pub fn add_components<B: BundleExt + 'static>(
         &mut self,
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        if e.is_null() {
-            return Err(QueryError::NullEntity);
-        }
-        let r = (0i32, 1u32, 2u64, 3i64);
-        
-
         B::add_components(self, e, components)
     }
 
+    /// 插入多个组件，返回对应的实体
     pub fn insert_components<B: BundleExt + 'static>(
         &mut self,
         components: B,
@@ -256,7 +262,7 @@ pub(crate) struct EditorState {
     alter_map: HashMap<u64, AState>, // sorted_add_removes的hash值
     archetype_map: HashMap<(ArchetypeWorldIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,
-    tmp: Vec<(ComponentIndex, bool)>,
+    pub(crate) tmp: Vec<(ComponentIndex, bool)>,
 }
 
 impl Debug for EditorState {

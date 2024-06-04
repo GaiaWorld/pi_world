@@ -1794,7 +1794,7 @@ mod test_mod {
             println!("insert_components_by_index start!!!");
 
 
-            let e = editor.insert_components((Age0(0),Age1(1), Age2(2))).unwrap();
+            let e = editor.insert_components((Age0(0), Age1(1), Age2(2))).unwrap();
 
             println!("insert_components_by_index end!!! e: {:?}", e);
         }
