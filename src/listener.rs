@@ -1,5 +1,6 @@
 /// 容器线程安全的监听器，每个监听器可能被多个线程通知，需要自己保证线程安全
 /// 容器销毁时，监听器也会被销毁，或移除监听器并销毁，如果这个时候还有事件通知，则也需要监听器自己保证安全
+/// todo 需要实现settle方法， 将监听器列表内存整理在一起，notify更高效。 需要类似Event的downcast 及 settle trait
 use core::fmt::*;
 use std::{
     any::TypeId,
@@ -162,8 +163,8 @@ impl ListenerMgr {
         self.notify_event(k, event);
     }
     pub fn settle(&mut self) {
-        self.listener_list.settle();
-        self.event_list.settle();
+        self.listener_list.settle(0);
+        self.event_list.settle(0);
     }
 }
 
@@ -185,7 +186,7 @@ impl<L: Listener<Event = E>, E: Clone> ListenerList<L, E> {
         }
     }
     pub fn settle(&mut self) {
-        self.vec.settle();
+        self.vec.settle(0);
     }
 }
 impl<L: Listener<Event = E>, E: Clone> Default for ListenerList<L, E> {
@@ -214,7 +215,7 @@ impl<E: Clone> EventList<E> {
         }
     }
     pub fn settle(&mut self) {
-        self.vec.settle();
+        self.vec.settle(0);
     }
 }
 

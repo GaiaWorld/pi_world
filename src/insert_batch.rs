@@ -14,7 +14,6 @@ where
     world: &'w mut World,
     inner: I,
     state: (
-        ArchetypeWorldIndex,
         ShareArchetype,
         <Ins as Bundle>::Item,
     ),
@@ -31,7 +30,7 @@ where
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
         let components = Ins::components(Vec::new());
-        let (ar_index, ar) = world.find_ar( components);
+        let ar = world.find_ar( components);
         let s = Ins::init_item(world, &ar);
 
         // world.entitys.reserve(length);
@@ -42,7 +41,7 @@ where
         Self {
             world,
             inner: iter,
-            state: (ar_index, ar, s),
+            state: (ar, s),
             tick,
         }
     }

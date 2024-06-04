@@ -204,27 +204,27 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                fn archetype_depend<'w>(
-                    world: & #path::world::World,
-                    system_meta: & #path::system::SystemMeta,
-                    state: &Self::State,
-                    archetype: & #path::archetype::Archetype,
-                    depend: & mut #path::archetype::ArchetypeDependResult,
-                ) {
-                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::archetype_depend(world, system_meta, &state.state, archetype, depend);
-                }
+                // fn archetype_depend<'w>(
+                //     world: & #path::world::World,
+                //     system_meta: & #path::system::SystemMeta,
+                //     state: &Self::State,
+                //     archetype: & #path::archetype::Archetype,
+                //     depend: & mut #path::archetype::ArchetypeDependResult,
+                // ) {
+                //     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::archetype_depend(world, system_meta, &state.state, archetype, depend);
+                // }
 
-                fn res_depend<'w>(
-                    world: &'w #path::world::World,
-                    system_meta: &'w #path::system::SystemMeta,
-                    state: &'w Self::State,
-                    res_tid: &'w std::any::TypeId,
-                    res_name: &'w std::borrow::Cow<'static, str>,
-                    single: bool,
-                    result: &'w mut #path::archetype::Flags,
-                ) {
-                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
-                }
+                // fn res_depend<'w>(
+                //     world: &'w #path::world::World,
+                //     system_meta: &'w #path::system::SystemMeta,
+                //     state: &'w Self::State,
+                //     res_tid: &'w std::any::TypeId,
+                //     res_name: &'w std::borrow::Cow<'static, str>,
+                //     single: bool,
+                //     result: &'w mut #path::archetype::Flags,
+                // ) {
+                //     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
+                // }
 
                 fn align<'w>(world: &'w #path::world::World, system_meta: &'w #path::system::SystemMeta, state: &'w mut Self::State) {
                     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::align(world, system_meta, &mut state.state);
@@ -469,7 +469,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     c
                 }
                 fn init_item(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
-                    #world_path::insert::TypeItem::new(_archetype.get_column(_world.init_component::<Self>()).unwrap().0)
+                    #world_path::insert::TypeItem::new(_world, _archetype)
                 }
 
                 fn insert(
@@ -479,7 +479,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     row: #world_path::archetype::Row,
                     tick: #world_path::world::Tick,
                 ) {
-                    state.write(e, row, components, tick);
+                    state.write(components, e, row, tick);
                 }
             }
         };
@@ -639,7 +639,7 @@ pub fn impl_param_set(_input: TokenStream) -> TokenStream {
         let param_fn_mut = &param_fn_muts[0..param_count];
         tokens.extend(TokenStream::from(quote! {
 
-            impl<'w,  #(#param: ParamSetElement + 'static,)*> ParamSet<'w, (#(#param,)*)>
+            impl<'w,  #(#param: SystemParam + 'static,)*> ParamSet<'w, (#(#param,)*)>
             {
                 #(#param_fn_mut)*
             }

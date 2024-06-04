@@ -1,6 +1,6 @@
 //! 事件，及组件移除
 //!
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
 use std::marker::PhantomData;
@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 
 use pi_share::{Share, ShareUsize};
 
-use crate::archetype::{ComponentInfo, Flags};
+use crate::archetype::{ComponentInfo, COMPONENT_REMOVED};
 
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use crate::system::{SystemMeta, TypeInfo};
@@ -86,12 +86,8 @@ impl<E> EventRecordVec<E> {
         Some(len)
     }
     /// 清理方法
-    pub(crate) fn clear(&mut self, len: usize) {
-        self.vec.clear();
-        // 以前用到了arr，所以扩容
-        if self.vec.vec_capacity() < len {
-            unsafe { self.vec.vec_reserve(len - self.vec.vec_capacity()) };
-        }
+    pub(crate) fn clear(&mut self) {
+        self.vec.clear(0);
         for read_len in (unsafe { &mut *self.listeners.get() }).iter_mut() {
             *read_len.get_mut() = 0;
         }
@@ -101,7 +97,7 @@ impl<E> EventRecordVec<E> {
         match self.can_clear() {
             Some(len) => {
                 if len > 0 {
-                    self.clear(len);
+                    self.clear();
                 }
                 true
             }
@@ -158,19 +154,19 @@ impl<E: 'static> SystemParam for Event<'_, E> {
         let index = err.insert_listener();
         (err, index)
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<E>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<E>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -209,19 +205,19 @@ impl<E: 'static> SystemParam for EventSender<'_, E> {
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
         init_state(world, _system_meta)
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<E>() == res_tid {
-            result.set(Flags::SHARE_WRITE, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<E>() == res_tid {
+    //         result.set(Flags::SHARE_WRITE, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -242,6 +238,8 @@ impl<E: 'static> SystemParam for EventSender<'_, E> {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
+
+// todo 再提供ComponentAdded ComponentChanged
 
 pub struct ComponentRemoved<'w, T: 'static> {
     pub(crate) record: &'w Share<ComponentRemovedRecord>,
@@ -274,22 +272,22 @@ impl<T: 'static> SystemParam for ComponentRemoved<'_, T> {
     type Item<'w> = ComponentRemoved<'w, T>;
 
     fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        let info = ComponentInfo::of::<T>(0);
+        let info = ComponentInfo::of::<T>(COMPONENT_REMOVED);
         init_removed_state(world, info)
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -320,7 +318,7 @@ fn init_state<E: 'static>(
     if let Some(er) = r {
         Share::downcast::<EventRecordVec<E>>(er.into_any()).unwrap()
     } else {
-        let r = Share::new(EventRecordVec::<E>::new(info.name.clone()));
+        let r = Share::new(EventRecordVec::<E>::new(info.type_name.clone()));
         world.init_event_record(info.type_id, r.clone());
         r
     }
@@ -330,12 +328,12 @@ fn init_removed_state(
     world: &mut World,
     info: ComponentInfo,
 ) -> (Share<ComponentRemovedRecord>, usize) {
-    let r = world.get_event_record(&info.type_id);
+    let r = world.get_event_record(&info.type_id());
     let crr = if let Some(r) = r {
         Share::downcast::<ComponentRemovedRecord>(r.into_any()).unwrap()
     } else {
-        let r = Share::new(ComponentRemovedRecord::new(info.type_name.clone()));
-        world.init_event_record(info.type_id, r.clone());
+        let r = Share::new(ComponentRemovedRecord::new(info.type_name().clone()));
+        world.init_event_record(*info.type_id(), r.clone());
         r
     };
     world.add_component_info(info);

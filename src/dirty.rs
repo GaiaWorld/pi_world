@@ -12,42 +12,23 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 
 use pi_append_vec::AppendVec;
-use pi_arr::Iter;
+use pi_arr::{Arr, Iter};
 use pi_null::Null;
 use pi_share::{Share, ShareUsize};
 
-use crate::archetype::{ColumnIndex, Row};
+use crate::archetype::Row;
 use crate::world::{Entity, Tick};
 
-#[derive(Default, Debug, Clone, Copy)]
-pub enum DirtyType {
-    #[default]
-    Destroyed,
-    Changed(ColumnIndex), // table.columns组件列的位置
-    // Removed(ColumnIndex), // table.remove_columns组件列的位置
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct DirtyIndex {
-    pub(crate) dtype: DirtyType,
-    pub(crate) listener_index: u32, // 在Dirty的Vec中的位置
-}
 
 pub(crate) struct DirtyIter<'a> {
     pub(crate) it: Iter<'a, EntityRow>,
-    pub(crate) ticks: &'a AppendVec<Tick>, // 是否对entity进行校验
+    pub(crate) ticks: &'a Arr<Tick>, // 是否对entity进行校验
 }
 impl<'a> DirtyIter<'a> {
     pub(crate) fn empty() -> Self {
         Self {
             it: Iter::empty(),
-            ticks: unsafe { transmute(ptr::null::<AppendVec<Tick>>()) },
-        }
-    }
-    pub(crate) fn new(it: Iter<'a, EntityRow>, ticks: &'a AppendVec<Tick>) -> Self {
-        Self {
-            it,
-            ticks,
+            ticks: unsafe { transmute(ptr::null::<Arr<Tick>>()) },
         }
     }
 }
@@ -110,14 +91,14 @@ impl Dirty {
         self.min_tick = 0usize.into();
     }
     // 返回监听器的读取长度及数据列表
-    pub fn find_listener(&self, index: ColumnIndex, owner: Tick, result: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>) {
-        for listener in &self.listeners {
-            if listener.owner == owner {
-                result.push((index, listener.read_len.clone(), self.vec.clone()));
-                return
-            }
-        }
-    }
+    // pub fn find_listener(&self, index: ColumnIndex, owner: Tick, result: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>) {
+    //     for listener in &self.listeners {
+    //         if listener.owner == owner {
+    //             result.push((index, listener.read_len.clone(), self.vec.clone()));
+    //             return
+    //         }
+    //     }
+    // }
     #[inline(always)]
     pub(crate) fn listener_len(&self) -> usize {
         self.listeners.len()
@@ -136,7 +117,7 @@ impl Dirty {
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
         if self.listener_len() > 0 {
-            unsafe { Share::get_mut_unchecked(&mut self.vec).reserve(additional) };
+            unsafe { Share::get_mut_unchecked(&mut self.vec).settle(additional) };
         }
     }
     // pub(crate) fn get_iter<'a>(&'a self, listener_index: u32, tick: Tick) -> Iter<'a, EntityRow> {
@@ -177,13 +158,9 @@ impl Dirty {
         }
     }
     /// 清理方法
-    pub(crate) fn clear(&mut self, len: usize) {
+    pub(crate) fn clear(&mut self) {
         let vec = unsafe { Share::get_mut_unchecked(&mut self.vec)};
-        vec.clear();
-        // 以前用到了arr，所以扩容
-        if vec.vec_capacity() < len {
-            unsafe { vec.vec_reserve(len - vec.vec_capacity()) };
-        }
+        vec.clear(0);
         for info in self.listeners.iter_mut() {
             info.read_len.store(0, Ordering::Relaxed);
         }
@@ -196,7 +173,7 @@ impl Dirty {
         match self.can_clear() {
             Some(len) => {
                 if len > 0 {
-                    self.clear(len);
+                    self.clear();
                 }
                 true
             }

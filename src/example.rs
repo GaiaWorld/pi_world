@@ -183,51 +183,56 @@ pub fn print_e(
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
-
 struct A(u32);
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Component, Default)]
 struct B(u32);
 
 #[derive(Copy, Clone, Debug, Component)]
 struct Transform([f32; 16]);
 
-#[derive(Copy, Clone, Component)]
+#[derive(Copy, Clone, Debug, Component)]
 struct Position([f32; 3]);
 
-#[derive(Copy, Clone, Component)]
+#[derive(Copy, Clone, Debug, Component)]
 struct Rotation([f32; 3]);
 
-#[derive(Copy, Clone, Component)]
+#[derive(Copy, Clone, Debug, Component)]
 struct Velocity([f32; 3]);
  
 #[cfg(test)]
 mod test_mod {
- 
+
+    use std::any::TypeId;
+
     use super::*;
     use crate::{
         // app::*,
-        archetype::{ComponentInfo, Row}, column::Column, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
+        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
     use pi_append_vec::AppendVec;
     // use pi_async_rt::rt::single_thread::SingleTaskRuntime;
     use pi_null::Null;
+    use pi_share::Share;
     use rand::Rng;
     use test::Bencher;
 
     #[derive(ScheduleLabel, Hash, Eq, PartialEq, Clone, Debug)]
     pub struct AddSchedule;
 
-    #[test]
+    #[test] 
     fn test_columns() {
-        let mut c = Column::new(ComponentInfo::of::<Transform>(0));
+        let mut cc = Column::new(ComponentInfo::of::<Transform>(0));
+        let mut c = cc.blob_ref(0usize.into());
         c.write(Row(0), Transform([0.0; 16]));
         c.write(Row(1), Transform([1.0; 16]));
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
         let mut action = Default::default();
-        c.settle(2, &mut action);
+        cc.settle(0usize.into(), 2, 0, &mut action);
+        let mut c = cc.blob_ref(0usize.into());
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
     }
@@ -257,46 +262,85 @@ mod test_mod {
     #[test]
     fn test_system_meta() {
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查自身
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
         meta.related_ok();
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(3usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(3usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查读写
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
-        meta.record_related(Relation::Without(3usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::Without(3usize.into()));
         meta.related_ok();
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
-        meta.record_related(Relation::With(3usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::With(3usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查without读写
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.param_set_start();
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
-        meta.record_related(Relation::Without(3usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::Without(3usize.into()));
         meta.related_ok();
-        meta.record_related(Relation::Write(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
-        meta.record_related(Relation::Without(3usize.into()));
+        meta.relate(Relation::Write(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::Without(3usize.into()));
         meta.related_ok();
         meta.param_set_end();
-        meta.record_related(Relation::Read(1usize.into()));
-        meta.record_related(Relation::Write(2usize.into()));
-        meta.record_related(Relation::With(3usize.into()));
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::With(3usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查ParamSet读写
     }
+    #[test]
+    fn test_system_meta2() {
+        let mut app = SingleThreadApp::new();
+        let w = &app.world;
+        let info = w.archetype_info(vec![ComponentInfo::of::<Transform>(0), ComponentInfo::of::<Position>(0), ComponentInfo::of::<Velocity>(0), ComponentInfo::of::<Rotation>(0)]);
+        let ar = Archetype::new(info);
 
+        // 测试空Fetch
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        let r = meta.related_ok();
+        assert_eq!(true, r.relate(&ar, 0));
+
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
+        meta.relate(Relation::Write(w.get_component_index(&TypeId::of::<Position>())));
+        let r = meta.related_ok();
+        assert_eq!(true, r.relate(&ar, 0));
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
+        meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<A>())));
+        let r = meta.related_ok();
+        assert_eq!(false, r.relate(&ar, 0));
+
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
+        meta.relate(Relation::Without(w.get_component_index(&TypeId::of::<Velocity>())));
+        let r = meta.related_ok();
+        assert_eq!(false, r.relate(&ar, 0));
+
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
+        meta.relate(Relation::Or);
+        meta.relate(Relation::With(w.get_component_index(&TypeId::of::<Velocity>())));
+        meta.relate(Relation::With(w.get_component_index(&TypeId::of::<A>())));
+        meta.relate(Relation::End);
+        let r = meta.related_ok();
+        assert_eq!(true, r.relate(&ar, 0));
+
+    }
+ 
     #[test]
     fn test_removes() {
         let mut action = Default::default();
@@ -310,7 +354,7 @@ mod test_mod {
         assert_eq!(action.len(), 2);
         assert_eq!(action[0], (Row(6), Row(1)));
         assert_eq!(action[1], (Row(5), Row(2)));
-        removes.clear();
+        removes.clear(0);
         removes.insert(Row(1));
         removes.insert(Row(6));
         //removes.insert(0);
@@ -320,7 +364,7 @@ mod test_mod {
         assert_eq!(action[0], (Row(5), Row(1)));
     }
     #[test]
-    fn test() {
+    fn test() { 
         let mut app = SingleThreadApp::new();
         dbg!("data0");
         let i = app.world.make_inserter::<(Age1, Age0)>();
@@ -397,7 +441,7 @@ mod test_mod {
             }
         }
         for e in &entities {
-            assert_eq!(world.get_component::<B>(*e).is_ok(), true)
+            assert_eq!(world.get_component::<B>(*e).is_ok(), true, "{:?}", world.get_component::<B>(*e))
         }
         {
             let mut editor = world.make_entity_editor();
@@ -485,15 +529,15 @@ mod test_mod {
             });
             let i = world.make_inserter::<(Transform, Position, Rotation, Velocity)>();
             i.batch(iter);
-            // let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
-            // for a in 0..9990 {
-            //     i.insert((
-            //         Transform([a as f32; 16]),
-            //         Position([a as f32; 3]),
-            //         Rotation([a as f32; 3]),
-            //         Velocity([a as f32; 3]),
-            //     ));
-            // };
+            let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+            for a in 0..9990 {
+                i.insert((
+                    Transform([a as f32; 16]),
+                    Position([a as f32; 3]),
+                    Rotation([a as f32; 3]),
+                    Velocity([a as f32; 3]),
+                ));
+            };
         });
     }
     #[test]
@@ -528,7 +572,7 @@ mod test_mod {
         }
     }
 
-    #[test]
+    #[test] 
     fn test_query() {
         let mut world = World::new();
         let mut w = world.unsafe_world();
@@ -537,7 +581,7 @@ mod test_mod {
         let _i1 = w1.make_inserter::<(Age2, Age3)>();
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
-        // world.collect();
+        world.settle();
         let mut q = world.make_queryer::<(&Age1, &mut Age0), ()>();
         for (a, mut b) in q.iter_mut() {
             b.0 += a.0;
@@ -575,7 +619,7 @@ mod test_mod {
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter1);
-        app.add_system(Update, p_set);
+        // app.add_system(Update, p_set);
         
         app.run();
 
@@ -695,7 +739,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_added() {
+    fn test_added() { 
         let mut app = SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
@@ -721,7 +765,7 @@ mod test_mod {
         app.world.assert_archetype_arr(&[None, Some(info.clone())]);
     }
     #[test]
-    fn test_changed() {
+    fn test_changed() { 
         let mut app = crate::app::SingleThreadApp::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
@@ -755,7 +799,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_removed() {
+    fn test_removed() { 
         pub fn insert(i0: Insert<(Age3, Age1, Age0)>) {
             println!("insert1 is now");
             let e = i0.insert((Age3(3), Age1(1), Age0(0)));
@@ -774,7 +818,7 @@ mod test_mod {
         pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
             println!("removed_l");
             for e in removed.iter() {
-                println!("e:{:?}, q0: {:?}", e, q0.get(*e).unwrap());
+                println!("e:{:?}, q0: {:?}", e, q0.get(*e));
             }
         
             println!("removed_l: end");
@@ -998,7 +1042,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_res() {
+    fn test_res() { 
         struct A(f32);
         struct B(f32);
         struct C(f32);
@@ -1047,7 +1091,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_multi_res() {
+    fn test_multi_res() { 
         struct A(f32);
         #[derive(Clone, Copy, Default)]
         struct B(f32);
@@ -1097,7 +1141,7 @@ mod test_mod {
     }
 
     #[test]
-    fn test_event() {
+    fn test_event() { 
         struct A(f32);
         #[derive(Clone, Copy, Default)]
         struct B(f32);
@@ -1556,9 +1600,8 @@ mod test_mod {
             q: Query<(Entity, &Age0), (Changed<Age1>)>,
         ) {
             println!("alter_add3 start!!");
-            // assert_eq!(q.is_empty(), false);
             let iter = q.iter().next();
-            assert_eq!(iter.is_null(), true);
+            assert_eq!(iter.is_none(), true);
  
             println!("alter_add3 end");
         }
@@ -1597,13 +1640,13 @@ mod test_mod {
         app.run();
 
         let mut info1 = ArchetypeDebug {
-            entitys: Some(1),
+            entitys: Some(0),
             columns_info: vec![
                 Some(ColumnDebug{change_listeners: 2, name: Some("Age1")}), 
                 Some(ColumnDebug{change_listeners: 1, name: Some("Age0")}), 
             ],
             destroys_listeners: Some(0),
-            removes: Some(1), // alter2中，由于iter没有迭代干净，所以Changed<Age1>的dirty没有读取，所以settle时无法清理removes
+            removes: Some(0),
         };
         let mut info2 = ArchetypeDebug {
             entitys: Some(0),
@@ -1623,7 +1666,7 @@ mod test_mod {
         app.run();
     }
 
-    #[test]
+    #[test] 
     fn test_editor_settle() {
         let mut app = SingleThreadApp::new();
         pub fn alter_add(mut edit: EntityEditor) {

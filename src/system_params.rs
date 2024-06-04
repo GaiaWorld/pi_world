@@ -25,29 +25,29 @@ pub trait SystemParam: Sized + Send + Sync {
     /// and creates a new instance of this param's [`State`](Self::State).
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State;
 
-    #[inline]
-    #[allow(unused_variables)]
-    fn archetype_depend(
-        world: &World,
-        system_meta: &SystemMeta,
-        state: &Self::State,
-        archetype: &Archetype,
-        result: &mut ArchetypeDependResult,
-    ) {
-    }
-    /// system depend the res.
-    #[inline]
-    #[allow(unused_variables)]
-    fn res_depend(
-        world: &World,
-        system_meta: &SystemMeta,
-        state: &Self::State,
-        res_tid: &TypeId,
-        res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-    }
+    // #[inline]
+    // #[allow(unused_variables)]
+    // fn archetype_depend(
+    //     world: &World,
+    //     system_meta: &SystemMeta,
+    //     state: &Self::State,
+    //     archetype: &Archetype,
+    //     result: &mut ArchetypeDependResult,
+    // ) {
+    // }
+    // /// system depend the res.
+    // #[inline]
+    // #[allow(unused_variables)]
+    // fn res_depend(
+    //     world: &World,
+    //     system_meta: &SystemMeta,
+    //     state: &Self::State,
+    //     res_tid: &TypeId,
+    //     res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    // }
 
     /// system align the world archetypes.
     #[inline]
@@ -191,27 +191,24 @@ macro_rules! impl_system_param_tuple {
             type State = ($($param::State,)*);
             type Item<'w> = ($($param::Item::<'w>,)*);
 
-            #[inline]
             fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
                 (($($param::init_state(_world, _system_meta),)*))
             }
-            #[inline]
-            fn archetype_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
-                let ($($param,)*) = state;
-                $($param::archetype_depend(_world, _system_meta, $param, _archetype, _result);)*
-            }
-            #[inline]
-            fn res_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
-                let ($($param,)*) = state;
-                $($param::res_depend(_world, _system_meta, $param, _res_tid, _res_name, _single, _result);)*
-            }
-            #[inline]
+            // #[inline]
+            // fn archetype_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
+            //     let ($($param,)*) = state;
+            //     $($param::archetype_depend(_world, _system_meta, $param, _archetype, _result);)*
+            // }
+            // #[inline]
+            // fn res_depend(_world: &World, _system_meta: &SystemMeta, state: &Self::State, _res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
+            //     let ($($param,)*) = state;
+            //     $($param::res_depend(_world, _system_meta, $param, _res_tid, _res_name, _single, _result);)*
+            // }
             fn align(_world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
                 let ($($param,)*) = state;
                 $($param::align(_world, _system_meta, $param);)*
             }
 
-            #[inline]
             #[allow(clippy::unused_unit)]
             fn get_param<'world>(
                 _world: &'world World,
@@ -222,7 +219,6 @@ macro_rules! impl_system_param_tuple {
                 let ($($param,)*) = state;
                 ($($param::get_param(_world, _system_meta, $param, _tick),)*)
             }
-            #[inline]
             fn get_self<'world>(
                 _world: &'world World,
                 _system_meta: &'world SystemMeta,

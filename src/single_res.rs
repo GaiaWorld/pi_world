@@ -46,19 +46,19 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         // println!("system_meta: {:?}, info: {:?}", system_meta, info);
         (single_resource(world, system_meta, &info, true).unwrap(), Tick::default())
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if single && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if single && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     
     fn get_param<'world>(
@@ -123,19 +123,19 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
             None => panic!("init SingleRes fail, {:?} is not exist", std::any::type_name::<T>()),
         }
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if single && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::WRITE, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if single && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::WRITE, true)
+    //     }
+    // }
 
     
     fn get_param<'world>(
@@ -179,19 +179,19 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         let info = TypeInfo::of::<T>();
         (or_single_resource(world, system_meta, info, true), Tick::default())
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if single && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if single && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     
     fn get_param<'world>(
@@ -227,20 +227,20 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         let info = TypeInfo::of::<T>();
         or_single_resource(world, system_meta, info, false)
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if single && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::WRITE, true)
-        }
-    }
-
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if single && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::WRITE, true)
+    //     }
+    // }
+ 
     
     fn get_param<'world>(
         world: &'world World,
