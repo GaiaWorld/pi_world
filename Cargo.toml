@@ -13,14 +13,13 @@ categories = ["data-structures", "memory-management", "ecs"]
 
 [features]
 single_thread = []
-trace_warn = []
-trace_info = []
+trace = []
 
 [dependencies]
 pi_map = "0.2"
 bitflags="2.4"
 smallvec="1.13"
-fixedbitset="0.5"
+fixedbitset="0.4"
 pi_null = "0.1"
 pi_share = "0.4"
 pi_key_alloter = "0.5"
@@ -49,4 +48,4 @@ rand = "0.8"
 members = ["macros"]
 
 [patch.crates-io]
-pi_append_vec = {path = "../pi_append_vec"}
+# pi_append_vec = {path = "../pi_append_vec"}

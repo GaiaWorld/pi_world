@@ -141,8 +141,8 @@ impl<'w> EntityEditor<'w> {
         // println!("edit--------: {:?}", (e, addr.row, dst_row, &mapping.dst));
         Ok(())
     }
-    // todo 改名成 insert_entity， 参数components改为sort_components或&mut自己排序
-    pub fn insert_components(
+    // todo 参数components改为sort_components或&mut自己排序
+    pub fn insert_entity(
         &mut self,
         components: &[ComponentIndex],
     ) -> Result<Entity, QueryError> {

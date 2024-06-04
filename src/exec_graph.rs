@@ -448,13 +448,13 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     // node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("run start===={:?}", sys.name());
-                    #[cfg(feature = "trace_info")]
+                    #[cfg(feature = "trace")]
                     {
                         use tracing::Instrument;
                         let system_span = tracing::info_span!("system", name = &**sys.name());
                         sys.run(world).instrument(system_span).await;
                     }
-                    #[cfg(not(feature = "trace_info"))]
+                    #[cfg(not(feature = "trace"))]
                     sys.run(world).await;
                 }
                 _ => {
@@ -503,13 +503,13 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("run start===={:?}", sys.name());
-                    #[cfg(feature = "trace_info")]
+                    #[cfg(feature = "trace")]
                     {
                         use tracing::Instrument;
                         let system_span = tracing::info_span!("system", name = &**sys.name());
                         sys.run(world).instrument(system_span).await;
                     }
-                    #[cfg(not(feature = "trace_info"))]
+                    #[cfg(not(feature = "trace"))]
                     sys.run(world).await;
                     // println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, node_index)

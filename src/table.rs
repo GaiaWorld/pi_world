@@ -37,7 +37,7 @@ impl Table {
         // let mut sorted_columns = Vec::with_capacity(len);
         let mut bit_set = FixedBitSet::with_capacity(max);
         for c in sorted_columns.iter() {
-            unsafe { bit_set.set_unchecked(c.info().index.index(), true) };
+            bit_set.set(c.info().index.index(), true);
         }
         Self {
             entities: AppendVec::default(),

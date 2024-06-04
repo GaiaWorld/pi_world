@@ -173,30 +173,6 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         Self::State::create(world, system_meta)
     }
-    // fn archetype_depend(
-    //     world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     archetype: &Archetype,
-    //     result: &mut ArchetypeDependResult,
-    // ) {
-    //     // Q::archetype_depend(world, archetype, result);
-    //     // if F::archetype_filter(world, archetype) {
-    //     //     result.merge(ArchetypeDepend::Flag(Flags::WITHOUT));
-    //     // }
-    // }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     // Q::res_depend(res_tid, res_name, single, result);
-    // }
-
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
         state.align(world);
     }
@@ -219,63 +195,13 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
-// impl<Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> ParamSetElement
-//     for Query<'_, Q, F>
-// {
-//     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-//         Self::State::create(world, system_meta)
-//     }
-// }
+
 impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
     fn drop(&mut self) {
         self.state.last_run = self.tick;
     }
 }
-// /// 监听原型创建， 添加record
-// pub struct Notify<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-//     id: Tick,
-//     listeners: Vec<ComponentIndex>,
-//     tick: Share<ShareUsize>,
-//     _a: (PhantomData<&'a ()>,PhantomData<Q>,PhantomData<F>),
-// }
 
-// impl<'a, Q: FetchComponents + 'static, F: FilterComponents + 'static> Listener
-//     for Notify<'a, Q, F>
-// {
-//     type Event = ArchetypeInit<'a>;
-//     fn listen(&self, e: Self::Event) {
-//         if !QueryState::<Q, F>::relate(e.1, e.0) {
-//             return;
-//         }
-//         unsafe {
-//             add_dirty_listeners(&e.0, self.id, &self.listeners, &self.tick)
-//         };
-//     }
-// }
-
-// 根据脏监听列表，添加监听，该方法要么在初始化时调用，要么就是在原型刚创建时调用
-// unsafe fn add_dirty_listeners(
-//     ar: &Archetype,
-//     owner: Tick,
-//     changed_listeners: &Vec<ComponentIndex>,
-//     tick: &Share<ShareUsize>,
-// ) {
-//     for index in changed_listeners.iter() {
-//         ar.add_listener(*index, owner, tick.clone());
-//     }
-// }
-
-// // 根据监听列表，重新找到add_dirty_listeners前面放置脏监听列表的位置
-// fn find_dirty_listeners(
-//     ar: &Archetype,
-//     owner: Tick,
-//     changed_listeners: &Vec<ComponentIndex>,
-//     vec: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>,
-// ) {
-//     for index in changed_listeners.iter() {
-//         ar.find_listener(*index, owner, vec);
-//     }
-// }
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ArchetypeLocalIndex(u16);
 impl ArchetypeLocalIndex {
@@ -345,43 +271,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             fetch_state,
             filter_state,
         }
-        // let mut listeners = Default::default();
-        // if F::LISTENER_COUNT > 0 {
-        //     F::init_listeners(world, &mut listeners);
-        // }
-        // let mut share_last_run = None;
-        // if F::LISTENER_COUNT > 0 {
-        //     share_last_run = Some(Share::new(ShareUsize::new(0)));
-        //     // 遍历已有的原型， 添加record
-        //     let notify = Notify{
-        //         id,
-        //         listeners: listeners.clone(),
-        //         tick: share_last_run.clone().unwrap(),
-        //         _a: (PhantomData,
-        //         PhantomData::<Q>,
-        //         PhantomData::<F>),
-        //     };
-        //     for r in world.archetype_arr.iter() {
-        //         notify.listen(ArchetypeInit(r, world))
-        //     }
-        //     // 监听原型创建， 添加dirty
-        //     world.listener_mgr.register_event(Share::new(notify));
-        // }
-        // QueryState::new(id)
     }
-    // // 判断该原型是否和本查询相关
-    // fn relate(world: &World, archetype: &Archetype) -> bool {
-    //     // if archetype.index().is_null() {
-    //     //     println!("QueryState::relate====={:?}", (archetype.index(), std::any::type_name::<Self>(), F::archetype_filter(world, archetype),  &archetype.name(),));
-    //     // }
-    //     // if F::archetype_filter(world, archetype) {
-    //     //     return false;
-    //     // }
-    //     // let mut result = ArchetypeDependResult::new();
-    //     // Q::archetype_depend(world, archetype, &mut result);
-    //     // !result.flag.contains(Flags::WITHOUT)
-    //     true
-    // }
     // 对齐world上新增的原型
     pub fn align(&mut self, world: &World) {
         let len = world.archetype_arr.len();

@@ -15,8 +15,6 @@
 /// 执行图在执行中， 收到A某system产生的原型创建的事件，此时该原型还为放入world上原型数组， 用该原型去匹配所有的system，返回：无依赖、读、写、目标写原型（alter会根据源原型写到目标原型，该目标原型也需要纳入写）。
 /// 如果有依赖，则立即将wait_count加1，如果原wait_count=0表示已经开始执行，那么循环等待该system的run_state为running或ok。 这样，对该system要么看到该原型，要么看不到。
 ///
-use std::any::TypeId;
-use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::mem::{transmute, MaybeUninit};
 use std::ops::{Deref, DerefMut, Range};
@@ -25,11 +23,10 @@ use pi_null::Null;
 use pi_share::Share;
 
 use crate::archetype::*;
-use crate::column::{BlobTicks, BlobRef, Column};
+use crate::column::{BlobRef, Column};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::Bundle;
-use crate::param_set::ParamSetElement;
 use crate::query::{check, ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::event::ComponentRemovedRecord;
 use crate::system::SystemMeta;

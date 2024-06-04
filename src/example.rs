@@ -25,7 +25,7 @@ pub struct Age7(usize);
 pub struct Age8(usize);
 #[derive(Component)]
 pub struct Age9(usize);
-#[derive(Component)]
+#[derive(Component, Debug, Default)]
 pub struct Age10(usize);
 #[derive(Component)]
 pub struct Age11(usize);
@@ -48,11 +48,11 @@ pub struct Age19(usize);
 #[derive(Component)]
 pub struct Age20(usize);
 
-#[derive(Bundle)]
-pub struct Bundle1{
-    a1: Age1,
-    a2: Age2,
-}
+// #[derive(Bundle)]
+// pub struct Bundle1{
+//     a1: Age1,
+//     a2: Age2,
+// }
 
 pub fn print_info(
     q: Query<(
@@ -1298,19 +1298,23 @@ mod test_mod {
     // #[test]
     // fn alter(){ 
     //     let mut world = World::new();
+        
     //     let i = world.make_inserter::<(Age1, Age0)>();
     //     let e1 = i.insert((Age1(2), Age0(1)));
     //     println!("===========1114: {:?}", e1);
-    //     world.alter_components(e1, &mut [
-    //         (world.init_component::<Age3>(), true), 
-    //         (world.init_component::<Age1>(), false)
-    //     ]).unwrap();
+    //     let mut editor = world.make_entity_editor();
+    //     let components  =[
+    //         (editor.init_component::<Age3>(), true), 
+    //         (editor.init_component::<Age1>(), false)
+    //     ];
+    //     editor.alter_components(e1, &components).unwrap();
         
     //     let age3 = world.get_component::<Age3>(e1);
+    //     assert_eq!(age3.is_ok(), true);
 
     //     let age1 = world.get_component::<Age1>(e1);
+    //     assert_eq!(age1.is_err(), true);
 
-    //     // let age0= world.get_component::<Age0>(e1);
     //     println!(", age1: {:?}, age3: {:?}", age1, age3);
     // }
 
@@ -1324,7 +1328,7 @@ mod test_mod {
     //         println!("insert1 is end, e:{:?}", e);
     //     }
 
-    //     pub fn alter(w: &mut World, q: Query<(Entity, &Age1, &Age0)>) {
+    //     pub fn alter(mut w: EntityEditor, q: Query<(Entity, &Age1, &Age0)>) {
     //        q.iter().for_each(|(e, age1, age0)|{
     //         println!("alter!! e: {:?}, age1: {:?}, age0: {:?}", e, age1, age0);
     //             w.alter_components(e, &[
@@ -1350,13 +1354,13 @@ mod test_mod {
     //     app.run();
 
     //     let mut info = ArchetypeDebug {
-    //         entitys: Some(1),
+    //         entitys: Some(0),
     //         columns_info: vec![
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
     //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
     //         ],
     //         destroys_listeners: Some(0),
-    //         removes: Some(1),
+    //         removes: Some(0),
     //     };
     //     let mut info1 = ArchetypeDebug {
     //         entitys: Some(1),
@@ -1570,7 +1574,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_components(&scomponents).unwrap();
+            let e = edit.insert_entity(&scomponents).unwrap();
             println!("alter_add end!! e: {:?}", e);
         }
 
@@ -1675,7 +1679,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_components(&scomponents).unwrap();
+            let e = edit.insert_entity(&scomponents).unwrap();
         }
 
         pub fn alter_add2(
@@ -1758,62 +1762,128 @@ mod test_mod {
         }
     }
 
-    // #[test] 
-    // fn test_alter3() {
-    //     pub struct EntityRes(Entity);
+    #[test] 
+    fn test_alter3() {
+        pub struct EntityRes(Entity);
 
-    //     let mut app = SingleThreadApp::new();
-    //     let i = app.world.make_inserter::<(Age0, Age1, Age2)>();
-    //     let e = i.insert((Age0(0), Age1(1), Age2(2)));
-    //     println!("========== e: {:?}", e);
-    //     app.world.insert_single_res(EntityRes(e));
+        let mut app = SingleThreadApp::new();
+        let i = app.world.make_inserter::<(Age0, Age1, Age2)>();
+        let e = i.insert((Age0(0), Age1(1), Age2(2)));
+        println!("========== e: {:?}", e);
+        app.world.insert_single_res(EntityRes(e));
 
-    //     pub fn query(q: Query<(Entity, &Age0, &Age1, &Age2), (Changed<Age0>)>) {
-    //         println!("query start!!!");
-    //         let iter = q.iter().next();
-    //         assert_eq!(iter.unwrap().1, &Age0(0));
-    //         println!("query end!!!");
-    //     }
+        pub fn query(mut p: ParamSet<(Query<(Entity, &Age0, &Age1, &Age2)>, EntityEditor)> ) {
+            println!("query start!!!");
+            let mut entity = None;
+            {
+                let q = p.p0();
+                q.iter().for_each(|(e, a0, a1, a2)|{
+                    entity = Some(e);
+                    println!("v: {:?}", (e, a0, a1, a2));
+                });
+            }
+            assert_eq!(entity.is_some(), true);
+            {
+                let editor = p.p1();
+                editor.remove_components(entity.unwrap(), &[editor.init_component::<Age0>()]);
+            }
 
-    //     pub fn alter(
-    //         e: SingleResMut<EntityRes>,
-    //         w: &mut World, /* mut a: Alter<(), (), (Age0, Age1)> */
-    //     ) {
-    //         println!("alter start!!");
-    //         let mut sort_components = [
-    //             (w.init_component::<Age0>(), true),
-    //             (w.init_component::<Age1>(), true),
-    //         ];
-    //         sort_components.sort_by(|a, b|a.0.cmp(&b.0));
-            
-    //         w.alter_components(e.0, &sort_components,);
-    //         println!("alter end!!");
-    //     }
+            println!("query end!!!");
+        }
 
-    //     app.add_system(Update, query);
-    //     app.add_system(Update, alter);
+        pub fn query2(q: Query<(Entity, &Age0, &Age1, &Age2)>){
+            let mut len = 0;
+            q.iter().for_each(|(e, a0, a1, a2)|{
+                len += 1;
+                println!("v: {:?}", (e, a0, a1, a2));
+            });
+            assert_eq!(len, 0);
+        }
 
-    //     let mut info = ArchetypeDebug {
-    //         entitys: Some(1),
-    //         columns_info: vec![
-    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
-    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
-    //             Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
-    //         ],
-    //         destroys_listeners: Some(0),
-    //         removes: Some(0),
-    //     };
+       
+        app.add_system(Update, query);
+        app.add_system(Update, query2);
 
-    //     app.world.assert_archetype_arr(&[None, Some(info.clone())]);
-    //     app.run();
+        let mut info = ArchetypeDebug {
+            entitys: Some(1),
+            columns_info: vec![
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+                Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+            ],
+            destroys_listeners: Some(0),
+            removes: Some(0),
+        };
 
-    //     info.columns_info[0].as_mut().unwrap().change_listeners = 1;
-    //     info.entitys = Some(2);
-    //     info.removes = Some(1);
+        app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+        app.run();
 
-    //     app.world.assert_archetype_arr(&[None, Some(info)]);
-    // }
+        info.columns_info[0].as_mut().unwrap().change_listeners = 0;
+        info.entitys = Some(0);
+        info.removes = Some(0);
+
+        app.world.assert_archetype_arr(&[None, Some(info), None]);
+    }
 
    
+    #[test] 
+    fn test_editor2() {
+        pub struct EntityRes(Entity);
 
+        let mut app = SingleThreadApp::new();
+        app.world.insert_single_res(EntityRes(Entity::null()));
+
+        pub fn insert_components(mut editor : EntityEditor ) {
+            // println!("insert_components start!!!");
+
+
+            // let e = editor.insert_components((Age0(0), Age1(1), Age2(2))).unwrap();
+
+            // println!("insert_components end!!! e: {:?}", e);
+        }
+
+        pub fn query2(q: Query<(Entity, &Age0, &Age1, &Age2)>, mut editor : EntityEditor){
+            let mut len = 0;
+            q.iter().for_each(|(e, a0, a1, a2)|{
+                len += 1;
+                println!("v: {:?}", (e, a0, a1, a2));
+                // editor.add_components(e, (Age10(10),));
+            });
+            assert_eq!(len, 1);
+        }
+
+        pub fn query3(q: Query<(Entity, &Age0, &Age1, &Age2, &Age10)>){
+            let mut len = 0;
+            q.iter().for_each(|(e, a0, a1, a2, a10)|{
+                len += 1;
+                println!("v: {:?}", (e, a0, a1, a2, a10));
+            });
+            assert_eq!(len, 1);
+        }
+
+       
+        app.add_system(Update, insert_components);
+        app.add_system(Update, query2);
+        app.add_system(Update, query3);
+
+        // let mut info = ArchetypeDebug {
+        //     entitys: Some(1),
+        //     columns_info: vec![
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
+        //     ],
+        //     destroys_listeners: Some(0),
+        //     removes: Some(0),
+        // };
+
+        // app.world.assert_archetype_arr(&[None, Some(info.clone())]);
+        app.run();
+
+        // info.columns_info[0].as_mut().unwrap().change_listeners = 0;
+        // info.entitys = Some(0);
+        // info.removes = Some(0);
+
+        // app.world.assert_archetype_arr(&[None, Some(info), None]);
+    }
 }
