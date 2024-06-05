@@ -1835,57 +1835,44 @@ mod test_mod {
         pub struct EntityRes(Entity);
 
         let mut app = SingleThreadApp::new();
-        app.world.insert_single_res(EntityRes(Entity::null()));
 
-        pub fn insert_components(mut editor : EntityEditor ) {
+        pub fn insert_components(mut editor: EntityEditor ) {
             println!("insert_components start!!!");
-            let e = editor.insert_components((Age0(0),)).unwrap();
+            let e1 = editor.insert_components((Age0(10),));
+            let e2 = editor.insert_components((Age0(20),));
 
-            println!("insert_components end!!! e: {:?}", e);
+            println!("insert_components end!!! e: {:?}", (e1, e2));
         }
 
-        pub fn query2(q: Query<(Entity, &Age0)>, mut editor : EntityEditor){
+        pub fn query2(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
+            println!("query2 start!!!");
             let mut len = 0;
             q.iter().for_each(|(e, a0)|{
                 len += 1;
                 println!("v: {:?}", (e, a0));
-                editor.add_bundle(e, (Age10(10),(Age1(1), Age2(2))));
+                let e = editor.alloc_entity();
+                editor.add_components(e, (Age10(10),(Age1(1), Age2(2)))).unwrap();
             });
-            assert_eq!(len, 1);
+            println!("query2 end!!!");
+            assert_eq!(len, 2);
         }
 
-        pub fn query3(q: Query<(Entity, &Age0, &Age1, &Age2, &Age10)>){
+        pub fn query3(q: Query<(Entity, &Age1, &Age10)>){
+            println!("query3 start!!!");
             let mut len = 0;
-            q.iter().for_each(|(e, a0, a1, a2, a10)|{
+            q.iter().for_each(|(e, a1, a10 )|{
                 len += 1;
-                println!("v: {:?}", (e, a0, a1, a2, a10));
+                println!("v: {:?}", (e, a1, a10));
             });
-            assert_eq!(len, 1);
+            println!("query3 end!!!");
+            assert_eq!(len, 2);
         }
 
        
         app.add_system(Update, insert_components);
         app.add_system(Update, query2);
         app.add_system(Update, query3);
-
-        // let mut info = ArchetypeDebug {
-        //     entitys: Some(1),
-        //     columns_info: vec![
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}), 
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}), 
-        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age2")}), 
-        //     ],
-        //     destroys_listeners: Some(0),
-        //     removes: Some(0),
-        // };
-
-        // app.world.assert_archetype_arr(&[None, Some(info.clone())]);
         app.run();
 
-        // info.columns_info[0].as_mut().unwrap().change_listeners = 0;
-        // info.entitys = Some(0);
-        // info.removes = Some(0);
-
-        // app.world.assert_archetype_arr(&[None, Some(info), None]);
     }
 }

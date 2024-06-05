@@ -483,24 +483,24 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 }
             }
 
-            impl #impl_generics #world_path::insert::BundleExt for #struct_name #ty_generics #where_clause {
-                fn add_components(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity,  component: Self) -> Result<(), #world_path::prelude::QueryError> {
-                   todo!()
-                }
+            // impl #impl_generics #world_path::insert::BundleExt for #struct_name #ty_generics #where_clause {
+            //     fn add_components(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity,  component: Self) -> Result<(), #world_path::prelude::QueryError> {
+            //        todo!()
+            //     }
 
-                fn add_bundle(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity, component: Self) -> Result<(), #world_path::prelude::QueryError> {
-                    let components_index = [(editor.init_component::<Self>(), true)];
+            //     fn add_bundle(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity, component: Self) -> Result<(), #world_path::prelude::QueryError> {
+            //         let components_index = [(editor.init_component::<Self>(), true)];
                 
-                    editor.alter_components_by_index(e, &components_index)?;
-                    *editor.get_component_unchecked_mut_by_id(e, components_index[0].0) = component;
+            //         editor.alter_components_by_index(e, &components_index)?;
+            //         *editor.get_component_unchecked_mut_by_id(e, components_index[0].0) = component;
                    
-                    Ok(())
-                }
+            //         Ok(())
+            //     }
     
-                fn insert_components(editor: &mut #world_path::editor::EntityEditor, component: Self) -> Result<#world_path::world::Entity, #world_path::prelude::QueryError> {
-                    todo!()
-                }
-            }
+            //     fn insert_components(editor: &mut #world_path::editor::EntityEditor, component: Self) -> Result<#world_path::world::Entity, #world_path::prelude::QueryError> {
+            //         todo!()
+            //     }
+            // }
         };
     })
 }

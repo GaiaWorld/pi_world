@@ -11,7 +11,7 @@ use pi_null::Null;
 use crate::{
     alter::{AState, ArchetypeMapping},
     archetype::{ArchetypeIndex, ArchetypeInfo, Row},
-    insert::{Bundle, BundleExt},
+    insert::{Bundle},
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
     system::SystemMeta,
@@ -246,29 +246,32 @@ impl<'w> EntityEditor<'w> {
     }
 
     /// 添加多个组件，不能递归
-    pub fn add_components<B: BundleExt + 'static>(
+    pub fn add_components<B: Bundle + 'static>(
         &mut self,
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        B::add_components(self, e, components)
+        // B::add_components(self, e, components)
+        self.world.make_alterer::<(), (), B, ()>().alter(e, components)?;
+        Ok(())
     }
 
-    /// 添加多个组件, 可以递归
-    pub fn add_bundle<B: BundleExt + 'static>(
-        &mut self,
-        e: Entity,
-        components: B,
-    ) -> Result<(), QueryError> {
-        B::add_bundle(self, e, components)
-    }
+    // /// 添加多个组件, 可以递归
+    // pub fn add_bundle<B: BundleExt + 'static>(
+    //     &mut self,
+    //     e: Entity,
+    //     components: B,
+    // ) -> Result<(), QueryError> {
+    //     B::add_bundle(self, e, components)
+    // }
 
     /// 插入多个组件，返回对应的实体,不能递归
-    pub fn insert_components<B: BundleExt + 'static>(
+    pub fn insert_components<B: Bundle + 'static>(
         &mut self,
         components: B,
-    ) -> Result<Entity, QueryError> {
-        B::insert_components(self,  components)
+    ) -> Entity {
+        self.world.make_inserter().insert(components)
+        // B::insert_components(self,  components)
     }
 }
 
