@@ -38,6 +38,7 @@ downcast-rs = "1.2"
 bitvec = { version = "1.0", features = ["serde"] }
 pi_print_any = "0.1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
+pi_time = "0.3"
 
 
 [dev-dependencies]

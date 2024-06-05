@@ -440,7 +440,7 @@ mod test_mod {
             
             // let mut it = 
             for entity in &entities {
-                editor.add_components(*entity, &[index]);
+                editor.add_components_by_index(*entity, &[index]);
             }
         }
         for e in &entities {
@@ -449,7 +449,7 @@ mod test_mod {
         {
             let mut editor = world.make_entity_editor();
             for entity in &entities {
-                editor.remove_components(*entity, &[index]);
+                editor.remove_components_by_index(*entity, &[index]);
             }
         }
         for e in entities {
@@ -663,8 +663,8 @@ mod test_mod {
             let mut editor = world.make_entity_editor();
             let index = editor.init_component::<Age2>();
 
-            // editor.add_components(e1, &[index]);
-            editor.add_components(e2, &[index]);
+            // editor.add_components_by_index(e1, &[index]);
+            editor.add_components_by_index(e2, &[index]);
         }
         world.settle();
 
@@ -712,13 +712,13 @@ mod test_mod {
             println!("1");
             
             for e in &_entities{
-                    editor.add_components(*e, &[index]);
+                    editor.add_components_by_index(*e, &[index]);
             }
             println!("2");
         }
         {
             for e in &_entities {
-                editor.remove_components(*e, &[index]);
+                editor.remove_components_by_index(*e, &[index]);
             }
         }
 
@@ -1311,7 +1311,7 @@ mod test_mod {
     //         (editor.init_component::<Age3>(), true), 
     //         (editor.init_component::<Age1>(), false)
     //     ];
-    //     editor.alter_components(e1, &components).unwrap();
+    //     editor.alter_components_by_index(e1, &components).unwrap();
         
     //     let age3 = world.get_component::<Age3>(e1);
     //     assert_eq!(age3.is_ok(), true);
@@ -1335,7 +1335,7 @@ mod test_mod {
     //     pub fn alter(mut w: EntityEditor, q: Query<(Entity, &Age1, &Age0)>) {
     //        q.iter().for_each(|(e, age1, age0)|{
     //         println!("alter!! e: {:?}, age1: {:?}, age0: {:?}", e, age1, age0);
-    //             w.alter_components(e, &[
+    //             w.alter_components_by_index(e, &[
     //                 (w.init_component::<Age2>(), true), 
     //                 (w.init_component::<Age1>(), false)
     //             ]).unwrap();
@@ -1392,7 +1392,7 @@ mod test_mod {
     //         (world.init_component::<Age1>(), true)
     //     ];
 
-    //     world.alter_components(e, &components).unwrap();
+    //     world.alter_components_by_index(e, &components).unwrap();
 
     //     let mut info = ArchetypeDebug {
     //         entitys: Some(1),
@@ -1427,7 +1427,7 @@ mod test_mod {
     //         ];
     //         sort_components.sort_by(|a, b| a.cmp(&b));
     
-    //         w.alter_components(e, &sort_components).unwrap();
+    //         w.alter_components_by_index(e, &sort_components).unwrap();
 
     //         println!("alter_add end");
     //      }
@@ -1446,7 +1446,7 @@ mod test_mod {
     //         ];
     //         sort_components.sort_by(|a, b| a.cmp(&b));
 
-    //         w.alter_components(e, &sort_components).unwrap();
+    //         w.alter_components_by_index(e, &sort_components).unwrap();
 
     //         println!("alter_remove end");
     //      }
@@ -1506,7 +1506,7 @@ mod test_mod {
     //         ];
     //         sort_components.sort_by(|a, b| a.0.cmp(&b.0));
 
-    //         w.alter_components(e, &sort_components).unwrap();
+    //         w.alter_components_by_index(e, &sort_components).unwrap();
 
     //         println!("alter_add end");
     //     }
@@ -1520,7 +1520,7 @@ mod test_mod {
     //         let (e, age1, age0) = iter.unwrap();
     //         let mut sort_components = [(w.init_component::<Age2>(), true)];
     //         println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-    //         w.alter_components(e, &sort_components).unwrap();
+    //         w.alter_components_by_index(e, &sort_components).unwrap();
 
     //         println!("alter_add2 end");
     //     }
@@ -1594,7 +1594,7 @@ mod test_mod {
             let (e, age1, age0) = r.unwrap();
 
             println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-            edit.alter_components(e, &[
+            edit.alter_components_by_index(e, &[
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
@@ -1697,7 +1697,7 @@ mod test_mod {
             let (e, age1, age0) = r.unwrap();
             assert_eq!(iter.next(), None);
 
-            edit.alter_components(e, &[
+            edit.alter_components_by_index(e, &[
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
@@ -1789,7 +1789,7 @@ mod test_mod {
             assert_eq!(entity.is_some(), true);
             {
                 let editor = p.p1();
-                editor.remove_components(entity.unwrap(), &[editor.init_component::<Age0>()]);
+                editor.remove_components_by_index(entity.unwrap(), &[editor.init_component::<Age0>()]);
             }
 
             println!("query end!!!");
@@ -1838,20 +1838,18 @@ mod test_mod {
         app.world.insert_single_res(EntityRes(Entity::null()));
 
         pub fn insert_components(mut editor : EntityEditor ) {
-            // println!("insert_components start!!!");
+            println!("insert_components start!!!");
+            let e = editor.insert_components((Age0(0),)).unwrap();
 
-
-            // let e = editor.insert_components((Age0(0), Age1(1), Age2(2))).unwrap();
-
-            // println!("insert_components end!!! e: {:?}", e);
+            println!("insert_components end!!! e: {:?}", e);
         }
 
-        pub fn query2(q: Query<(Entity, &Age0, &Age1, &Age2)>, mut editor : EntityEditor){
+        pub fn query2(q: Query<(Entity, &Age0)>, mut editor : EntityEditor){
             let mut len = 0;
-            q.iter().for_each(|(e, a0, a1, a2)|{
+            q.iter().for_each(|(e, a0)|{
                 len += 1;
-                println!("v: {:?}", (e, a0, a1, a2));
-                // editor.add_components(e, (Age10(10),));
+                println!("v: {:?}", (e, a0));
+                editor.add_bundle(e, (Age10(10),(Age1(1), Age2(2))));
             });
             assert_eq!(len, 1);
         }
