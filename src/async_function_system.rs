@@ -66,27 +66,27 @@ where
     fn initialize(&mut self, world: &mut World) {
         self.param.initialize(world)
     }
-    /// system depend the archetype.
-    fn archetype_depend(
-        &self,
-        world: &World,
-        archetype: &Archetype,
-        result: &mut ArchetypeDependResult,
-    ) {
-        self.param.archetype_depend(world, archetype, result)
-    }
-    /// system depend the res.
-    fn res_depend(
-        &self,
-        world: &World,
-        res_tid: &TypeId,
-        res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        self.param
-            .res_depend(world, res_tid, res_name, single, result)
-    }
+    // /// system depend the archetype.
+    // fn archetype_depend(
+    //     &self,
+    //     world: &World,
+    //     archetype: &Archetype,
+    //     result: &mut ArchetypeDependResult,
+    // ) {
+    //     self.param.archetype_depend(world, archetype, result)
+    // }
+    // /// system depend the res.
+    // fn res_depend(
+    //     &self,
+    //     world: &World,
+    //     res_tid: &TypeId,
+    //     res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     self.param
+    //         .res_depend(world, res_tid, res_name, single, result)
+    // }
     #[inline]
     fn align(&mut self, world: &World) {
         self.param.align(world)

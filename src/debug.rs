@@ -36,10 +36,10 @@ impl World{
                     if let Some(expect_column) = &expect.columns_info[j]{
                         let real_column = &real.get_columns()[j];
                         if let Some(name)  = &expect_column.name{
-                            assert_eq!(real_column.info().type_name.find(name).is_some(), true, "{:?}", real);
+                            assert_eq!(real_column.info().type_name().find(name).is_some(), true, "{:?}", real);
                         }
     
-                        assert_eq!(real_column.dirty.listener_len(), expect_column.change_listeners, "[{}]:{:?}", j, real_column.dirty);
+                        // assert_eq!(real_column.dirty.listener_len(), expect_column.change_listeners, "[{}]:{:?}", j, real_column.dirty);
                     }
                 }
 

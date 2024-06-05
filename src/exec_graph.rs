@@ -230,8 +230,8 @@ impl ExecGraph {
         self.2 = sort;
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
-        inner.nodes.settle();
-        inner.edges.settle();
+        inner.nodes.settle(0);
+        inner.edges.settle(0);
         let mut to_len = 0;
         // 计算froms节点和to_len
         for (index, node) in inner.nodes.iter().enumerate() {
@@ -287,7 +287,7 @@ impl ExecGraph {
                 NodeType::System(sys_index, _) if sys_range.start <= *sys_index && *sys_index < sys_range.end => {
                     let sys = unsafe { systems.load_unchecked(*sys_index) };
                     let mut result = Flags::empty();
-                    sys.res_depend(world, tid, name, single, &mut result);
+                    // todo sys.res_depend(world, tid, name, single, &mut result);
                     if result == Flags::READ {
                         // 如果只有读，则该system为该Res的to
                         // inner.add_edge(node_index, system_index);
@@ -327,8 +327,8 @@ impl ExecGraph {
         for c in archetype.get_columns().iter() {
             let info = c.info();
             // 查找图节点， 如果不存在将该原型组件id放入图的节点中，保存原型id到原型节点索引的对应关系
-            let (node_index, _is_new) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
-            vec_set(&mut ar_component_index_node_index_map, info.world_index.index(), node_index);
+            let (node_index, _is_new) = inner.find_node((aid, info.index), NodeType::ArchetypeComponent(aid, info.type_name().clone()), &self.1);
+            vec_set(&mut ar_component_index_node_index_map, info.index.index(), node_index);
             nodes.push(node_index);
         }
         // if is_new {// 如果该资源为新的，则遍历全部system节点，否则只遍历新增的system节点
@@ -342,7 +342,7 @@ impl ExecGraph {
                 NodeType::System(sys_index, _) => {
                     let sys = unsafe { systems.load_unchecked(*sys_index) };
                     depend.clear();
-                    sys.archetype_depend(world, archetype, &mut depend);
+                    // todo sys.archetype_depend(world, archetype, &mut depend);
                     if depend.flag.contains(Flags::WITHOUT) {
                         // 如果被排除，则跳过
                         continue;
@@ -354,7 +354,7 @@ impl ExecGraph {
                             let aid = infos.0;
                             // 获得该原型id到原型节点索引
                             for info in infos.2.iter() {
-                                let (alter_node_index, _) = inner.find_node((aid, info.world_index), NodeType::ArchetypeComponent(aid, info.type_name.clone()), &self.1);
+                                let (alter_node_index, _) = inner.find_node((aid, info.index), NodeType::ArchetypeComponent(aid, info.type_name().clone()), &self.1);
                                 // 该system为该原型全部组件的from
                                 inner.adjust_edge(system_index, alter_node_index);
                                 nodes.push(alter_node_index);
@@ -590,8 +590,8 @@ impl ExecGraph {
     // 图的整理方法， 将图和边的内存连续，去除原子操作
     pub fn settle(&mut self) {
         let inner = unsafe { Share::get_mut_unchecked(&mut self.0) };
-        inner.nodes.settle();
-        inner.edges.settle();
+        inner.nodes.settle(0);
+        inner.edges.settle(0);
     }
 }
 
@@ -1001,20 +1001,13 @@ impl Node {
         (len, EdgeIndex(edge))
     }
 }
-impl Null for Node {
-    fn null() -> Self {
+impl Default for Node {
+    fn default() -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
             status: ShareU32::new(NODE_STATUS_OVER),
             label: NodeType::None,
             from_count: ShareU32::new(0),
-        }
-    }
-
-    fn is_null(&self) -> bool {
-        match self.label {
-            NodeType::None => true,
-            _ => false,
         }
     }
 }
@@ -1065,14 +1058,10 @@ impl Edge {
         };
     }
 }
-impl Null for Edge {
+impl Default for Edge {
     #[inline(always)]
-    fn null() -> Self {
+    fn default() -> Self {
         Self([ShareU64::null(), ShareU64::null()])
-    }
-    #[inline(always)]
-    fn is_null(&self) -> bool {
-        self.0[0].is_null()
     }
 }
 impl Debug for Edge {

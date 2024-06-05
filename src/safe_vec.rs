@@ -7,9 +7,8 @@ use pi_append_vec::AppendVec;
 use pi_arr::Iter;
 use pi_share::ShareUsize;
 
-#[derive(Debug)]
 pub struct SafeVec<T> {
-    vec: AppendVec<MaybeUninit<T>>,
+    vec: AppendVec<Element<T>>,
     len: ShareUsize,
 }
 impl<T> SafeVec<T> {
@@ -32,11 +31,11 @@ impl<T> SafeVec<T> {
         if index >= len {
             return None;
         }
-        self.vec.get(index).map(|r| unsafe { &*r.as_ptr() })
+        self.vec.get(index).map(|r| unsafe { &*r.0.as_ptr() })
     }
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
-        &*self.vec.get_unchecked(index).as_ptr()
+        &*self.vec.get_unchecked(index).0.as_ptr()
     }
     #[inline(always)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
@@ -46,25 +45,27 @@ impl<T> SafeVec<T> {
         }
         self.vec
             .get_mut(index)
-            .map(|r| unsafe { &mut *r.as_mut_ptr() })
+            .map(|r| unsafe { &mut *r.0.as_mut_ptr() })
     }
     #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
-        &mut *self.vec.get_unchecked_mut(index).as_mut_ptr()
+        &mut *self.vec.get_unchecked_mut(index).0.as_mut_ptr()
     }
     #[inline(always)]
     pub fn load(&self, index: usize) -> Option<&mut T> {
-        self.vec.load(index).map(|r| unsafe { &mut *r.as_mut_ptr() })
+        self.vec
+            .load(index)
+            .map(|r| unsafe { &mut *r.0.as_mut_ptr() })
     }
     #[inline(always)]
     pub unsafe fn load_unchecked(&self, index: usize) -> &mut T {
-        &mut *self.vec.load_unchecked(index).as_mut_ptr()
+        &mut *self.vec.load_unchecked(index).0.as_mut_ptr()
     }
 
     #[inline(always)]
     pub fn insert(&self, value: T) -> usize {
-        let index = self.vec.alloc_index(1);
-        *self.vec.load_alloc(index) = MaybeUninit::new(value);
+        let (r, index) = self.vec.alloc();
+        *r = Element(MaybeUninit::new(value));
         while self
             .len
             .compare_exchange(index, index + 1, Ordering::Release, Ordering::Relaxed)
@@ -76,11 +77,11 @@ impl<T> SafeVec<T> {
     }
     #[inline(always)]
     pub fn alloc_entry<'a>(&'a self) -> Entry<'a, T> {
-        let index = self.vec.alloc_index(1);
+        let (value, index) = self.vec.alloc();
         Entry {
             index,
             len: &self.len,
-            value: self.vec.load_alloc(index),
+            value,
         }
     }
     #[inline(always)]
@@ -94,26 +95,23 @@ impl<T> SafeVec<T> {
     pub fn vec_capacity(&self) -> usize {
         self.vec.vec_capacity()
     }
-    pub unsafe fn vec_reserve(&mut self, additional: usize) {
-        self.vec.vec_reserve(additional)
-    }
     #[inline(always)]
-    pub fn settle(&mut self) {
-        self.vec.settle();
+    pub fn settle(&mut self, additional: usize) {
+        self.vec.settle(additional);
     }
 
     #[inline(always)]
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self, additional: usize) {
         let len = take(self.len.get_mut());
         if len == 0 {
             return;
         }
         if needs_drop::<T>() {
             for i in self.vec.iter() {
-                unsafe { i.assume_init_drop() }
+                unsafe { i.0.assume_init_drop() }
             }
         }
-        self.vec.clear();
+        self.vec.clear(additional);
     }
 }
 impl<T> Index<usize> for SafeVec<T> {
@@ -133,7 +131,7 @@ impl<T> Drop for SafeVec<T> {
     fn drop(&mut self) {
         if needs_drop::<T>() {
             for i in self.vec.iter() {
-                unsafe { i.assume_init_drop() }
+                unsafe { i.0.assume_init_drop() }
             }
         }
     }
@@ -146,13 +144,25 @@ impl<T> Default for SafeVec<T> {
         }
     }
 }
+impl<T: Debug> Debug for SafeVec<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
 
-pub struct SafeVecIter<'a, T>(Iter<'a, MaybeUninit<T>>);
+struct Element<T>(MaybeUninit<T>);
+impl<T> Default for Element<T> {
+    fn default() -> Self {
+        Self(MaybeUninit::uninit())
+    }
+}
+
+pub struct SafeVecIter<'a, T>(Iter<'a, Element<T>>);
 impl<'a, T> Iterator for SafeVecIter<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|r| unsafe { transmute(r.as_ptr()) })
+        self.0.next().map(|r| unsafe { transmute(r.0.as_ptr()) })
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
@@ -162,14 +172,14 @@ impl<'a, T> Iterator for SafeVecIter<'a, T> {
 pub struct Entry<'a, T> {
     index: usize,
     len: &'a ShareUsize,
-    value: &'a mut MaybeUninit<T>,
+    value: &'a mut Element<T>,
 }
 impl<'a, T> Entry<'_, T> {
     pub fn index(&self) -> usize {
         self.index
     }
     pub fn insert(self, value: T) {
-        *self.value = MaybeUninit::new(value);
+        *self.value = Element(MaybeUninit::new(value));
     }
 }
 impl<'a, T> Drop for Entry<'_, T> {

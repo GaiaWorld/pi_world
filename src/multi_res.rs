@@ -75,19 +75,19 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
         let info = TypeInfo::of::<T>();
         (multi_resource(&world, system_meta, &info).unwrap(), Tick::default())
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -139,19 +139,19 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         system_meta.res_write(&info);
         world.system_init_write_multi_res(T::default).unwrap()
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::SHARE_WRITE, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::SHARE_WRITE, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -195,19 +195,19 @@ impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
         let info = TypeInfo::of::<T>();
         multi_resource(&world, system_meta, &info).map(|r| (r, Tick::default()))
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::READ, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::READ, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(
@@ -241,19 +241,19 @@ impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
         system_meta.res_write(&info);
         world.system_init_write_multi_res(T::default)
     }
-    fn res_depend(
-        _world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        res_tid: &TypeId,
-        _res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        if (!single) && &TypeId::of::<T>() == res_tid {
-            result.set(Flags::WRITE, true)
-        }
-    }
+    // fn res_depend(
+    //     _world: &World,
+    //     _system_meta: &SystemMeta,
+    //     _state: &Self::State,
+    //     res_tid: &TypeId,
+    //     _res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     if (!single) && &TypeId::of::<T>() == res_tid {
+    //         result.set(Flags::WRITE, true)
+    //     }
+    // }
 
     #[inline]
     fn get_param<'world>(

@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     future::Future,
-    mem::{replace, take},
+    mem::take,
     ops::Range,
     pin::Pin,
 };
@@ -12,20 +12,21 @@ use std::{
 use pi_share::Share;
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags},
+    archetype::{Archetype, ComponentInfo, ShareArchetype},
+    column::Column,
     world::{ComponentIndex, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeInfo {
     pub type_id: TypeId,
-    pub name: Cow<'static, str>,
+    pub type_name: Cow<'static, str>,
 }
 impl TypeInfo {
     pub fn of<T: 'static>() -> Self {
         TypeInfo {
             type_id: TypeId::of::<T>(),
-            name: Cow::Borrowed(std::any::type_name::<T>()),
+            type_name: Cow::Borrowed(std::any::type_name::<T>()),
         }
     }
 }
@@ -70,11 +71,23 @@ pub enum Relation<T: Eq> {
     Write(T),
     OptRead(T),
     OptWrite(T),
+    Count(usize),
     Or,
     And,
     End,
 }
 impl<T: Eq> Relation<T> {
+    pub fn replace(self, arg: T) -> Self {
+        match self {
+            Relation::With(_) => Relation::With(arg),
+            Relation::Without(_) => Relation::Without(arg),
+            Relation::Read(_) => Relation::Read(arg),
+            Relation::Write(_) => Relation::Write(arg),
+            Relation::OptRead(_) => Relation::OptRead(arg),
+            Relation::OptWrite(_) => Relation::OptWrite(arg),
+            _ => self,
+        }
+    }
     pub fn without(&self, arg: &mut T) -> bool {
         match self {
             Relation::With(id) if id == arg => true,
@@ -161,6 +174,22 @@ where
     }
     node.result
 }
+
+struct ArchetypeFilter<'a>(&'a Archetype);
+
+// 判断原型是否和该关系相关
+fn archetype_relate<'a>(r: &Relation<ComponentIndex>, arg: &mut ArchetypeFilter<'a>) -> bool {
+    match r {
+        Relation::Without(i) => !arg.0.contains(*i),
+        Relation::With(i) => arg.0.contains(*i),
+        Relation::Read(i) => arg.0.contains(*i),
+        Relation::Write(i) => arg.0.contains(*i),
+        Relation::Count(i) => arg.0.get_columns().len() == *i,
+        _ => true,
+    }
+}
+
+
 #[derive(Debug, Default)]
 pub struct Related {
     pub(crate) vec: Vec<Relation<ComponentIndex>>,
@@ -279,8 +308,15 @@ impl Related {
         )
     }
     // 判断该原型是否相关
-    pub fn relate(&self, archetype: &Archetype) -> bool {
-        true
+    pub fn relate(&self, archetype: &Archetype, mut start: usize) -> bool {
+        let mut filter = ArchetypeFilter(archetype);
+        traversal(
+            &self.vec,
+            &archetype_relate,
+            &mut filter,
+            &mut start,
+            RelateNode::new(true),
+        )
     }
     // 获取该原型的每组件的读写依赖
     pub fn depend(&self, archetype: &Archetype) {
@@ -293,7 +329,9 @@ pub struct SystemMeta {
     pub(crate) vec: Vec<Share<Related>>, // SystemParam参数的组件关系列表
     pub(crate) cur_related: Related,     // 当前SystemParam参数的关系
     pub(crate) param_set_locations: Vec<Range<usize>>, // 参数集在vec的位置
-    pub(crate) res_related: Share<Related>, // Res资源的关系
+    pub(crate) res_related: Vec<Relation<TypeId>>, // Res资源的关系
+
+    
     pub(crate) res_map: HashMap<TypeId, (u8, Cow<'static, str>)>, // 参数集的读写依赖
     pub(crate) map: HashMap<TypeId, Cow<'static, str>>, // 当前参数的读写依赖
     pub(crate) components: ReadWrite,    // 该系统所有组件级读写依赖
@@ -328,11 +366,34 @@ impl SystemMeta {
 
     /// Returns the system's name
     #[inline]
-    pub fn name(&self) -> &str {
-        &self.type_info.name
+    pub fn type_name(&self) -> &str {
+        &self.type_info.type_name
     }
+    /// 组件关系，返回组件索引和组件对应的列
+    pub fn component_relate(
+        &mut self,
+        world: &mut World,
+        info: ComponentInfo,
+        r: Relation<ComponentIndex>,
+    ) -> (ComponentIndex, Share<Column>) {
+        let rc = world.add_component_info(info);
+        self.cur_related.vec.push(r.replace(rc.0));
+        rc
+    }
+    /// 将插入实体对应的组件
+    pub fn insert(&mut self, world: &mut World, components: Vec<ComponentInfo>) -> ShareArchetype {
+        // 所有对应的组件都是写
+        for info in &components {
+            self.cur_related.vec.push(Relation::Write(info.index));
+        }
+        // 在关联分析上为了精确关联原型，加一个Count(usize)
+        self.cur_related.vec.push(Relation::Count(components.len()));
+        self.related_ok();
+        world.find_ar(components)
+    }
+
     /// 用当前的关系表记录关系
-    pub fn record_related(&mut self, r: Relation<ComponentIndex>) {
+    pub fn relate(&mut self, r: Relation<ComponentIndex>) {
         self.cur_related.vec.push(r);
     }
     /// 关系表结束
@@ -348,6 +409,14 @@ impl SystemMeta {
     pub fn param_set_end(&mut self) {
         self.param_set_locations.last_mut().unwrap().end = self.vec.len();
     }
+
+
+
+
+
+
+
+
     /// 当前参数检查通过
     pub fn cur_param_ok(&mut self) {
         // 检查前面查询的rw是否有组件读写冲突
@@ -425,20 +494,20 @@ impl SystemMeta {
     }
     pub fn res_read(&mut self, type_info: &TypeInfo) {
         if self.res_writes.contains_key(&type_info.type_id) {
-            panic!("res_read conflict, name:{}", type_info.name);
+            panic!("res_read conflict, name:{}", type_info.type_name);
         }
         self.res_reads
-            .insert(type_info.type_id, type_info.name.clone());
+            .insert(type_info.type_id, type_info.type_name.clone());
     }
     pub fn res_write(&mut self, type_info: &TypeInfo) {
         if self.res_reads.contains_key(&type_info.type_id) {
-            panic!("res_write read conflict, name:{}", type_info.name);
+            panic!("res_write read conflict, name:{}", type_info.type_name);
         }
         if self.res_writes.contains_key(&type_info.type_id) {
-            panic!("res_write write conflict, name:{}", type_info.name);
+            panic!("res_write write conflict, name:{}", type_info.type_name);
         }
         self.res_writes
-            .insert(type_info.type_id, type_info.name.clone());
+            .insert(type_info.type_id, type_info.type_name.clone());
     }
 }
 
@@ -456,22 +525,22 @@ pub trait System: Send + Sync + 'static {
     fn type_id(&self) -> TypeId;
     /// Initialize the system.
     fn initialize(&mut self, world: &mut World);
-    /// system depend the archetype.
-    fn archetype_depend(
-        &self,
-        world: &World,
-        archetype: &Archetype,
-        result: &mut ArchetypeDependResult,
-    );
-    /// system depend the res.
-    fn res_depend(
-        &self,
-        world: &World,
-        res_tid: &TypeId,
-        res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    );
+    // /// system depend the archetype.
+    // fn archetype_depend(
+    //     &self,
+    //     world: &World,
+    //     archetype: &Archetype,
+    //     result: &mut ArchetypeDependResult,
+    // );
+    // /// system depend the res.
+    // fn res_depend(
+    //     &self,
+    //     world: &World,
+    //     res_tid: &TypeId,
+    //     res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // );
 
     /// system align the world archetypes
     fn align(&mut self, world: &World);
@@ -555,31 +624,31 @@ impl BoxedSystem {
         }
     }
 
-    pub fn archetype_depend(
-        &self,
-        world: &World,
-        archetype: &Archetype,
-        result: &mut ArchetypeDependResult,
-    ) {
-        match self {
-            BoxedSystem::Sync(s) => s.archetype_depend(world, archetype, result),
-            BoxedSystem::Async(s) => s.archetype_depend(world, archetype, result),
-        }
-    }
+    // pub fn archetype_depend(
+    //     &self,
+    //     world: &World,
+    //     archetype: &Archetype,
+    //     result: &mut ArchetypeDependResult,
+    // ) {
+    //     match self {
+    //         BoxedSystem::Sync(s) => s.archetype_depend(world, archetype, result),
+    //         BoxedSystem::Async(s) => s.archetype_depend(world, archetype, result),
+    //     }
+    // }
 
-    pub fn res_depend(
-        &self,
-        world: &World,
-        res_tid: &TypeId,
-        res_name: &Cow<'static, str>,
-        single: bool,
-        result: &mut Flags,
-    ) {
-        match self {
-            BoxedSystem::Sync(s) => s.res_depend(world, res_tid, res_name, single, result),
-            BoxedSystem::Async(s) => s.res_depend(world, res_tid, res_name, single, result),
-        }
-    }
+    // pub fn res_depend(
+    //     &self,
+    //     world: &World,
+    //     res_tid: &TypeId,
+    //     res_name: &Cow<'static, str>,
+    //     single: bool,
+    //     result: &mut Flags,
+    // ) {
+    //     match self {
+    //         BoxedSystem::Sync(s) => s.res_depend(world, res_tid, res_name, single, result),
+    //         BoxedSystem::Async(s) => s.res_depend(world, res_tid, res_name, single, result),
+    //     }
+    // }
 
     pub fn align(&mut self, world: &World) {
         match self {

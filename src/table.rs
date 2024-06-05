@@ -4,48 +4,47 @@
 ///
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
-use std::any::TypeId;
-use std::mem::{replace, transmute};
+use std::mem::replace;
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
 use pi_null::Null;
-use pi_share::{Share, ShareUsize};
+use pi_share::Share;
 
-use crate::archetype::ComponentInfo;
-use crate::archetype::{ColumnIndex, Row};
+use crate::archetype::ArchetypeIndex;
+use crate::archetype::Row;
 use crate::column::Column;
-use crate::dirty::EntityRow;
-use crate::world::{ComponentIndex, Entity, World, Tick};
+use crate::world::{ComponentIndex, Entity, Tick, World};
 
 pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
-    sorted_columns: Vec<Column>,        // 每个组件
-    column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
-    // remove_columns: SafeVec<RemovedColumn>, // 监听器监听的Removed组件，其他原型通过移除Component转到该原型
-    // lock: SpinLock<()>, // 用于保护多线程下两个alter同时添加相同组件的情况
-    // pub(crate) destroys: SyncUnsafeCell<Dirty>, // 该原型的实体被标记销毁的脏列表，查询读取后被放入removes
-    pub(crate) removes: AppendVec<Row>,                    // 整理前被移除的实例
+    pub(crate) index: ArchetypeIndex,
+    sorted_columns: Vec<Share<Column>>, // 每个组件
+    bit_set: FixedBitSet,               // 记录组件是否在table中
+    // column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
+    pub(crate) removes: AppendVec<Row>, // 整理前被移除的实例
 }
 impl Table {
-    pub fn new(sorted_components: Vec<ComponentInfo>) -> Self {
-        let len = sorted_components.len();
+    pub fn new(sorted_columns: Vec<Share<Column>>) -> Self {
+        let len = sorted_columns.len();
         let max = if len > 0 {
-            unsafe { sorted_components.get_unchecked(len - 1).world_index.index() + 1 }
-        }else{
+            unsafe { sorted_columns.get_unchecked(len - 1).info().index.index() + 1 }
+        } else {
             0
         };
-        let mut column_map = Vec::with_capacity(max);
-        column_map.resize(max, ColumnIndex::null());
-        let mut sorted_columns = Vec::with_capacity(len);
-        for (i, c) in sorted_components.into_iter().enumerate() {
-            *unsafe { column_map.get_unchecked_mut(c.world_index.index()) } = i.into();
-            sorted_columns.push(Column::new(c));
+        // let mut column_map = Vec::with_capacity(max);
+        // column_map.resize(max, ColumnIndex::null());
+        // let mut sorted_columns = Vec::with_capacity(len);
+        let mut bit_set = FixedBitSet::with_capacity(max);
+        for c in sorted_columns.iter() {
+            unsafe { bit_set.set_unchecked(c.info().index.index(), true) };
         }
         Self {
             entities: AppendVec::default(),
+            index: ArchetypeIndex::null(),
             sorted_columns,
-            column_map: column_map,
+            bit_set,
+            // column_map: column_map,
             // remove_columns: Default::default(),
             // lock: SpinLock::new(()),
             // destroys: SyncUnsafeCell::new(Dirty::default()),
@@ -59,63 +58,77 @@ impl Table {
     }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {
-        *self.entities.load_alloc(row.index())
+        // todo 改成load_unchecked
+        *self.entities.load(row.index()).unwrap()
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
-        let a = self.entities.load_alloc(row.index());
+        // todo 改成load_unchecked
+        let a = self.entities.load(row.index()).unwrap();
         // println!("set1：{:p} {:p} {:?}", &self.entities, a, (&a, row, e, self.entities.vec_capacity(), self.entities.len()));
         *a = e;
     }
     #[inline(always)]
-    pub fn get_columns(&self) -> &Vec<Column> {
+    pub fn get_columns(&self) -> &Vec<Share<Column>> {
         &self.sorted_columns
     }
-    pub fn get_column_index_by_tid(&self, world: &World, tid: &TypeId) -> ColumnIndex {
-        self.get_column_index(world.get_component_index(tid))
-    }
-    pub fn get_column_by_tid(&self, world: &World, tid: &TypeId) -> Option<(&Column, ColumnIndex)> {
-        self.get_column(world.get_component_index(tid))
-    }
-    pub fn get_column_index(&self, index: ComponentIndex) -> ColumnIndex {
-        self.column_map.get(index.index()).map_or(ColumnIndex::null(), |r| *r)
-    }
-    pub fn get_column(&self, index: ComponentIndex) -> Option<(&Column, ColumnIndex)> {
-        // println!("get_column：{:?}", index);
-        if let Some(t) = self.column_map.get(index.index()) {
-            // println!("get_column1：{:?}", t);
-            if t.is_null() {
-                return None;
-            }
-            let c = self.get_column_unchecked(*t);
-            return Some((c, *t));
-        }
-        None
-    }
-    pub(crate) unsafe fn get_column_mut(
-        &self,
-        index: ComponentIndex,
-    ) -> Option<(&mut Column, ColumnIndex)> {
-        if let Some(t) = self.column_map.get(index.index()) {
-            if t.is_null() {
-                return None;
-            }
-            let c = self.get_column_unchecked(*t);
-            return unsafe { transmute(Some((c, *t))) };
-        }
-        None
-    }
-    pub(crate) fn get_column_unchecked(&self, index: ColumnIndex) -> &Column {
-        unsafe { self.sorted_columns.get_unchecked(index.index())}
-    }
-    /// 添加changed监听器，原型刚创建时调用
-    pub fn add_listener(&self, index: ComponentIndex, owner: Tick,
-        tick: Share<ShareUsize>,) {
-        // println!("add_changed_listener!! self: {:p}, index: {:?}", self, index);
-        if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
-            c.dirty.insert_listener(owner, tick)
+    // 初始化原型对应列的blob
+    pub fn init_blobs(&self) {
+        for c in self.sorted_columns.iter() {
+            c.init_blob(self.index);
         }
     }
+
+    // 判断指定组件索引的组件是否在table中
+    #[inline(always)]
+    pub fn contains(&self, index: ComponentIndex) -> bool {
+        self.bit_set.contains(index.index())
+    }
+    // pub fn get_column_index_by_tid(&self, world: &World, tid: &TypeId) -> ColumnIndex {
+    //     self.get_column_index(world.get_component_index(tid))
+    // }
+    // pub fn get_column_by_tid(&self, world: &World, tid: &TypeId) -> Option<(&Column, ColumnIndex)> {
+    //     self.get_column(world.get_component_index(tid))
+    // }
+    // pub fn get_column_index(&self, index: ComponentIndex) -> ColumnIndex {
+    //     self.column_map.get(index.index()).map_or(ColumnIndex::null(), |r| *r)
+    // }
+    // pub fn get_column(&self, index: ComponentIndex) -> Option<(&Column, ColumnIndex)> {
+    //     // println!("get_column：{:?}", index);
+    //     if let Some(t) = self.column_map.get(index.index()) {
+    //         // println!("get_column1：{:?}", t);
+    //         if t.is_null() {
+    //             return None;
+    //         }
+    //         let c = self.get_column_unchecked(*t);
+    //         return Some((c, *t));
+    //     }
+    //     None
+    // }
+    // pub(crate) unsafe fn get_column_mut(
+    //     &self,
+    //     index: ComponentIndex,
+    // ) -> Option<(&mut Column, ColumnIndex)> {
+    //     if let Some(t) = self.column_map.get(index.index()) {
+    //         if t.is_null() {
+    //             return None;
+    //         }
+    //         let c = self.get_column_unchecked(*t);
+    //         return unsafe { transmute(Some((c, *t))) };
+    //     }
+    //     None
+    // }
+    pub(crate) fn get_column_unchecked(&self, index: usize) -> &Share<Column> {
+        unsafe { self.sorted_columns.get_unchecked(index) }
+    }
+    // /// 添加changed监听器，原型刚创建时调用
+    // pub fn add_listener(&self, index: ComponentIndex, owner: Tick,
+    //     tick: Share<ShareUsize>,) {
+    //     // println!("add_changed_listener!! self: {:p}, index: {:?}", self, index);
+    //     if let Some((c, _)) = unsafe { self.get_column_mut(index) } {
+    //         c.dirty.insert_listener(owner, tick)
+    //     }
+    // }
     // /// 添加removed监听器，原型刚创建时调用
     // pub fn add_removed_listener(&self, index: ComponentIndex, owner: Tick) {
     //     // 获取索引
@@ -128,17 +141,17 @@ impl Table {
     // pub fn add_destroyed_listener(&self, owner: Tick) {
     //     unsafe { &mut *self.destroys.get() }.insert_listener(owner)
     // }
-    /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
-    pub(crate) fn find_listener(
-        &self,
-        index: ComponentIndex,
-        owner: Tick,
-        result: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>,
-    ) {
-        if let Some((c, column_index)) = self.get_column(index) {
-            c.dirty.find_listener(column_index, owner, result);
-        }
-    }
+    // /// 查询在同步到原型时，寻找自己添加的changed监听器，并记录组件位置和监听器位置
+    // pub(crate) fn find_listener(
+    //     &self,
+    //     index: ComponentIndex,
+    //     owner: Tick,
+    //     result: &mut Vec<(ColumnIndex, Share<ShareUsize>, Share<AppendVec<EntityRow>>)>,
+    // ) {
+    //     if let Some((c, column_index)) = self.get_column(index) {
+    //         c.dirty.find_listener(column_index, owner, result);
+    //     }
+    // }
     // /// 查询在同步到原型时，寻找自己添加的removed监听器，并记录组件位置和监听器位置
     // pub(crate) fn find_removed_listener(
     //     &self,
@@ -172,7 +185,7 @@ impl Table {
     //     }
     // }
 
-    /// 获得对应的脏列表, 及是否不检查entity是否存在
+    // /// 获得对应的脏列表, 及是否不检查entity是否存在
     // pub(crate) fn get_dirty_iter<'a>(&'a self, dirty_index: &DirtyIndex, tick: Tick) -> DirtyIter<'a> {
     //      match dirty_index.dtype {
     //         DirtyType::Destroyed => {
@@ -188,23 +201,32 @@ impl Table {
     /// 扩容
     pub fn reserve(&mut self, additional: usize) {
         let len = self.entities.len();
-        self.entities.reserve(additional);
+        self.entities.settle(additional);
+        let vec = vec![];
+        self.settle_columns(len, additional, &vec);
+    }
+    /// 整理每个列
+    pub(crate) fn settle_columns(&mut self, len: usize, additional: usize, vec: &Vec<(Row, Row)>) {
         for c in self.sorted_columns.iter_mut() {
-            c.reserve(len, additional);
+            let c = unsafe { Share::get_mut_unchecked(c) };
+            c.settle(self.index, len, additional, vec);
         }
     }
+
     #[inline(always)]
-    pub fn alloc(&self) -> Row {
-        Row(self.entities.alloc_index(1) as u32)
+    pub fn alloc(&self) -> (&mut Entity, usize) {
+        self.entities.alloc()
     }
     /// 销毁，用于destroy
     pub(crate) fn destroy(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row.index());
+        // todo 改成load_unchecked
+        let e = self.entities.load(row.index()).unwrap();
         if e.is_null() {
             return *e;
         }
-        for t in self.sorted_columns.iter() {
-            t.drop_row(row);
+        for c in self.sorted_columns.iter() {
+            let c = c.blob_ref(self.index);
+            c.drop_row(row);
         }
         self.removes.insert(row);
         replace(e, Entity::null())
@@ -213,13 +235,24 @@ impl Table {
     /// mark removes a key from the archetype, returning the value at the key if the
     /// key was not previously removed.
     pub(crate) fn mark_remove(&self, row: Row) -> Entity {
-        let e = self.entities.load_alloc(row.index());
+        // todo 改成load_unchecked
+        let e = self.entities.load(row.index()).unwrap();
         if e.is_null() {
             return *e;
         }
         self.removes.insert(row);
         replace(e, Entity::null())
     }
+    /// 初始化一个行，每个列都插入一个默认值
+    pub(crate) fn init_row(&self, row: Row, e: Entity, tick: Tick) {
+        for column in &self.sorted_columns {
+            let c = column.blob_ref(self.index);
+            let dst_data: *mut u8 = unsafe { c.load(row) };
+            column.info().default_fn.unwrap()(dst_data);
+            c.added_tick(e, row, tick)
+        }
+    }
+
     // // 处理标记移除的条目，返回true，表示所有监听器都已经处理完毕，然后可以清理destroys
     // fn clear_destroy(&mut self) -> bool {
     //     let dirty = unsafe { &mut *self.destroys.get() };
@@ -337,15 +370,15 @@ impl Table {
         //     // 如果清理destroys不成功，不调整row，返回
         //     return false;
         // }
-        let mut r = true;
-        // 先整理每个列，如果所有列的脏列表成功清空
-        for c in self.sorted_columns.iter_mut() {
-            r &= c.dirty.settle();
-        }
-        if !r {
-            // 有失败的脏，不调整row，返回
-            return false;
-        }
+        // let mut r = true;
+        // // 先整理每个列，如果所有列的脏列表成功清空
+        // for c in self.sorted_columns.iter_mut() {
+        //     r &= c.dirty.settle();
+        // }
+        // if !r {
+        //     // 有失败的脏，不调整row，返回
+        //     return false;
+        // }
         // // 整理全部的remove_columns，如果所有移除列的脏列表成功清空
         // for d in self.remove_columns.iter() {
         //     r &= d.dirty.collect();
@@ -361,37 +394,23 @@ impl Table {
         let new_entity_len =
             Self::removes_action(&self.removes, remove_len, self.entities.len(), action, set);
         // 清理removes
-        self.removes.clear();
-        // 以前用到了arr，所以扩容
-        if self.removes.vec_capacity() < remove_len {
-            unsafe {
-                self.removes
-                    .vec_reserve(remove_len - self.removes.vec_capacity())
-            };
-        }
-        // 整理全部的列
-        for c in self.sorted_columns.iter_mut() {
-            // 整理合并空位
-            c.settle(new_entity_len, &action);
-        }
-        // 整理全部的列ticks
-        for c in self.sorted_columns.iter_mut() {
-            if c.info().is_tick() {
-                settle_ticks(&mut c.ticks, new_entity_len, &action);
-            }
-        }
+        self.removes.clear(0);
+        // 整理全部的列, 合并空位
+        self.settle_columns(new_entity_len, 0, &action);
+        // // 整理全部的列ticks
+        // for c in self.sorted_columns.iter_mut() {
+        //     if c.info().is_tick() {
+        //         settle_ticks(&mut c.ticks, new_entity_len, &action);
+        //     }
+        // }
         // // 整理全部的RemovedColumn列ticks
         // for c in self.remove_columns.iter() {
         //     collect_ticks(&mut c.ticks, new_entity_len, &action);
         // }
         // 再移动entitys的空位
         for (src, dst) in action.iter() {
-            let e = unsafe {
-                replace(
-                    self.entities.get_unchecked_mut(src.index()),
-                    Entity::null(),
-                )
-            };
+            let e =
+                unsafe { replace(self.entities.get_unchecked_mut(src.index()), Entity::null()) };
             *unsafe { self.entities.get_unchecked_mut(dst.index()) } = e;
             // 修改world上entity的地址
             world.replace_row(e, *dst);
@@ -401,7 +420,7 @@ impl Table {
             self.entities.set_len(new_entity_len);
         };
         // 整理合并内存
-        self.entities.settle();
+        self.entities.settle(0);
         true
     }
 }
@@ -412,9 +431,10 @@ impl Drop for Table {
             return;
         }
         for c in self.sorted_columns.iter_mut() {
-            if !c.needs_drop() {
+            if c.info().drop_fn.is_none() {
                 continue;
             }
+            let c = c.blob_ref(self.index);
             // 释放每个列中还存在的row
             for (row, e) in self.entities.iter().enumerate() {
                 if !e.is_null() {
@@ -435,15 +455,12 @@ impl Debug for Table {
     }
 }
 
-/// 整理合并空位
-pub(crate) fn settle_ticks(ticks: &mut AppendVec<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
-    for (src, dst) in action.iter() {
-        if let Some(tick) = ticks.get_i(src.index()) {
-            *ticks.load_alloc(dst.index()) = *tick;
-        }
-    }
-    if entity_len <= ticks.vec_capacity() {
-        return;
-    }
-    ticks.settle_raw(entity_len, 0);
-}
+// /// 整理合并空位
+// pub(crate) fn settle_ticks(ticks: &mut Arr<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
+//     for (src, dst) in action.iter() {
+//         if let Some(tick) = ticks.get(src.index()) {
+//             *ticks.load(dst.index()).unwrap() = *tick;
+//         }
+//     }
+//     ticks.settle(entity_len, 0, 1);
+// }

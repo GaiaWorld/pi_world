@@ -2,8 +2,8 @@
 //! A collection of helper types and functions for working on macros within the Bevy ecosystem.
 
 extern crate proc_macro;
-#[macro_use]
-extern crate lazy_static;
+// #[macro_use]
+// extern crate lazy_static;
 
 mod label;
 mod manifest;
@@ -204,27 +204,27 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                fn archetype_depend<'w>(
-                    world: & #path::world::World,
-                    system_meta: & #path::system::SystemMeta,
-                    state: &Self::State,
-                    archetype: & #path::archetype::Archetype,
-                    depend: & mut #path::archetype::ArchetypeDependResult,
-                ) {
-                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::archetype_depend(world, system_meta, &state.state, archetype, depend);
-                }
+                // fn archetype_depend<'w>(
+                //     world: & #path::world::World,
+                //     system_meta: & #path::system::SystemMeta,
+                //     state: &Self::State,
+                //     archetype: & #path::archetype::Archetype,
+                //     depend: & mut #path::archetype::ArchetypeDependResult,
+                // ) {
+                //     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::archetype_depend(world, system_meta, &state.state, archetype, depend);
+                // }
 
-                fn res_depend<'w>(
-                    world: &'w #path::world::World,
-                    system_meta: &'w #path::system::SystemMeta,
-                    state: &'w Self::State,
-                    res_tid: &'w std::any::TypeId,
-                    res_name: &'w std::borrow::Cow<'static, str>,
-                    single: bool,
-                    result: &'w mut #path::archetype::Flags,
-                ) {
-                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
-                }
+                // fn res_depend<'w>(
+                //     world: &'w #path::world::World,
+                //     system_meta: &'w #path::system::SystemMeta,
+                //     state: &'w Self::State,
+                //     res_tid: &'w std::any::TypeId,
+                //     res_name: &'w std::borrow::Cow<'static, str>,
+                //     single: bool,
+                //     result: &'w mut #path::archetype::Flags,
+                // ) {
+                //     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
+                // }
 
                 fn align<'w>(world: &'w #path::world::World, system_meta: &'w #path::system::SystemMeta, state: &'w mut Self::State) {
                     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::align(world, system_meta, &mut state.state);
@@ -469,7 +469,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     c
                 }
                 fn init_item(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
-                    #world_path::insert::TypeItem::new(_archetype.get_column(_world.init_component::<Self>()).unwrap().0)
+                    #world_path::insert::TypeItem::new(_world, _archetype)
                 }
 
                 fn insert(
@@ -479,9 +479,27 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     row: #world_path::archetype::Row,
                     tick: #world_path::world::Tick,
                 ) {
-                    state.write(e, row, components, tick);
+                    state.write(components, e, row, tick);
                 }
             }
+
+            // impl #impl_generics #world_path::insert::BundleExt for #struct_name #ty_generics #where_clause {
+            //     fn add_components(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity,  component: Self) -> Result<(), crate::prelude::QueryError> {
+            //        todo!()
+            //     }
+    
+            //     fn add_components2(editor: &mut #world_path::editor::EntityEditor, e: #world_path::world::Entity,  component: Self) -> Result<(), crate::prelude::QueryError> {
+            //         let components_index = [
+            //             (editor.init_component::<Self>(), true),   
+            //         ];
+                
+            //         editor.alter_components_by_index(e, &components_index)?;
+    
+            //         *editor.get_component_unchecked_mut_by_id(e, components_index[0].0) = component;
+                   
+            //         Ok(())
+            //     }
+            // }
         };
     })
 }
@@ -591,10 +609,9 @@ pub(crate) fn ecs_path() -> syn::Path {
 //     path.clone()
 // }
 
-lazy_static! {
-    static ref ECS_PATH: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    // static ref BEVY_UTILS: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-}
+
+static ECS_PATH: Mutex<Option<String>> = Mutex::new(None);
+
 
 fn get_idents(fmt_string: fn(usize) -> String, count: usize) -> Vec<Ident> {
     (0..count)
@@ -639,7 +656,7 @@ pub fn impl_param_set(_input: TokenStream) -> TokenStream {
         let param_fn_mut = &param_fn_muts[0..param_count];
         tokens.extend(TokenStream::from(quote! {
 
-            impl<'w,  #(#param: ParamSetElement + 'static,)*> ParamSet<'w, (#(#param,)*)>
+            impl<'w,  #(#param: SystemParam + 'static,)*> ParamSet<'w, (#(#param,)*)>
             {
                 #(#param_fn_mut)*
             }

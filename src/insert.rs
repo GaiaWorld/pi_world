@@ -7,8 +7,8 @@ use pi_slot::SlotMap;
 // use pi_world_macros::ParamSetElement;
 
 use crate::archetype::*;
-use crate::column::Column;
-use crate::param_set::ParamSetElement;
+use crate::column::BlobTicks;
+use crate::column::BlobRef;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -18,7 +18,7 @@ pub use pi_world_macros::Component;
 // 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
 pub struct Inserter<'world, I: Bundle> {
     world: &'world World,
-    state: (ArchetypeWorldIndex, ShareArchetype, I::Item),
+    state: (ShareArchetype, I::Item),
     tick: Tick,
 }
 
@@ -26,7 +26,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
     #[inline(always)]
     pub fn new(
         world: &'world World,
-        state: (ArchetypeWorldIndex, ShareArchetype, I::Item),
+        state: (ShareArchetype, I::Item),
         tick: Tick,
     ) -> Self {
         Self { world, state, tick }
@@ -41,9 +41,9 @@ impl<'world, I: Bundle> Inserter<'world, I> {
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
         let ptr: *mut SlotMap<Entity, EntityAddr> = unsafe { transmute(&self.world.entities) };
-        unsafe { &mut *ptr }.reserve(length);
+        unsafe { &mut *ptr }.settle(length);
         // 强行将原型转为可写
-        let ptr = ShareArchetype::as_ptr(&self.state.1);
+        let ptr = ShareArchetype::as_ptr(&self.state.0);
         let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
         ar_mut.reserve(length);
         for item in iter {
@@ -55,7 +55,7 @@ impl<'world, I: Bundle> Inserter<'world, I> {
 
 pub struct Insert<'world, I: Bundle> {
     pub(crate) world: &'world World,
-    state: &'world (ArchetypeWorldIndex, ShareArchetype, I::Item),
+    state: &'world (ShareArchetype, I::Item),
     tick: Tick,
 }
 
@@ -63,7 +63,7 @@ impl<'world, I: Bundle> Insert<'world, I> {
     #[inline(always)]
     pub(crate) fn new(
         world: &'world World,
-        state: &'world (ArchetypeWorldIndex, ShareArchetype, I::Item),
+        state: &'world (ShareArchetype, I::Item),
         tick: Tick,
     ) -> Self {
         Insert { world, state, tick }
@@ -74,37 +74,25 @@ impl<'world, I: Bundle> Insert<'world, I> {
     }
     #[inline]
     pub fn insert(&self, components: I) -> Entity {
-        let row = self.state.1.alloc();
-        let e = self.world.insert(self.state.0, row);
-        I::insert(&self.state.2, components, e, row, self.tick);
-        self.state.1.set(row, e);
+        let (r, row) = self.state.0.alloc();
+        let e = self.world.insert(self.state.0.index(), row.into());
+        I::insert(&self.state.1, components, e, row.into(), self.tick);
+        *r = e;
         e
     }
 }
 
 impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
-    type State = (ArchetypeWorldIndex, ShareArchetype, I::Item);
+    type State = (ShareArchetype, I::Item);
     type Item<'w> = Insert<'w, I>;
 
-    fn init_state(world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        // 如果world上没有找到对应的原型，则创建并放入world中
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        // 加meta 如果world上没有找到对应的原型，则创建并放入world中
         let components = I::components(Vec::new());
-        let (ar_index, ar) = world.find_ar(components);
+        let ar = meta.insert(world, components);
         let s = I::init_item(world, &ar);
-        (ar_index, ar, s)
+        (ar, s)
     }
-    fn archetype_depend(
-        world: &World,
-        _system_meta: &SystemMeta,
-        _state: &Self::State,
-        archetype: &Archetype,
-        depend: &mut ArchetypeDependResult,
-    ) {
-        // todo 似乎可以使用state上的ShareArchetype
-        let components = I::components(Vec::new());
-        depend.insert(archetype, world, components);
-    }
-
     #[inline]
     fn get_param<'world>(
         world: &'world World,
@@ -125,52 +113,55 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
-    fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
-        let components = I::components(Vec::new());
-        // todo 移到system_meta，减少泛型代码
-        for component in &components{
-            system_meta.cur_param
-            .writes
-            .insert(component.type_id, component.type_name.clone());
-        }
+// impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
+//     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
+//         let components = I::components(Vec::new());
+//         // todo 移到system_meta，减少泛型代码
+//         for component in &components{
+//             system_meta.cur_param
+//             .writes
+//             .insert(component.type_id, component.type_name.clone());
+//         }
     
-        let (ar_index, ar) = world.find_ar( components);
-        let s = I::init_item(world, &ar);
-        system_meta.param_set_check();
+//         let (ar_index, ar) = world.find_ar( components);
+//         let s = I::init_item(world, &ar);
+//         system_meta.param_set_check();
 
-        (ar_index, ar, s)
-    }
-}
+//         (ar_index, ar, s)
+//     }
+// }
 
 
 pub trait Bundle {
-    // type Item;
 
     type Item: Send + Sync + Sized;
 
     fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo>;
-    // todo 改名成init_item，每次get_parm时调用，TState放ColumnIndex
+
     fn init_item(world: &World, archetype: &Archetype) -> Self::Item;
 
     fn insert(item: &Self::Item, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
-pub struct TypeItem<T: 'static>(pub *const Column, PhantomData<T>);
+pub struct TypeItem<T: 'static>(*const BlobTicks, *const ComponentInfo, PhantomData<T>);
 unsafe impl<T> Sync for TypeItem<T> {}
 unsafe impl<T> Send for TypeItem<T> {}
 impl<T: 'static> TypeItem<T> {
     #[inline(always)]
-    pub fn new(c: &Column) -> Self {
+    pub fn new(world: &World, ar: &Archetype) -> Self {
         // println!("TypeItem new:{:?} {:p}", (c.info().type_name), c);
-        TypeItem(unsafe { transmute(c) }, PhantomData)
+        let  c = world.add_component_info(ComponentInfo::of::<T>(0)).1;
+        let c = c.blob_ref(ar.index());
+        TypeItem(unsafe { transmute(c.blob) },  unsafe { transmute(c.info) }, PhantomData)
     }
     #[inline(always)]
-    pub fn write(&self, e: Entity, row: Row, val: T, tick: Tick) {
+    pub fn write(&self, val: T, e: Entity, row: Row, tick: Tick) {
         // println!("TypeItem write:{:?} {:p}", (e, row, tick), self.0);
-        let c: &mut Column = unsafe { transmute(self.0) };
+        let c = unsafe { transmute(self.0) };
+        let info = unsafe { transmute(self.1) };
+        let c = BlobRef::new(c, info);
         c.write(row, val);
-        c.add_record(e, row, tick);
+        c.added_tick(e, row, tick);
     }
 }
 
