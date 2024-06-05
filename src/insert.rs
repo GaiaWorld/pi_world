@@ -113,24 +113,6 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-// impl<I: Bundle + 'static> ParamSetElement for Insert<'_, I>  {
-//     fn init_set_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State{
-//         let components = I::components(Vec::new());
-//         // todo 移到system_meta，减少泛型代码
-//         for component in &components{
-//             system_meta.cur_param
-//             .writes
-//             .insert(component.type_id, component.type_name.clone());
-//         }
-    
-//         let (ar_index, ar) = world.find_ar( components);
-//         let s = I::init_item(world, &ar);
-//         system_meta.param_set_check();
-
-//         (ar_index, ar, s)
-//     }
-// }
-
 
 pub trait Bundle {
 
@@ -151,7 +133,7 @@ impl<T: 'static> TypeItem<T> {
     pub fn new(world: &World, ar: &Archetype) -> Self {
         // println!("TypeItem new:{:?} {:p}", (c.info().type_name), c);
         let  c = world.add_component_info(ComponentInfo::of::<T>(0)).1;
-        let c = c.blob_ref(ar.index());
+        let c = c.blob_ref_unchecked(ar.index());
         TypeItem(unsafe { transmute(c.blob) },  unsafe { transmute(c.info) }, PhantomData)
     }
     #[inline(always)]

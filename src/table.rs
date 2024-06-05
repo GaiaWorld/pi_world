@@ -21,7 +21,6 @@ pub struct Table {
     pub(crate) index: ArchetypeIndex,
     sorted_columns: Vec<Share<Column>>, // 每个组件
     bit_set: FixedBitSet,               // 记录组件是否在table中
-    // column_map: Vec<ColumnIndex>, // 用全局的组件索引作为该数组的索引，方便快速查询
     pub(crate) removes: AppendVec<Row>, // 整理前被移除的实例
 }
 impl Table {
@@ -225,7 +224,7 @@ impl Table {
             return *e;
         }
         for c in self.sorted_columns.iter() {
-            let c = c.blob_ref(self.index);
+            let c = c.blob_ref_unchecked(self.index);
             c.drop_row(row);
         }
         self.removes.insert(row);
@@ -246,7 +245,7 @@ impl Table {
     /// 初始化一个行，每个列都插入一个默认值
     pub(crate) fn init_row(&self, row: Row, e: Entity, tick: Tick) {
         for column in &self.sorted_columns {
-            let c = column.blob_ref(self.index);
+            let c = column.blob_ref_unchecked(self.index);
             let dst_data: *mut u8 = unsafe { c.load(row) };
             column.info().default_fn.unwrap()(dst_data);
             c.added_tick(e, row, tick)
@@ -434,7 +433,7 @@ impl Drop for Table {
             if c.info().drop_fn.is_none() {
                 continue;
             }
-            let c = c.blob_ref(self.index);
+            let c = c.blob_ref_unchecked(self.index);
             // 释放每个列中还存在的row
             for (row, e) in self.entities.iter().enumerate() {
                 if !e.is_null() {

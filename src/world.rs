@@ -1,20 +1,3 @@
-use crate::alter::{AlterState, Alterer};
-use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeIndex, ComponentInfo, Row, ShareArchetype,
-    COMPONENT_CHANGED, COMPONENT_TICK,
-};
-use crate::column::{BlobRef, Column};
-use crate::editor::{EditorState, EntityEditor};
-use crate::fetch::{ColumnTick, FetchComponents};
-use crate::filter::FilterComponents;
-use crate::insert::{Bundle, Inserter};
-use crate::insert_batch::InsertBatchIter;
-use crate::listener::{EventListKey, ListenerMgr};
-use crate::prelude::Mut;
-use crate::query::{QueryError, QueryState, Queryer};
-use crate::event::EventRecord;
-use crate::safe_vec::{SafeVec, SafeVecIter};
-use crate::system::{SystemMeta, TypeInfo};
 /// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
 /// 查询过滤模块会注册监听器来监听新增的原型
@@ -28,10 +11,30 @@ use crate::system::{SystemMeta, TypeInfo};
 /// 如果sys通过是MultiRes实现的CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在可能在下一帧才会看到。
 ///
 ///
+
+
+
+use crate::alter::{AlterState, Alterer};
+use crate::archetype::{
+    Archetype, ArchetypeInfo, ArchetypeIndex, ComponentInfo, Row, ShareArchetype,
+    COMPONENT_CHANGED, COMPONENT_TICK,
+};
+use crate::column::Column;
+use crate::editor::{EditorState, EntityEditor};
+use crate::fetch::{ColumnTick, FetchComponents};
+use crate::filter::FilterComponents;
+use crate::insert::{Bundle, Inserter};
+use crate::insert_batch::InsertBatchIter;
+use crate::listener::{EventListKey, ListenerMgr};
+use crate::prelude::Mut;
+use crate::query::{QueryError, QueryState, Queryer};
+use crate::event::EventRecord;
+use crate::safe_vec::{SafeVec, SafeVecIter};
+use crate::system::{SystemMeta, TypeInfo};
 use core::fmt::*;
 use core::result::Result;
 use std::collections::HashMap;
-use dashmap::mapref::{entry::Entry, one::Ref};
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
@@ -602,11 +605,9 @@ impl World {
             None => return Err(QueryError::NoSuchComponent(index)),
         };
         let column = column.blob_ref(addr.archetype_index());
-        let ptr = column.get_row(addr.row);
-        if !ptr.is_null() {
-            return Ok((ptr, addr.row));
-        } else {
-            return Err(QueryError::MissingComponent(index, addr.archetype_index()));
+        match column {
+            Some(c) => Ok((c.get_row(addr.row), addr.row)),
+            None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
         }
     }
 
@@ -633,10 +634,15 @@ impl World {
             Some(c) => c,
             None => return Err(QueryError::NoSuchComponent(index)),
         };
-        let c = column.blob_ref(addr.archetype_index());
-        let t = self.tick();
-        let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
-        Ok(unsafe { transmute(value) })
+        let column = column.blob_ref(addr.archetype_index());
+        match column {
+            Some(c) => {
+                let t = self.tick();
+                let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
+                Ok(unsafe { transmute(value) })
+            },
+            None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
+        }
     }
 
     // /// 增加和删除实体

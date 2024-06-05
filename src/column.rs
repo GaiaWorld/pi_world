@@ -1,17 +1,20 @@
 use core::fmt::*;
-use std::mem::transmute;
+use std::{
+    mem::transmute,
+    ops::{Deref, DerefMut},
+};
 
 use pi_arr::Arr;
 use pi_null::Null;
 
 use crate::{
     archetype::{ArchetypeIndex, ComponentInfo, Row},
-    world::{Tick, Entity},
+    world::{Entity, Tick},
 };
 
 pub struct Column {
     pub(crate) info: ComponentInfo,
-    pub(crate) arr: Arr::<BlobTicks>,
+    pub(crate) arr: Arr<BlobTicks>,
 }
 impl Column {
     #[inline(always)]
@@ -31,15 +34,38 @@ impl Column {
     }
     // 初始化原型对应列的blob
     pub fn init_blob(&self, index: ArchetypeIndex) {
-        // todo self.arr.load_alloc(index.index())
+        unsafe { self.arr.load_alloc(index.index()).blob.set_vec_capacity(0) };
     }
-    
+    // 列是否包含指定原型
+    pub fn contains(&self, index: ArchetypeIndex) -> bool {
+        match self.arr.load(index.index()) {
+            Some(b) => !b.blob.vec_capacity().is_null(),
+            None => false,
+        }
+    }
     #[inline(always)]
-    pub fn blob_ref(&self, index: ArchetypeIndex) -> BlobRef<'_> {
-        BlobRef::new(self.arr.load_alloc(index.index()), &self.info)
+    pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
+        BlobRef::new(unsafe { self.arr.load_unchecked(index.index()) }, &self.info)
+    }
+    #[inline(always)]
+    pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
+        let b = match self.arr.load(index.index()){
+            Some(b) => b,
+            _ => return None,
+        };
+        if b.blob.vec_capacity().is_null() {
+            return None
+        }
+        Some(BlobRef::new(b, &self.info))
     }
     /// 整理合并空位
-    pub(crate) fn settle(&mut self, index: ArchetypeIndex, len: usize, additional: usize, action: &Vec<(Row, Row)>) {
+    pub(crate) fn settle(
+        &mut self,
+        index: ArchetypeIndex,
+        len: usize,
+        additional: usize,
+        action: &Vec<(Row, Row)>,
+    ) {
         // 判断ticks，进行ticks的整理
         let b = unsafe { self.arr.get_unchecked_mut(index.index()) };
         let r = BlobRef::new(b, &self.info);
@@ -59,7 +85,7 @@ impl Column {
             b.blob.settle(len, additional, self.info.size());
             // 整理合并ticks内存
             b.ticks.settle(len, additional, 1);
-            return
+            return;
         }
         for (src, dst) in action.iter() {
             unsafe {
@@ -72,34 +98,47 @@ impl Column {
         // 整理合并blob内存
         b.blob.settle(len, additional, self.info.size());
     }
-
 }
 impl Debug for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Column")
-        .field("info", &self.info)
-        .finish()
+        f.debug_struct("Column").field("info", &self.info).finish()
     }
 }
 
-#[derive(Default)]
-pub(crate) struct BlobTicks {
-    blob: Arr<u8>,
-    pub(crate) ticks: Arr<Tick>,
-    // pub(crate) dirty: Dirty, // Alter和Insert产生的添加脏和Query产生的修改脏，
+struct Blob(Arr<u8>);
+impl Default for Blob {
+    fn default() -> Self {
+        let mut arr = Arr::default();
+        unsafe { arr.set_vec_capacity(usize::null()) };
+        Self(arr)
+    }
+}
+impl Drop for Blob {
+    fn drop(&mut self) {
+        if self.vec_capacity().is_null() {
+            unsafe { self.set_vec_capacity(0) };
+        }
+    }
 }
 
-// impl Column {
-//     #[inline(always)]
-//     pub fn new() -> Self {
-//         Self {
-//             blob: Default::default(),
-//             ticks: Default::default(),
-//             // dirty: Default::default(),
-//         }
-//     }
-// }
+impl Deref for Blob {
+    type Target = Arr<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for Blob {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
+
+#[derive(Default)]
+pub(crate) struct BlobTicks {
+    blob: Blob,
+    pub(crate) ticks: Arr<Tick>,
+}
 
 #[derive(Clone)]
 pub struct BlobRef<'a> {
@@ -110,15 +149,15 @@ pub struct BlobRef<'a> {
 impl<'a> BlobRef<'a> {
     #[inline(always)]
     pub(crate) fn new(blob: &'a mut BlobTicks, info: &'a ComponentInfo) -> Self {
-        Self {
-            blob,
-            info,
-        }
+        Self { blob, info }
     }
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
         // todo !()
-        self.blob.ticks.get(row.index()).map_or(Tick::default(), |t| *t)
+        self.blob
+            .ticks
+            .get(row.index())
+            .map_or(Tick::default(), |t| *t)
     }
     #[inline]
     pub fn added_tick(&self, e: Entity, row: Row, tick: Tick) {
@@ -153,9 +192,7 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get_mut<T>(&self, row: Row) -> &mut T {
-        unsafe {
-            transmute(self.load(row))
-        }
+        unsafe { transmute(self.load(row)) }
     }
     #[inline(always)]
     pub(crate) fn write<T>(&self, row: Row, val: T) {
@@ -173,7 +210,11 @@ impl<'a> BlobRef<'a> {
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
-        transmute(self.blob.blob.load_alloc_multiple(row.index(), self.info.size()))
+        transmute(
+            self.blob
+                .blob
+                .load_alloc_multiple(row.index(), self.info.size()),
+        )
     }
     #[inline(always)]
     pub fn write_row(&self, row: Row, data: *mut u8) {
@@ -196,13 +237,10 @@ impl<'a> BlobRef<'a> {
     pub fn drop_row_unchecked(&self, row: Row) {
         self.info.drop_fn.unwrap()(unsafe { transmute(self.blob.blob.get(row.index())) })
     }
-
 }
 
 impl<'a> Debug for BlobRef<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Column")
-        .field("info", &self.info)
-        .finish()
+        f.debug_struct("Column").field("info", &self.info).finish()
     }
 }

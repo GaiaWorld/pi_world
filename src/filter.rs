@@ -116,9 +116,6 @@ impl<T: 'static> FilterComponents for With<T> {
         )
         .0
     }
-    // fn filter_archetype(_world: &World, state: &Self::State, archetype: &Archetype) -> bool {
-    //     !archetype.contains(*state)
-    // }
     #[inline]
     fn init_filter<'w>(
         _world: &'w World,
@@ -129,13 +126,7 @@ impl<T: 'static> FilterComponents for With<T> {
     ) -> Self::Filter<'w> {
         ()
     }
-    // fn init_state(world: &mut World, meta: &mut SystemMeta) {
-    //     world.add_component_info(ComponentInfo::of::<T>(0));
-    //     meta.cur_param.withs.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
-    // }
-    // fn archetype_filter(world: &World, archetype: &Archetype) -> bool {
-    //     archetype.get_column_index_by_tid(world, &TypeId::of::<T>()).is_null()
-    // }
+
 }
 
 pub struct Changed<T: 'static>(PhantomData<T>);
@@ -151,9 +142,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
         )
         .1
     }
-    // fn init_listeners(world: &mut World, listeners: &mut Vec<ComponentIndex>) {
-    //     listeners.push(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_TICK | COMPONENT_CHANGED)).0);
-    // }
+
     #[inline(always)]
     fn init_filter<'w>(
         _world: &'w World,
@@ -162,7 +151,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
         _tick: Tick,
         last_run: Tick,
     ) -> Self::Filter<'w> {
-        (state.blob_ref(archetype.index()), last_run)
+        (state.blob_ref_unchecked(archetype.index()), last_run)
     }
 
     #[inline(always)]
@@ -171,41 +160,8 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 }
 pub struct Or<T: 'static>(PhantomData<T>);
-// impl<T: 'static + FilterComponents> FilterComponents for Or<T> {
-//     // const LISTENER_COUNT: usize = 0;
-//     type Fetch<'w> = T::Fetch<'w>;
-//     type State = T::State;
-//     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-//         meta.relate(crate::system::Relation::Or);
-//         let s = T::init_state(world, meta);
-//         meta.relate(crate::system::Relation::End);
-//         s
-//     }
-//     #[inline]
-//     fn init_fetch<'w>(
-//         world: &'w World,
-//         state: &'w Self::State,
-//         archetype: &'w Archetype,
-//         tick: Tick,
-//         last_run: Tick,
-//     ) -> Self::Fetch<'w> {
-//         T::init_fetch(world, state, archetype, tick, last_run)
-//     }
-// }
-// pub struct Removed<T: 'static>(PhantomData<T>);
-// impl<T: 'static> FilterComponents for Removed<T> {
-//     const LISTENER_COUNT: usize = 1;
-//     fn init_listeners(world: &mut World, listeners: &mut Vec<ComponentIndex>) {
-//         listeners.push(ListenType::Removed(world.add_component_info(ComponentInfo::of::<T>(COMPONENT_REMOVED)).0));
-//     }
-// }
-// pub struct Destroyed;
-// impl FilterComponents for Destroyed {
-//     const LISTENER_COUNT: usize = 1;
-//     fn init_listeners(_world: &mut World, listeners: &mut Vec<ComponentIndex>) {
-//         listeners.push(ListenType::Destroyed);
-//     }
-// }
+
+
 macro_rules! impl_tuple_filter {
     ($(($name: ident, $state: ident)),*) => {
         #[allow(non_snake_case)]
@@ -219,13 +175,6 @@ macro_rules! impl_tuple_filter {
 	        fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {
                 ($($name::init_state(_world, _meta),)*)
             }
-            // fn filter_archetype(_world: &World, _state: &Self::State, _archetype: &Archetype) -> bool {
-            //     let ($($state,)*) = _state;
-            //     $(
-            //         if $name::filter_archetype(_world, $state, _archetype){return true};
-            //     )*
-            //     false
-            // }
 
             #[allow(clippy::unused_unit)]
             #[inline]

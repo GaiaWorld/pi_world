@@ -225,14 +225,15 @@ mod test_mod {
     #[test] 
     fn test_columns() {
         let mut cc = Column::new(ComponentInfo::of::<Transform>(0));
-        let mut c = cc.blob_ref(0usize.into());
+        cc.init_blob(0usize.into());
+        let mut c = cc.blob_ref_unchecked(0usize.into());
         c.write(Row(0), Transform([0.0; 16]));
         c.write(Row(1), Transform([1.0; 16]));
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
         let mut action = Default::default();
         cc.settle(0usize.into(), 2, 0, &mut action);
-        let mut c = cc.blob_ref(0usize.into());
+        let mut c = cc.blob_ref_unchecked(0usize.into());
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
     }

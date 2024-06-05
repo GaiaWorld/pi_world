@@ -120,7 +120,7 @@ impl<T: 'static> FetchComponents for &T {
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        state.blob_ref(archetype.index())
+        state.blob_ref_unchecked(archetype.index())
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
@@ -151,7 +151,7 @@ impl<T: 'static> FetchComponents for &mut T {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -182,7 +182,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -212,7 +212,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -247,7 +247,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
             return None;
         }
         Some(ColumnTick::new(
-            state.blob_ref(archetype.index()),
+            state.blob_ref_unchecked(archetype.index()),
             tick,
             last_run,
         ))
@@ -286,7 +286,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     ) -> Self::Fetch<'w> {
         if archetype.contains(state.info().index) {
             Some(ColumnTick::new(
-                state.blob_ref(archetype.index()),
+                state.blob_ref_unchecked(archetype.index()),
                 tick,
                 last_run,
             ))
@@ -327,7 +327,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
         if archetype.contains(state.info().index) {
-            Some(state.blob_ref(archetype.index()))
+            Some(state.blob_ref_unchecked(archetype.index()))
         } else {
             None
         }
@@ -366,7 +366,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     ) -> Self::Fetch<'w> {
         if archetype.contains(state.info().index) {
             Some(ColumnTick::new(
-                state.blob_ref(archetype.index()),
+                state.blob_ref_unchecked(archetype.index()),
                 tick,
                 last_run,
             ))
@@ -431,7 +431,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
         if archetype.contains(state.0.info().index) {
-            Ok(state.0.blob_ref(archetype.index()))
+            Ok(state.0.blob_ref_unchecked(archetype.index()))
         } else {
             Err(unsafe { &mut *state.1.downcast::<T>() })
         }

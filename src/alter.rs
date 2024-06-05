@@ -446,8 +446,8 @@ impl AState {
     pub(crate) fn move_columns(&self, am: &mut ArchetypeMapping) {
         for index in am.move_indexs.clone() {
             let c = unsafe { self.moving.get_unchecked(index) };
-            let src_column = c.blob_ref(am.src.index());
-            let dst_column = c.blob_ref(am.dst.index());
+            let src_column = c.blob_ref_unchecked(am.src.index());
+            let dst_column = c.blob_ref_unchecked(am.dst.index());
             Self::move_column(src_column, dst_column, &am.moves, c.info().is_tick());
         }
     }
@@ -474,7 +474,7 @@ impl AState {
         for i in am.removed_indexs.clone().into_iter() {
             let c = unsafe { self.moving.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
-                let column = c.blob_ref(am.src.index());
+                let column = c.blob_ref_unchecked(am.src.index());
                 for (src_row, _dst_row, _e) in am.moves.iter() {
                     column.drop_row_unchecked(*src_row)
                 }
@@ -667,8 +667,8 @@ impl ArchetypeMapping {
     ) {
         for index in self.move_indexs.clone() {
             let c = unsafe { moving.get_unchecked(index) };
-            let src_column = c.blob_ref(self.src.index());
-            let dst_column = c.blob_ref(self.dst.index());
+            let src_column = c.blob_ref_unchecked(self.src.index());
+            let dst_column = c.blob_ref_unchecked(self.dst.index());
             self.move_column(
                 src_row,
                 dst_row,
@@ -706,7 +706,7 @@ impl ArchetypeMapping {
         for i in self.removed_indexs.clone().into_iter() {
             let c = unsafe { removing.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
-                let src_column = c.blob_ref(self.src.index());
+                let src_column = c.blob_ref_unchecked(self.src.index());
                 src_column.drop_row_unchecked(src_row);
             }
             // 如果移除列上有对应监听，则记录移除实体

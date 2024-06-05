@@ -23,7 +23,7 @@ impl AState {
     fn insert_columns(&self, am: &mut ArchetypeMapping, dst_row: Row, e: Entity, tick: Tick) {
         for i in am.add_indexs.clone().into_iter() {
             let c = unsafe { self.adding.get_unchecked(i) };
-            let dst_column = c.blob_ref(am.dst.index());
+            let dst_column = c.blob_ref_unchecked(am.dst.index());
             // println!("dst_column: {:?}", dst_column.info());
             let dst_data: *mut u8 = unsafe { dst_column.load(dst_row) };
             c.info().default_fn.unwrap()(dst_data);
