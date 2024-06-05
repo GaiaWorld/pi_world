@@ -31,6 +31,7 @@ use crate::insert::Bundle;
 use crate::query::{ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
+use crate::utils::VecExt;
 use crate::world::*;
 
 pub struct Alterer<
@@ -42,6 +43,7 @@ pub struct Alterer<
 > {
     query: Queryer<'world, Q, F>,
     state: AlterState<A>,
+    is_delay: bool,
     _k: PhantomData<D>,
 }
 impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
@@ -55,6 +57,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         Self {
             query: Queryer::new(world, query_state),
             state,
+            is_delay: false,
             _k: PhantomData,
         }
     }
@@ -110,7 +113,41 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
             components,
             self.query.tick,
         );
+        self.is_delay = false;
+        self.state.state.clear(
+            self.query.world,
+            &mut self.state.vec,
+            &mut self.state.mapping_dirtys,
+        );
         Ok(true)
+    }
+
+    pub fn delay_alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
+        let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
+        self.state.alter(
+            &self.query.world,
+            local_index,
+            e,
+            addr.row,
+            components,
+            self.query.tick,
+        );
+        self.is_delay = true;
+        Ok(true)
+    }
+}
+
+impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
+    for Alterer<'world, Q, F, A, D>
+{
+    fn drop(&mut self) {
+        if self.is_delay{
+            self.state.state.clear(
+                self.query.world,
+                &mut self.state.vec,
+                &mut self.state.mapping_dirtys,
+            );
+        }
     }
 }
 pub struct Alter<
@@ -402,9 +439,9 @@ impl AState {
         if len == 0 {
             self.map_start = index.index();
         }
-        println!("push_map: {:?}", (index, len, self.map_start));
+        // println!("push_map: {:?}", (index, len, self.map_start));
         let index = index.index() - self.map_start;
-        self.map.insert(index, len.into());
+        self.map.insert_value(index, len.into());
     }
     // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
     pub(crate) fn clear<'a>(

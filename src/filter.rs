@@ -37,7 +37,7 @@ pub trait FilterComponents {
     ) -> Self::Filter<'w>;
 
     fn filter<'w>(_fetch: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
-        true
+        false
     }
 }
 

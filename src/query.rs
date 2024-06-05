@@ -260,7 +260,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         entity: Entity,
         // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
     ) -> Result<Q::Item<'w>, QueryError> {
-        // println!("get1======{:?}", (entity, self.map.len()));
         let addr = *self.check(world, entity /* cache_mapping, */)?;
 
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  ar.name()));
@@ -325,6 +324,7 @@ impl QState {
     // 新增的原型
     pub fn add_archetype(&mut self, ar: &ShareArchetype, index: ArchetypeIndex) {
         // 判断原型是否和查询相关
+        // println!("add_archetype======{:?}", (ar.name(), self.related.relate(ar, 0), &self.related));
         if !self.related.relate(ar, 0) {
             return;
         }
@@ -347,7 +347,7 @@ impl QState {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity(entity)),
         };
-        // println!("addr======{:?}", (entity, addr));
+        println!("check addr======{:?}", (entity, &addr));
         if !self.bit_set.contains(
             addr.archetype_index()
                 .index()
@@ -450,15 +450,18 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     }
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
+            // println!("iter_normal: {:?}", (self.e, self.row, self.ar.name()));
             if self.row.0 > 0 {
                 self.row.0 -= 1;
                 self.e = self.ar.get(self.row);
                 // 要求条目不为空
                 // println!("iter_normal: {:?}", (self.e, self.row));
                 if !self.e.is_null() {
+                    // println!("iter_normal1111: {:?}", (self.e, self.row));
                     if F::filter(unsafe { &self.fetch.assume_init_mut().1 }, self.row, self.e) {
                         continue;
                     }
+                    // println!("iter_normal2222: {:?}", (self.e, self.row));
                     let item =
                         Q::fetch(unsafe { &self.fetch.assume_init_mut().0 }, self.row, self.e);
                     return Some(item);
