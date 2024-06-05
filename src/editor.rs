@@ -11,7 +11,7 @@ use pi_null::Null;
 use crate::{
     alter::{AState, ArchetypeMapping},
     archetype::{ArchetypeIndex, ArchetypeInfo, Row},
-    insert::Bundle,
+    insert::{Bundle, BundleExt},
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
     system::SystemMeta,
@@ -45,7 +45,7 @@ impl<'w> EntityEditor<'w> {
     fn get_entity_prototype(&self, e: Entity) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.world.get_entity_prototype(e)
     }
-    pub fn add_components(
+    pub fn add_components_by_index(
         &mut self,
         e: Entity,
         components: &[ComponentIndex],
@@ -57,7 +57,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    pub fn remove_components(
+    pub fn remove_components_by_index(
         &mut self,
         e: Entity,
         components: &[ComponentIndex],
@@ -69,7 +69,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    pub fn alter_components(
+    pub fn alter_components_by_index(
         &mut self,
         e: Entity,
         components: &[(ComponentIndex, bool)],
@@ -243,6 +243,32 @@ impl<'w> EntityEditor<'w> {
 
     pub fn contains_entity(&self, e: Entity) -> bool {
         self.world.contains_entity(e)
+    }
+
+    /// 添加多个组件，不能递归
+    pub fn add_components<B: BundleExt + 'static>(
+        &mut self,
+        e: Entity,
+        components: B,
+    ) -> Result<(), QueryError> {
+        B::add_components(self, e, components)
+    }
+
+    /// 添加多个组件, 可以递归
+    pub fn add_bundle<B: BundleExt + 'static>(
+        &mut self,
+        e: Entity,
+        components: B,
+    ) -> Result<(), QueryError> {
+        B::add_bundle(self, e, components)
+    }
+
+    /// 插入多个组件，返回对应的实体,不能递归
+    pub fn insert_components<B: BundleExt + 'static>(
+        &mut self,
+        components: B,
+    ) -> Result<Entity, QueryError> {
+        B::insert_components(self,  components)
     }
 }
 
