@@ -263,13 +263,24 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         // println!("get1======{:?}", (entity, self.map.len()));
         let addr = *self.check(world, entity /* cache_mapping, */)?;
 
-        let ar = unsafe { world.get_archetype_unchecked(addr.archetype_index()) };
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  ar.name()));
-        let filter = F::init_filter(world, &self.filter_state, ar, tick, self.last_run);
+        let filter = F::init_filter(
+            world,
+            &self.filter_state,
+            addr.archetype_index(),
+            tick,
+            self.last_run,
+        );
         if F::filter(&filter, addr.row, entity) {
             return Err(QueryError::NoMatchEntity(entity));
         }
-        let mut fetch = Q::init_fetch(world, &self.fetch_state, ar, tick, self.last_run);
+        let mut fetch = Q::init_fetch(
+            world,
+            &self.fetch_state,
+            addr.archetype_index(),
+            tick,
+            self.last_run,
+        );
         Ok(Q::fetch(&mut fetch, addr.row, entity))
     }
 }
@@ -423,14 +434,14 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             let fetch = Q::init_fetch(
                 self.world,
                 &self.state.fetch_state,
-                self.ar,
+                self.ar.index(),
                 self.tick,
                 self.state.last_run,
             );
             let filter = F::init_filter(
                 self.world,
                 &self.state.filter_state,
-                self.ar,
+                self.ar.index(),
                 self.tick,
                 self.state.last_run,
             );

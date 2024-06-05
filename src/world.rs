@@ -783,7 +783,7 @@ impl World {
     // pub fn get_archetype(&self, id: u128) -> Option<Ref<u128, ShareArchetype>> {
     //     self.archetype_map.get(&id)
     // }
-    pub fn index_archetype(&self, index: ArchetypeIndex) -> Option<&ShareArchetype> {
+    pub fn get_archetype(&self, index: ArchetypeIndex) -> Option<&ShareArchetype> {
         self.archetype_arr.get(index.0 as usize)
     }
     pub(crate) unsafe fn get_archetype_unchecked(&self, index: ArchetypeIndex) -> &ShareArchetype {

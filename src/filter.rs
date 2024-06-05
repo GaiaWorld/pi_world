@@ -10,25 +10,12 @@ use pi_proc_macros::all_tuples;
 use pi_share::Share;
 use std::marker::PhantomData;
 
-use crate::archetype::{Archetype, ComponentInfo, Row, COMPONENT_TICK};
+use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::{Entity, Tick};
 use crate::system::SystemMeta;
 use crate::world::{ComponentIndex, World};
 
-// #[derive(Default, Clone, Copy, Debug)]
-// pub enum ListenType {
-//     #[default]
-//     Destroyed, // 实体销毁，用列表来记录变化
-//     Changed(ComponentIndex), // 组件改变，包括新增，用列表来记录变化
-//     // Removed(ComponentIndex), // 组件删除，用列表来记录变化
-// }
-
-// pub trait FilterArchetype {
-//     fn filter_archetype(_world: &World, _archetype: &Archetype) -> bool {
-//         false
-//     }
-// }
 pub trait FilterComponents {
     // const LISTENER_COUNT: usize;
     type Filter<'w>;
@@ -44,7 +31,7 @@ pub trait FilterComponents {
     fn init_filter<'w>(
         world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Filter<'w>;
@@ -83,7 +70,7 @@ impl<T: 'static> FilterComponents for Without<T> {
     fn init_filter<'w>(
         _world: &'w World,
         _state: &'w Self::State,
-        _archetype: &'w Archetype,
+        _index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Filter<'w> {
@@ -120,7 +107,7 @@ impl<T: 'static> FilterComponents for With<T> {
     fn init_filter<'w>(
         _world: &'w World,
         _state: &'w Self::State,
-        _archetype: &'w Archetype,
+        _index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Filter<'w> {
@@ -147,11 +134,11 @@ impl<T: 'static> FilterComponents for Changed<T> {
     fn init_filter<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         last_run: Tick,
     ) -> Self::Filter<'w> {
-        (state.blob_ref_unchecked(archetype.index()), last_run)
+        (state.blob_ref_unchecked(index), last_run)
     }
 
     #[inline(always)]
@@ -181,12 +168,12 @@ macro_rules! impl_tuple_filter {
             fn init_filter<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
-                _archetype: &'w Archetype,
+                _index: ArchetypeIndex,
                 _tick: Tick,
                 _last_run: Tick,
                 ) -> Self::Filter<'w> {
                 let ($($state,)*) = _state;
-                ($($name::init_filter(_world, $state, _archetype, _tick, _last_run),)*)
+                ($($name::init_filter(_world, $state, _index, _tick, _last_run),)*)
             }
 
             #[allow(clippy::unused_unit)]
@@ -199,15 +186,6 @@ macro_rules! impl_tuple_filter {
                 false
             }
 
-            // fn init_listeners(_world: &mut World, _listeners: &mut Vec<ComponentIndex>) {
-            //     ($($name::init_listeners(_world, _listeners),)*);
-            // }
-            // fn archetype_filter(_world: &World, _archetype: &Archetype) -> bool {
-            //     $(
-            //         if $name::archetype_filter(_world, _archetype){return true};
-            //     )*
-            //     false
-            // }
         }
         impl<$($name: FilterComponents),*> FilterComponents for Or<($($name,)*)> {
             type Filter<'w> = ($($name::Filter<'w>,)*);
@@ -220,25 +198,18 @@ macro_rules! impl_tuple_filter {
                 _meta.relate(crate::system::Relation::End);
                 s
             }
-            // fn filter_archetype(_world: &World, _state: &Self::State, _archetype: &Archetype) -> bool {
-            //     let ($($state,)*) = _state;
-            //     $(
-            //         if !$name::filter_archetype(_world, $state, _archetype){return false};
-            //     )*
-            //     true
-            // }
 
             #[allow(clippy::unused_unit)]
             #[inline]
             fn init_filter<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
-                _archetype: &'w Archetype,
+                _index: ArchetypeIndex,
                 _tick: Tick,
                 _last_run: Tick,
                 ) -> Self::Filter<'w> {
                 let ($($state,)*) = _state;
-                ($($name::init_filter(_world, $state, _archetype, _tick, _last_run),)*)
+                ($($name::init_filter(_world, $state, _index, _tick, _last_run),)*)
             }
 
             #[allow(clippy::unused_unit)]

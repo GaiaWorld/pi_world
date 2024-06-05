@@ -7,10 +7,7 @@ use std::ops::{Deref, DerefMut};
 use pi_proc_macros::all_tuples;
 use pi_share::Share;
 
-use crate::archetype::{
-    Archetype, ArchetypeIndex, ComponentInfo, Row,
-    COMPONENT_TICK,
-};
+use crate::archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::FromWorld;
 use crate::system::SystemMeta;
@@ -53,7 +50,7 @@ pub trait FetchComponents {
     fn init_fetch<'w>(
         world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w>;
@@ -85,7 +82,7 @@ impl FetchComponents for Entity {
     fn init_fetch<'w>(
         _world: &'w World,
         _state: &'w Self::State,
-        _archetype: &'w Archetype,
+        _index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
@@ -104,7 +101,12 @@ impl<T: 'static> FetchComponents for &T {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::Read(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(0),
+            crate::system::Relation::Read(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ);
@@ -116,11 +118,11 @@ impl<T: 'static> FetchComponents for &T {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        state.blob_ref_unchecked(archetype.index())
+        state.blob_ref_unchecked(index)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
@@ -135,7 +137,12 @@ impl<T: 'static> FetchComponents for &mut T {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::Write(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(0),
+            crate::system::Relation::Write(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
@@ -147,11 +154,11 @@ impl<T: 'static> FetchComponents for &mut T {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -166,7 +173,12 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(COMPONENT_TICK), crate::system::Relation::Read(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::Read(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ)
@@ -178,11 +190,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -197,7 +209,12 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(COMPONENT_TICK), crate::system::Relation::Write(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::Write(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
@@ -208,11 +225,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        ColumnTick::new(state.blob_ref_unchecked(archetype.index()), tick, last_run)
+        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -227,7 +244,12 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(COMPONENT_TICK), crate::system::Relation::OptRead(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::OptRead(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
@@ -239,18 +261,15 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        if !archetype.contains(state.info().index) {
-            return None;
+        if let Some(column) = state.blob_ref(index) {
+            Some(ColumnTick::new(column, tick, last_run))
+        } else {
+            None
         }
-        Some(ColumnTick::new(
-            state.blob_ref_unchecked(archetype.index()),
-            tick,
-            last_run,
-        ))
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
@@ -268,7 +287,12 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(COMPONENT_TICK), crate::system::Relation::OptWrite(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::OptWrite(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
@@ -280,16 +304,12 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        if archetype.contains(state.info().index) {
-            Some(ColumnTick::new(
-                state.blob_ref_unchecked(archetype.index()),
-                tick,
-                last_run,
-            ))
+        if let Some(column) = state.blob_ref(index) {
+            Some(ColumnTick::new(column, tick, last_run))
         } else {
             None
         }
@@ -310,7 +330,12 @@ impl<T: 'static> FetchComponents for Option<&T> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::OptRead(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(0),
+            crate::system::Relation::OptRead(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
@@ -322,12 +347,12 @@ impl<T: 'static> FetchComponents for Option<&T> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        if archetype.contains(state.info().index) {
-            Some(state.blob_ref_unchecked(archetype.index()))
+        if let Some(column) = state.blob_ref(index) {
+            Some(column)
         } else {
             None
         }
@@ -348,7 +373,12 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::OptWrite(0usize.into())).1
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(0),
+            crate::system::Relation::OptWrite(0usize.into()),
+        )
+        .1
     }
     // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
     //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
@@ -360,16 +390,12 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         tick: Tick,
         last_run: Tick,
     ) -> Self::Fetch<'w> {
-        if archetype.contains(state.info().index) {
-            Some(ColumnTick::new(
-                state.blob_ref_unchecked(archetype.index()),
-                tick,
-                last_run,
-            ))
+        if let Some(column) = state.blob_ref(index) {
+            Some(ColumnTick::new(column, tick, last_run))
         } else {
             None
         }
@@ -393,45 +419,28 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     type State = (Share<Column>, SingleResource);
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        let column = meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::OptRead(0usize.into())).1;
+        let column = meta
+            .component_relate(
+                world,
+                ComponentInfo::of::<T>(0),
+                crate::system::Relation::OptRead(0usize.into()),
+            )
+            .1;
         let _index = world.init_single_res::<T>();
         (
             column,
             world.get_single_res_any(&TypeId::of::<T>()).unwrap(),
         )
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
-    // }
-    // fn res_depend(
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if single && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::WRITE, true)
-    //     }
-    // }
-
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     let index = archetype.get_column_index_by_tid(&world, &TypeId::of::<T>());
-    //     if index.is_null() {
-    //         Err(world.get_single_res_any(&TypeId::of::<T>()).unwrap())
-    //     } else {
-    //         Ok(index)
-    //     }
-    // }
-
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        if archetype.contains(state.0.info().index) {
-            Ok(state.0.blob_ref_unchecked(archetype.index()))
+        if let Some(column) = state.0.blob_ref(index) {
+            Ok(column)
         } else {
             Err(unsafe { &mut *state.1.downcast::<T>() })
         }
@@ -450,20 +459,25 @@ impl<T: 'static> FetchComponents for Has<T> {
     type Fetch<'w> = bool;
     type Item<'w> = bool;
     type ReadOnly = Has<T>;
-    type State = ComponentIndex;
+    type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.component_relate(world, ComponentInfo::of::<T>(0), crate::system::Relation::OptRead(0usize.into())).0
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(0),
+            crate::system::Relation::OptRead(0usize.into()),
+        )
+        .1
     }
 
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
-        archetype.contains(*state)
+        state.contains(index)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
@@ -482,12 +496,13 @@ impl FetchComponents for ArchetypeName<'_> {
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {}
 
     fn init_fetch<'w>(
-        _world: &'w World,
+        world: &'w World,
         _state: &'w Self::State,
-        archetype: &'w Archetype,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
+        let archetype = world.get_archetype(index).unwrap();
         (archetype.name(), archetype.index())
     }
 
@@ -642,32 +657,17 @@ macro_rules! impl_tuple_fetch {
             fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {
                 ($($name::init_state(_world, _meta),)*)
             }
-            // fn archetype_depend(_world: &World, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {
-            //     ($($name::archetype_depend(_world, _archetype, _result),)*);
-            // }
-            // fn res_depend(_res_tid: &TypeId, _res_name: &Cow<'static, str>, _single: bool, _result: &mut Flags) {
-            //     ($($name::res_depend(_res_tid, _res_name, _single, _result),)*);
-            // }
-
-            // fn init_statee(_world: &World, _archetype: &Archetype) -> Self::State {
-            //     ($(
-            //         $name::init_statee(_world, _archetype),
-            //     )*)
-            // }
-
-
             #[allow(clippy::unused_unit)]
             fn init_fetch<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
-                _archetype: &'w Archetype,
+                _index: ArchetypeIndex,
                 _tick: Tick,
                 _last_run: Tick,
                 ) -> Self::Fetch<'w> {
                 let ($($state,)*) = _state;
-                ($($name::init_fetch(_world, $state, _archetype, _tick, _last_run),)*)
+                ($($name::init_fetch(_world, $state, _index, _tick, _last_run),)*)
             }
-
 
             #[allow(clippy::unused_unit)]
             fn fetch<'w>(
