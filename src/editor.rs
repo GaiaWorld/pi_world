@@ -1,8 +1,5 @@
 use std::{
-    borrow::Cow,
-    fmt::Debug,
-    hash::{DefaultHasher, Hash, Hasher},
-    mem::transmute,
+    borrow::Cow, fmt::Debug, hash::{DefaultHasher, Hash, Hasher}, mem::transmute
 };
 
 use pi_map::{hashmap::HashMap, Map};
@@ -11,7 +8,7 @@ use pi_null::Null;
 use crate::{
     alter::{AState, ArchetypeMapping},
     archetype::{ArchetypeIndex, ArchetypeInfo, Row},
-    insert::{Bundle},
+    insert::Bundle,
     prelude::{Entity, Mut, QueryError, Tick, World},
     query::ArchetypeLocalIndex,
     system::SystemMeta,
@@ -42,9 +39,11 @@ impl<'w> EntityEditor<'w> {
     fn state(&mut self) -> &mut EditorState {
         &mut self.world.entity_editor_state
     }
-    fn get_entity_prototype(&self, e: Entity) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
+    fn _get_entity_prototype(&self, e: Entity) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.world.get_entity_prototype(e)
     }
+
+    /// 根据组件id列表一次添加或删除多个相应组件(true 为增加， false 为删除)
     pub fn add_components_by_index(
         &mut self,
         e: Entity,
@@ -57,6 +56,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
+    /// 根据组件id列表一次删除多个相应组件
     pub fn remove_components_by_index(
         &mut self,
         e: Entity,
@@ -69,6 +69,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
+    /// 根据组件id列表一次添加或删除多个相应组件(true 为增加， false 为删除)
     pub fn alter_components_by_index(
         &mut self,
         e: Entity,
@@ -82,7 +83,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    fn alter_components_impl(&mut self, e: Entity) -> Result<(), QueryError> {
+    fn alter_components_impl(& self, e: Entity) -> Result<(), QueryError> {
         let ptr: *const EditorState = &self.world.entity_editor_state;
         let editor_state = unsafe { &mut *(ptr as *mut EditorState) };
         editor_state.tmp.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
@@ -146,8 +147,10 @@ impl<'w> EntityEditor<'w> {
         // println!("edit--------: {:?}", (e, addr.row, dst_row, &mapping.dst));
         Ok(())
     }
+
+    /// 根据组件id列表一次插入多个相应组件
     // todo 参数components改为sort_components或&mut自己排序
-    pub fn insert_entity(&mut self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+    pub fn insert_entity(& self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
         let components = components
             .iter()
             .map(|index| self.world.get_column(*index).unwrap().clone())
@@ -165,6 +168,7 @@ impl<'w> EntityEditor<'w> {
     }
     // todo editer 应该支持Insert的Bundle
 
+    /// 删除实体
     pub fn destroy(&self, e: Entity) -> Result<(), QueryError> {
         let addr = match self.world.entities.get(e) {
             Some(v) => v,
@@ -186,10 +190,12 @@ impl<'w> EntityEditor<'w> {
         self.world.alloc_entity()
     }
 
+    /// 获取组件只读引用
     pub fn get_component<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
         self.world.get_component::<B>(e)
     }
 
+    /// 获取组件可写引用
     pub fn get_component_mut<B: Bundle + 'static>(
         &mut self,
         e: Entity,
@@ -205,6 +211,7 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_mut::<B>(e).unwrap()
     }
 
+    /// 根据组件id获取组件只读引用（性能相较get_component更好）
     pub fn get_component_by_index<B: Bundle + 'static>(
         &self,
         e: Entity,
@@ -213,6 +220,7 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_by_index::<B>(e, index)
     }
 
+    /// 根据组件id获取组件可写引用（性能相较get_component_mut更好）
     pub fn get_component_mut_by_id<B: Bundle + 'static>(
         &mut self,
         e: Entity,
@@ -237,15 +245,17 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_mut_by_index(e, index).unwrap()
     }
 
+    /// 获取组件id
     pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
         self.world.init_component::<B>()
     }
 
+    /// 是否包含实体
     pub fn contains_entity(&self, e: Entity) -> bool {
         self.world.contains_entity(e)
     }
 
-    /// 添加多个组件，不能递归
+    /// 添加多个组件
     pub fn add_components<B: Bundle + 'static>(
         &mut self,
         e: Entity,
@@ -256,16 +266,7 @@ impl<'w> EntityEditor<'w> {
         Ok(())
     }
 
-    // /// 添加多个组件, 可以递归
-    // pub fn add_bundle<B: BundleExt + 'static>(
-    //     &mut self,
-    //     e: Entity,
-    //     components: B,
-    // ) -> Result<(), QueryError> {
-    //     B::add_bundle(self, e, components)
-    // }
-
-    /// 插入多个组件，返回对应的实体,不能递归
+    /// 插入多个组件，返回对应的实体
     pub fn insert_components<B: Bundle + 'static>(
         &mut self,
         components: B,

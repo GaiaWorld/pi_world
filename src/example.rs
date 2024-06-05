@@ -23,7 +23,7 @@ pub struct Age6(usize);
 pub struct Age7(usize);
 #[derive(Component)]
 pub struct Age8(usize); 
-#[derive(Component)]
+#[derive(Component, Debug, Default)]
 pub struct Age9(usize);
 #[derive(Component, Debug, Default)]
 pub struct Age10(usize);
@@ -1844,33 +1844,37 @@ mod test_mod {
             println!("insert_components end!!! e: {:?}", (e1, e2));
         }
 
-        pub fn query2(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
+        pub fn add_components(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
             println!("query2 start!!!");
             let mut len = 0;
             q.iter().for_each(|(e, a0)|{
                 len += 1;
                 println!("v: {:?}", (e, a0));
-                let e = editor.alloc_entity();
-                editor.add_components(e, (Age10(10),(Age1(1), Age2(2)))).unwrap();
+                editor.add_components(e, (Age10(10), (Age1(1), Age2(2)))).unwrap();
+                editor.add_components(e, (Age9(9),)).unwrap();
+
+                let e2 = editor.alloc_entity();
+                editor.add_components(e2, (Age10(10),(Age1(1), Age2(2)))).unwrap();
+                editor.add_components(e2, (Age9(9),)).unwrap();
             });
             println!("query2 end!!!");
             assert_eq!(len, 2);
         }
 
-        pub fn query3(q: Query<(Entity, &Age1, &Age10)>){
+        pub fn query3(q: Query<(Entity, &Age9, &Age1), (With<Age10>, Changed<Age2>)>){
             println!("query3 start!!!");
             let mut len = 0;
-            q.iter().for_each(|(e, a1, a10 )|{
+            q.iter().for_each(|(e, a9, a1 )|{
                 len += 1;
-                println!("v: {:?}", (e, a1, a10));
+                println!("v: {:?}", (e, a9, a1));
             });
             println!("query3 end!!!");
-            assert_eq!(len, 2);
+            assert_eq!(len, 4);
         }
 
        
         app.add_system(Update, insert_components);
-        app.add_system(Update, query2);
+        app.add_system(Update, add_components);
         app.add_system(Update, query3);
         app.run();
 
