@@ -278,6 +278,7 @@ impl World {
             self.update_tick_info(index, t);
             info.tick_info = t;
         }
+        
         (index, Some(info.tick_info))
     }
     /// 更新全部的原型的相关组件信息的tick_removed

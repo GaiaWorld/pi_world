@@ -119,7 +119,9 @@ impl Schedule {
             Some(r) => r,
             None => return,
         };
-
+        
+        #[cfg(feature = "trace")] 
+        let update_span = tracing::warn_span!("update").entered();
         // println!("run:{:?}", (schedule, self.schedule_graph.get_mut(schedule).is_some()));
         // let g = self.schedule_graph.get_mut(schedule).unwrap();
         // 每次运行，增加1次tick
@@ -130,7 +132,9 @@ impl Schedule {
                 Self::run_graph(world, rt, stage, &self.systems);
             }
         }
-
+        
+        #[cfg(feature = "trace")] 
+        let settle_by = tracing::warn_span!("settle_by").entered();
         if schedule == &MainSchedule.intern() {
             world.settle_by(&mut self.action, &mut self.set);
         }

@@ -206,21 +206,28 @@ impl ExecGraph {
             sys.initialize(world);
         }
         // 遍历world上的单例资源，测试和system的读写关系
-        for r in world.single_res_map.iter() {
-            self.add_res_node(&systems, range.clone(), r.key(), &r.value().2, true, world);
-        }
+        // for r in world.single_res_map.iter() {
+        //     self.add_res_node(&systems, range.clone(), r.key(), &r.value().2, true, world);
+        // }
         // 遍历world上的多例资源，测试和system的读写关系
-        for r in world.multi_res_map.iter() {
-            self.add_res_node(&systems, range.clone(), r.key(), r.value().name(), false, world);
-        }
+        // for r in world.multi_res_map.iter() {
+        //     self.add_res_node(&systems, range.clone(), r.key(), r.value().name(), false, world);
+        // }
         // 遍历已有的原型，添加原型节点，添加原型和system的依赖关系产生的边
-        for r in world.archetype_arr.iter() {
-            self.add_archetype_node(&systems, range.clone(), r, world);
-        }
+        // for r in world.archetype_arr.iter() {
+        //     self.add_archetype_node(&systems, range.clone(), r, world);
+        // }
         log::trace!("res & archtypes initialized, {:?}", Dot::with_config(&self, Config::empty()));
         let _ = std::fs::write("system_graph".to_string() + self.1.as_str() + ".dot", Dot::with_config(&self, Config::empty()).to_string());
 
-        self.check();
+        let sort = self.check().into_iter().filter(|i| {
+            match &inner.nodes[*i].label {
+                NodeType::System(_, _) => true,
+                _ => false,
+            } 
+        }).collect::<Vec<usize>>();
+        // toop 排序
+        self.2 = sort;
         // nodes和edges整理AppendVec
         let inner = Share::<GraphInner>::get_mut(&mut self.0).unwrap();
         inner.nodes.settle();
@@ -250,8 +257,7 @@ impl ExecGraph {
         //     self.to_len()
         // );
         
-        // toop 排序
-        self.2 = self.check();
+        
 
     }
     // 添加单例和多例节点，添加单例多例和system的依赖关系产生的边。
@@ -428,7 +434,8 @@ impl ExecGraph {
 
         // 从graph的froms开始执行
         // println!("run !!!!===={:?}", (&self.1, inner.froms.len(), inner.froms.iter().map(|r| {r.index()}).collect::<Vec<usize>>()));
-        
+        // println!("run====={:?}, {:?}", &self.1,  self.2.len());
+        // let t = pi_time::Instant::now();
         for i in self.2.iter() {
             let node = unsafe { inner.nodes.load_unchecked(*i) };
             
@@ -466,6 +473,7 @@ impl ExecGraph {
             }
 
         }
+        // println!("run====={:?}, {:?}, {:?}", &self.1,  self.2.len(), pi_time::Instant::now() - t);
         // println!("run1 !!!!===={}", inner.froms.len());
         // let r = inner.receiver.recv().await;
         // println!("run2 !!!!===={}", inner.froms.len());
