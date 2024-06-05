@@ -646,7 +646,7 @@ impl World {
     }
 
     // /// 增加和删除实体
-    // pub fn alter_components(
+    // pub fn alter_components_by_index(
     //     &mut self,
     //     e: Entity,
     //     components: &[(ComponentIndex, bool)],

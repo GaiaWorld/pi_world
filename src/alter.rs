@@ -31,6 +31,7 @@ use crate::insert::Bundle;
 use crate::query::{ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
+use crate::utils::VecExt;
 use crate::world::*;
 
 pub struct Alterer<
@@ -402,9 +403,9 @@ impl AState {
         if len == 0 {
             self.map_start = index.index();
         }
-        println!("push_map: {:?}", (index, len, self.map_start));
+        // println!("push_map: {:?}", (index, len, self.map_start));
         let index = index.index() - self.map_start;
-        self.map.insert(index, len.into());
+        self.map.insert_value(index, len.into());
     }
     // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
     pub(crate) fn clear<'a>(

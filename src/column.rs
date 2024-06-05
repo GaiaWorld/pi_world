@@ -45,10 +45,16 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
+        if index.index() == 32 {
+            println!("blob_ref_unchecked, {:p}", unsafe { self.arr.load_unchecked(index.index())});
+        }
         BlobRef::new(unsafe { self.arr.load_unchecked(index.index()) }, &self.info)
     }
     #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
+        if index.index() == 32 {
+            println!("blob_ref, {:p}", unsafe { self.arr.load_unchecked(index.index())});
+        }
         let b = match self.arr.load(index.index()){
             Some(b) => b,
             _ => return None,
@@ -144,6 +150,8 @@ pub(crate) struct BlobTicks {
 pub struct BlobRef<'a> {
     pub(crate) blob: &'a BlobTicks,
     pub(crate) info: &'a ComponentInfo,
+    // #[cfg(debug_assertions)]
+
 }
 
 impl<'a> BlobRef<'a> {
