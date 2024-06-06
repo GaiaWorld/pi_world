@@ -6,6 +6,7 @@
 #![feature(sync_unsafe_cell)]
 #![feature(test)]
 #![feature(specialization)]
+#![allow(invalid_type_param_default)]
 #[warn(async_fn_in_trait)]
 
 extern crate test;

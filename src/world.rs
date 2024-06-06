@@ -165,15 +165,19 @@ impl World {
         #[cfg(debug_assertions)]
         match std::env::var("ECS_DEBUG") {
             Ok(r) => {
-                let r = r
-                    .split(",")
-                    .map(|r| r.parse::<usize>().unwrap())
-                    .collect::<Vec<usize>>();
+                let r = r.split(",").map(|r| {
+                    if r == "*" {
+                        std::usize::MAX
+                    } else {
+                        r.parse::<usize>().unwrap()
+                    }
+
+                }).collect::<Vec<usize>>();
                 if r.len() == 2 {
                     ARCHETYPE_INDEX.store(r[0], Ordering::Relaxed);
-                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed);
+                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed); 
                 }
-            }
+            },
             _ => (),
         };
 
@@ -236,10 +240,7 @@ impl World {
         EntityEditor::new(self)
     }
     /// 获得实体的原型信息
-    pub fn get_entity_prototype(
-        &self,
-        entity: Entity,
-    ) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
+    pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.entities.get(entity).map(|e| {
             let ar_index = e.archetype_index();
             let ar = self.archetype_arr.get(ar_index.index()).unwrap();
@@ -296,7 +297,6 @@ impl World {
                 return (index, c);
             }
         };
-        let c = unsafe { self.component_arr.get_unchecked(index.index()) };
         let column = unsafe { self.component_arr.get_unchecked_mut(index.index()) };
         let c = unsafe { Share::get_mut_unchecked(column) };
         let t = c.info.tick_info | tick_info;
@@ -347,7 +347,7 @@ impl World {
         ArchetypeInfo::sort(vec)
     }
     /// 创建一个查询器
-    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
+    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
     ) -> Queryer<Q, F> {
         let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
@@ -370,7 +370,7 @@ impl World {
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
-        alter_state.align(self, &query_state.archetypes);
+        alter_state.align(self,  &query_state.archetypes);
         Alterer::new(self, query_state, alter_state)
     }
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
@@ -664,7 +664,7 @@ impl World {
                 let t = self.tick();
                 let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
                 Ok(unsafe { transmute(value) })
-            }
+            },
             None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
         }
     }
@@ -927,11 +927,11 @@ impl World {
         // 整理原型数组
         self.archetype_arr.settle(0);
         let len = self.archetype_arr.len();
-        // 整理列数组
         if self.archetype_arr_len < len {
+            // 整理列数组
             for c in self.component_arr.iter_mut() {
                 let c = unsafe { Share::get_mut_unchecked(c) };
-                c.arr.settle(len, 0, 1);
+                c.settle();
             }
             self.archetype_arr_len = len;
         }
@@ -987,14 +987,14 @@ unsafe impl Send for SingleResource {}
 unsafe impl Sync for SingleResource {}
 
 #[derive(Debug, Clone)]
-pub struct MultiResource {
+pub struct MultiResource{
     vec: Share<SyncUnsafeCell<Vec<SingleResource>>>,
     tick: Share<ShareUsize>,
     name: Cow<'static, str>,
 }
 impl MultiResource {
     fn new(name: Cow<'static, str>) -> Self {
-        Self {
+        Self{
             vec: Share::new(SyncUnsafeCell::new(Vec::new())),
             tick: Share::new(ShareUsize::new(0)),
             name,
@@ -1043,7 +1043,10 @@ unsafe impl Send for EntityAddr {}
 impl EntityAddr {
     #[inline(always)]
     pub(crate) fn new(index: ArchetypeIndex, row: Row) -> Self {
-        EntityAddr { index, row }
+        EntityAddr {
+            index,
+            row,
+        }
     }
     #[inline(always)]
     pub(crate) fn is_mark(&self) -> bool {

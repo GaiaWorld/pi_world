@@ -525,5 +525,8 @@ impl Ord for ComponentInfo {
 
 /// 获得指定类型的释放函数
 pub fn get_drop<T>() -> Option<fn(*mut u8)> {
-    needs_drop::<T>().then_some(|ptr: *mut u8| unsafe { (ptr as *mut T).drop_in_place() })
+    needs_drop::<T>().then_some(|ptr: *mut u8| {
+        println!("drop!!!!!!!!!! {:p}", ptr);
+        unsafe { (ptr as *mut T).drop_in_place() }
+    })
 }

@@ -209,7 +209,7 @@ impl Table {
         // println!("Table settle_columns, {:?}", (self.index, len));
         for c in self.sorted_columns.iter_mut() {
             let c = unsafe { Share::get_mut_unchecked(c) };
-            c.settle(self.index, len, additional, vec);
+            c.settle_by_index(self.index, len, additional, vec);
         }
     }
 
@@ -426,6 +426,8 @@ impl Table {
 }
 impl Drop for Table {
     fn drop(&mut self) {
+        println!("drop table {:?}", self.index);
+        // 释放每个列中还存在的row
         let len = self.len().index();
         if len == 0 {
             return;

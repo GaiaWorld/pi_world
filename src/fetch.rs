@@ -11,7 +11,7 @@ use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::FromWorld;
 use crate::system::SystemMeta;
-use crate::world::{Entity, SingleResource, Tick, World};
+use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -478,6 +478,33 @@ impl<T: 'static> FetchComponents for Has<T> {
         _last_run: Tick,
     ) -> Self::Fetch<'w> {
         state.contains(index)
+    }
+
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
+        *fetch
+    }
+}
+
+#[derive(Debug)]
+pub struct Component<T: 'static>(pub ComponentIndex, PhantomData<T>);
+impl<T: 'static> FetchComponents for Component<T> {
+    type Fetch<'w> = ComponentIndex;
+    type Item<'w> = ComponentIndex;
+    type ReadOnly = Component<T>;
+    type State = ComponentIndex;
+
+    fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
+        world.init_component::<T>()
+    }
+
+    fn init_fetch<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        _index: ArchetypeIndex,
+        _tick: Tick,
+        _last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        *state
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {

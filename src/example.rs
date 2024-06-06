@@ -48,6 +48,14 @@ pub struct Age19(usize);
 #[derive(Component)]
 pub struct Age20(usize);
 
+#[derive(Component, Debug)]
+pub struct Age21(Vec<u64>);
+
+impl Drop for Age21 {
+    fn drop(&mut self) {
+        println!("Age21 drop, {:p} {}", self, self.0.len());
+    }
+}
 // #[derive(Bundle)]
 // pub struct Bundle1{
 //     a1: Age1,
@@ -232,7 +240,7 @@ mod test_mod {
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
         let mut action = Default::default();
-        cc.settle(0usize.into(), 2, 0, &mut action);
+        cc.settle_by_index(0usize.into(), 2, 0, &mut action);
         let mut c = cc.blob_ref_unchecked(0usize.into());
         dbg!(c.get::<Transform>(Row(0)));
         dbg!(c.get::<Transform>(Row(1)));
@@ -1578,7 +1586,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_entity(&scomponents).unwrap();
+            let e = edit.insert_entity_by_index(&scomponents).unwrap();
             println!("alter_add end!! e: {:?}", e);
         }
 
@@ -1684,7 +1692,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_entity(&scomponents).unwrap();
+            let e = edit.insert_entity_by_index(&scomponents).unwrap();
         }
 
         pub fn alter_add2(
@@ -1838,12 +1846,12 @@ mod test_mod {
 
         let mut app = SingleThreadApp::new();
 
-        pub fn insert_components(mut editor: EntityEditor ) {
-            println!("insert_components start!!!");
-            let e1 = editor.insert_components((Age0(10),));
-            let e2 = editor.insert_components((Age0(20),));
+        pub fn insert_entity(mut editor: EntityEditor ) {
+            println!("insert_entity start!!!");
+            let e1 = editor.insert_entity((Age0(10),));
+            let e2 = editor.insert_entity((Age0(20),));
 
-            println!("insert_components end!!! e: {:?}", (e1, e2));
+            println!("insert_entity end!!! e: {:?}", (e1, e2));
         }
 
         pub fn add_components(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
@@ -1875,10 +1883,57 @@ mod test_mod {
         }
 
        
-        app.add_system(Update, insert_components);
+        app.add_system(Update, insert_entity);
         app.add_system(Update, add_components);
         app.add_system(Update, query3);
         app.run();
 
+    }
+
+    #[test] 
+    fn test_editor3() {
+        pub struct EntityRes(Entity);
+
+        let mut app = SingleThreadApp::new();
+
+        pub fn insert_entity(mut editor: EntityEditor ) {
+            println!("insert_entity start!!!");
+            let e1 = editor.insert_entity((Age21(Vec::new()),));
+            let e2 = editor.insert_entity((Age21(Vec::new()),));
+
+            println!("insert_entity end!!! e: {:?}", (e1, e2));
+        }
+
+        pub fn add_components(mut q: Query<(Entity, &mut Age21)>, mut editor: EntityEditor){
+            println!("query2 start!!!");
+            let mut len = 0;
+            q.iter_mut().for_each(|(e, mut a21)|{
+                len += 1;
+                println!("v: {:?}", (e, &a21.0));
+                a21.0 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+                a21.0.push(21);
+                a21.0.push(22);
+            });
+            println!("query2 end!!!");
+            assert_eq!(len, 2);
+        }
+
+        pub fn query3(q: Query<(Entity, &Age21)>){
+            println!("query3 start!!!");
+            let mut len = 0;
+            q.iter().for_each(|(e, a21,  )|{
+                len += 1;
+                println!("v: {:?}", (e, a21));
+            });
+            println!("query3 end!!!");
+            assert_eq!(len, 2);
+        }
+
+       
+        app.add_system(Update, insert_entity);
+        app.add_system(Update, add_components);
+        app.add_system(Update, query3);
+        app.run();
+        println!("=======================end");
     }
 }

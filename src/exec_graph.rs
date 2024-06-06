@@ -33,6 +33,7 @@ use pi_null::Null;
 use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
+use crate::column::COMPONENT_INDEX;
 use crate::dot::{Config, Dot};
 use crate::listener::Listener;
 use crate::safe_vec::SafeVec;
@@ -434,7 +435,10 @@ impl ExecGraph {
 
         // 从graph的froms开始执行
         // println!("run !!!!===={:?}", (&self.1, inner.froms.len(), inner.froms.iter().map(|r| {r.index()}).collect::<Vec<usize>>()));
-        // println!("run====={:?}, {:?}", &self.1,  self.2.len());
+        if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) < usize::MAX 
+        {
+            println!("run====={:?}, {:?}", &self.1,  self.2.len());
+        }
         // let t = pi_time::Instant::now();
         for i in self.2.iter() {
             let node = unsafe { inner.nodes.load_unchecked(*i) };
@@ -454,7 +458,10 @@ impl ExecGraph {
                     // }
                     // NODE_STATUS_RUNNING
                     // node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
-                    // println!("run start===={:?}", sys.name());
+                    if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) < usize::MAX 
+                {
+                    println!("run start===={:?}", sys.name());
+                }
                     #[cfg(feature = "trace")]
                     {
                         use tracing::Instrument;
