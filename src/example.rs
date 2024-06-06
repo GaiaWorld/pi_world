@@ -1578,7 +1578,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_entity(&scomponents).unwrap();
+            let e = edit.insert_entity_by_index(&scomponents).unwrap();
             println!("alter_add end!! e: {:?}", e);
         }
 
@@ -1683,7 +1683,7 @@ mod test_mod {
                 edit.init_component::<Age1>()
             ];
 
-            let e = edit.insert_entity(&scomponents).unwrap();
+            let e = edit.insert_entity_by_index(&scomponents).unwrap();
         }
 
         pub fn alter_add2(
@@ -1836,12 +1836,12 @@ mod test_mod {
 
         let mut app = SingleThreadApp::new();
 
-        pub fn insert_components(mut editor: EntityEditor ) {
-            println!("insert_components start!!!");
-            let e1 = editor.insert_components((Age0(10),));
-            let e2 = editor.insert_components((Age0(20),));
+        pub fn insert_entity(mut editor: EntityEditor ) {
+            println!("insert_entity start!!!");
+            let e1 = editor.insert_entity((Age0(10),));
+            let e2 = editor.insert_entity((Age0(20),));
 
-            println!("insert_components end!!! e: {:?}", (e1, e2));
+            println!("insert_entity end!!! e: {:?}", (e1, e2));
         }
 
         pub fn add_components(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
@@ -1873,7 +1873,7 @@ mod test_mod {
         }
 
        
-        app.add_system(Update, insert_components);
+        app.add_system(Update, insert_entity);
         app.add_system(Update, add_components);
         app.add_system(Update, query3);
         app.run();

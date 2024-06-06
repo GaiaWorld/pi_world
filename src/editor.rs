@@ -150,7 +150,7 @@ impl<'w> EntityEditor<'w> {
 
     /// 根据组件id列表一次插入多个相应组件
     // todo 参数components改为sort_components或&mut自己排序
-    pub fn insert_entity(& self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+    pub fn insert_entity_by_index(& self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
         let components = components
             .iter()
             .map(|index| self.world.get_column(*index).unwrap().clone())
@@ -221,7 +221,7 @@ impl<'w> EntityEditor<'w> {
     }
 
     /// 根据组件id获取组件可写引用（性能相较get_component_mut更好）
-    pub fn get_component_mut_by_id<B: Bundle + 'static>(
+    pub fn get_component_mut_by_index<B: Bundle + 'static>(
         &mut self,
         e: Entity,
         index: ComponentIndex,
@@ -237,7 +237,7 @@ impl<'w> EntityEditor<'w> {
         self.world.get_component_by_index::<B>(e, index).unwrap()
     }
 
-    pub fn get_component_unchecked_mut_by_id<B: Bundle + 'static>(
+    pub fn get_component_unchecked_mut_by_index<B: Bundle + 'static>(
         &mut self,
         e: Entity,
         index: ComponentIndex,
@@ -267,7 +267,7 @@ impl<'w> EntityEditor<'w> {
     }
 
     /// 插入多个组件，返回对应的实体
-    pub fn insert_components<B: Bundle + 'static>(
+    pub fn insert_entity<B: Bundle + 'static>(
         &mut self,
         components: B,
     ) -> Entity {
