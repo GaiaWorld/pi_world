@@ -119,17 +119,11 @@ pub trait Bundle {
     fn insert(item: &Self::Item, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
-pub trait BundleExt: Bundle {
-    fn add_components(
-        editor: &mut EntityEditor,
-        e: Entity,
-        components: Self,
-    ) -> Result<(), QueryError>;
-    fn add_bundle(editor: &mut EntityEditor, e: Entity, components: Self)
-        -> Result<(), QueryError>;
-    fn insert_components(editor: &mut EntityEditor, components: Self)
-        -> Result<Entity, QueryError>;
-}
+// pub trait BundleExt: Bundle {
+//     fn add_components(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
+//     fn add_bundle(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
+//     fn insert_components(editor: &mut EntityEditor, components: Self) -> Result<Entity, QueryError>;
+// }
 
 pub struct TypeItem<T: 'static>(Share<Column>, ArchetypeIndex, PhantomData<T>);
 unsafe impl<T> Sync for TypeItem<T> {}
@@ -184,59 +178,59 @@ macro_rules! impl_tuple_insert {
 }
 all_tuples!(impl_tuple_insert, 0, 32, F, S);
 
-macro_rules! impl_tuple_add {
-    ($(($name: ident, $item:ident, $name1:ident)),*) => {
-        #[allow(non_snake_case)]
-        #[allow(clippy::unused_unit)]
+// macro_rules! impl_tuple_add {
+//     ($(($name: ident, $item:ident, $name1:ident)),*) => {
+//         #[allow(non_snake_case)]
+//         #[allow(clippy::unused_unit)]
 
-        impl<$($name: 'static + BundleExt),*> BundleExt for ($($name,)*) {
-            fn add_components(editor: &mut EntityEditor, e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
-                let components_index = [
-                    $(
-                        (editor.init_component::<$name>(), true),
-                    )*
-                ];
+//         impl<$($name: 'static + BundleExt),*> BundleExt for ($($name,)*) {
+//             fn add_components(editor: &mut EntityEditor, e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
+//                 let components_index = [
+//                     $(
+//                         (editor.init_component::<$name>(), true),
+//                     )*
+//                 ];
 
-                editor.alter_components_by_index(e, &components_index)?;
+//                 editor.alter_components_by_index(e, &components_index)?;
 
-                let ($($item,)*) = components;
-                let [$($name1,)*] = components_index;
+//                 let ($($item,)*) = components;
+//                 let [$($name1,)*] = components_index;
 
-                $(
-                    *editor.get_component_unchecked_mut_by_id(e, $name1.0) = $item;
-                )*
+//                 $(
+//                     *editor.get_component_unchecked_mut_by_id(e, $name1.0) = $item;
+//                 )*
 
-                Ok(())
-            }
+//                 Ok(())
+//             }
 
-            fn add_bundle(_editor: &mut EntityEditor, _e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
-                let ($($item,)*) = components;
+//             fn add_bundle(_editor: &mut EntityEditor, _e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
+//                 let ($($item,)*) = components;
 
-                $(
-                    <$name as BundleExt>::add_bundle(_editor, _e, $item)?;
-                )*
+//                 $(
+//                     <$name as BundleExt>::add_bundle(_editor, _e, $item)?;
+//                 )*
 
-                Ok(())
-            }
+//                 Ok(())
+//             }
 
-            fn insert_components(editor: &mut EntityEditor,  components: Self) -> Result<Entity, crate::prelude::QueryError> {
-                let components_index = [
-                    $(
-                        editor.init_component::<$name>(),
-                    )*
-                ];
+//             fn insert_components(editor: &mut EntityEditor,  components: Self) -> Result<Entity, crate::prelude::QueryError> {
+//                 let components_index = [
+//                     $(
+//                         editor.init_component::<$name>(),
+//                     )*
+//                 ];
 
-                let e = editor.insert_entity(&components_index)?;
-                let ($($item,)*) = components;
-                let [$($name1,)*] = components_index;
+//                 let e = editor.insert_entity(&components_index)?;
+//                 let ($($item,)*) = components;
+//                 let [$($name1,)*] = components_index;
 
-                $(
-                    *editor.get_component_unchecked_mut_by_id(e, $name1) = $item;
-                )*
+//                 $(
+//                     *editor.get_component_unchecked_mut_by_id(e, $name1) = $item;
+//                 )*
 
-                Ok(e)
-            }
-        }
-    };
-}
-all_tuples!(impl_tuple_add, 0, 32, F, S, n);
+//                 Ok(e)
+//             }
+//         }
+//     };
+// }
+// all_tuples!(impl_tuple_add, 0, 32, F, S, n);
