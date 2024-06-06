@@ -1904,8 +1904,8 @@ mod test_mod {
                 len += 1;
                 println!("v: {:?}", (e, &a21.0));
                 a21.0 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
-                // a21.0.push(21);
-                // a21.0.push(22);
+                a21.0.push(21);
+                a21.0.push(22);
             });
             println!("query2 end!!!");
             assert_eq!(len, 2);
