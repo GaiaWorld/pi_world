@@ -11,16 +11,14 @@
 /// 如果sys通过是MultiRes实现的CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在可能在下一帧才会看到。
 ///
 ///
-
-
-
 use crate::alter::{AlterState, Alterer};
 use crate::archetype::{
-    Archetype, ArchetypeInfo, ArchetypeIndex, ComponentInfo, Row, ShareArchetype,
+    Archetype, ArchetypeIndex, ArchetypeInfo, ComponentInfo, Row, ShareArchetype,
     COMPONENT_CHANGED, COMPONENT_TICK,
 };
 use crate::column::{Column, ARCHETYPE_INDEX, COMPONENT_INDEX};
 use crate::editor::{EditorState, EntityEditor};
+use crate::event::EventRecord;
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, Inserter};
@@ -28,12 +26,10 @@ use crate::insert_batch::InsertBatchIter;
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::prelude::Mut;
 use crate::query::{QueryError, QueryState, Queryer};
-use crate::event::EventRecord;
 use crate::safe_vec::{SafeVec, SafeVecIter};
 use crate::system::{SystemMeta, TypeInfo};
 use core::fmt::*;
 use core::result::Result;
-use std::collections::HashMap;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
@@ -42,6 +38,7 @@ use pi_key_alloter::new_key_type;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::cell::SyncUnsafeCell;
+use std::collections::{hash_map::Entry as StdEntry, HashMap};
 use std::mem::{self, transmute, ManuallyDrop};
 use std::ops::Deref;
 use std::ptr::{self, null_mut};
@@ -119,11 +116,7 @@ impl From<usize> for Tick {
 #[derive(Clone, Debug)]
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
 #[derive(Clone, Debug)]
-pub struct ArchetypeOk<'a>(
-    pub &'a ShareArchetype,
-    pub ArchetypeIndex,
-    pub &'a World,
-);
+pub struct ArchetypeOk<'a>(pub &'a ShareArchetype, pub ArchetypeIndex, pub &'a World);
 
 pub trait SetDefault {
     fn default_fn() -> Option<fn(*mut u8)>;
@@ -141,14 +134,15 @@ impl<T: Default> SetDefault for T {
 
 pub struct World {
     pub(crate) single_res_map: DashMap<TypeId, (Option<SingleResource>, usize, Cow<'static, str>)>, // 似乎只需要普通hashmap
-    pub(crate) single_res_arr: AppendVec<Option<SingleResource>>, // todo 改成AppendVec<SingleResource>
-    pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,
+    pub(crate) single_res_arr: AppendVec<Option<SingleResource>>, // todo 改成Vec<SingleResource>
+    pub(crate) multi_res_map: DashMap<TypeId, MultiResource>,     // 似乎只需要普通hashmap
     pub(crate) event_map: HashMap<TypeId, Share<dyn EventRecord>>, // 事件表
-    pub(crate) component_map: DashMap<TypeId, ComponentIndex>, // 似乎只需要普通hashmap
-    pub(crate) component_arr: SafeVec<Share<Column>>, // todo 似乎只需要普通vec
+    pub(crate) component_map: HashMap<TypeId, ComponentIndex>,
+    pub(crate) component_arr: Vec<Share<Column>>,
     pub(crate) entities: SlotMap<Entity, EntityAddr>,
     pub(crate) archetype_map: DashMap<u64, ShareArchetype>,
     pub(crate) archetype_arr: SafeVec<ShareArchetype>,
+    pub(crate) archetype_arr_len: usize,
     pub(crate) empty_archetype: ShareArchetype,
     pub(crate) entity_editor_state: EditorState,
     pub(crate) listener_mgr: ListenerMgr,
@@ -171,12 +165,15 @@ impl World {
         #[cfg(debug_assertions)]
         match std::env::var("ECS_DEBUG") {
             Ok(r) => {
-                let r = r.split(",").map(|r| {r.parse::<usize>().unwrap()}).collect::<Vec<usize>>();
+                let r = r
+                    .split(",")
+                    .map(|r| r.parse::<usize>().unwrap())
+                    .collect::<Vec<usize>>();
                 if r.len() == 2 {
                     ARCHETYPE_INDEX.store(r[0], Ordering::Relaxed);
-                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed); 
+                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed);
                 }
-            },
+            }
             _ => (),
         };
 
@@ -187,22 +184,21 @@ impl World {
         empty.set_index(0usize.into());
         empty.ready.store(true, Ordering::Relaxed);
         let empty_archetype = ShareArchetype::new(empty);
-        let component_arr = SafeVec::with_capacity(1);
         let archetype_map = DashMap::new();
         archetype_map.insert(0, empty_archetype.clone());
         let archetype_arr = SafeVec::with_capacity(1);
         archetype_arr.insert(empty_archetype.clone());
         Self {
-            single_res_map: DashMap::default(),
+            single_res_map: Default::default(),
             single_res_arr: Default::default(),
-            multi_res_map: DashMap::default(),
+            multi_res_map: Default::default(),
             event_map: Default::default(),
-            entities: SlotMap::default(),
-            component_map: DashMap::new(),
-            component_arr,
-            // component_removed_map: Default::default(),
+            entities: Default::default(),
+            component_map: Default::default(),
+            component_arr: Default::default(),
             archetype_map,
             archetype_arr,
+            archetype_arr_len: 1,
             empty_archetype,
             listener_mgr,
             archetype_init_key,
@@ -240,7 +236,10 @@ impl World {
         EntityEditor::new(self)
     }
     /// 获得实体的原型信息
-    pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeIndex)> {
+    pub fn get_entity_prototype(
+        &self,
+        entity: Entity,
+    ) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.entities.get(entity).map(|e| {
             let ar_index = e.archetype_index();
             let ar = self.archetype_arr.get(ar_index.index()).unwrap();
@@ -255,7 +254,7 @@ impl World {
     pub fn get_component_index(&self, component_type_id: &TypeId) -> ComponentIndex {
         self.component_map
             .get(component_type_id)
-            .map_or(ComponentIndex::null(), |r| *r.value())
+            .map_or(ComponentIndex::null(), |r| *r)
     }
     /// 获得指定组件的索引
     pub fn add_component_indexs(
@@ -269,36 +268,46 @@ impl World {
         }
     }
     /// 获得指定组件的索引
+    pub fn get_column_by_id(&self, component_type_id: &TypeId) -> Option<&Share<Column>> {
+        self.get_column(self.get_component_index(component_type_id))
+    }
+    /// 获得指定组件的索引
     pub fn get_column(&self, index: ComponentIndex) -> Option<&Share<Column>> {
         self.component_arr.get(index.index())
     }
+    /// 获得指定组件的索引
+    pub unsafe fn get_column_unchecked(&self, index: ComponentIndex) -> &Share<Column> {
+        self.component_arr.get_unchecked(index.index())
+    }
     /// 添加组件信息，如果重复，则返回原有的索引及是否tick变化 todo 改成mut
-    pub fn add_component_info(&self, mut info: ComponentInfo) -> (ComponentIndex, Share<Column>) {
+    pub fn add_component_info(
+        &mut self,
+        mut info: ComponentInfo,
+    ) -> (ComponentIndex, Share<Column>) {
         let tick_info = info.tick_info;
         let index: ComponentIndex = match self.component_map.entry(*info.type_id()) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let e = self.component_arr.alloc_entry();
-                let index = e.index().into();
-                // println!("add component: {:?}", (info.type_name(), index));
+            StdEntry::Occupied(entry) => *entry.get(),
+            StdEntry::Vacant(entry) => {
+                let index = self.component_arr.len().into();
                 info.index = index;
-                let c= Share::new(Column::new(info));
-                e.insert(c.clone());
+                let c = Share::new(Column::new(info));
+                self.component_arr.push(c.clone());
                 entry.insert(index);
                 return (index, c);
             }
         };
-        let column = unsafe { self.component_arr.load_unchecked(index.index()) };
+        let c = unsafe { self.component_arr.get_unchecked(index.index()) };
+        let column = unsafe { self.component_arr.get_unchecked_mut(index.index()) };
         let c = unsafe { Share::get_mut_unchecked(column) };
         let t = c.info.tick_info | tick_info;
         if t != c.info.tick_info {
             // 扫描当前列，将已有的实体设置tick，或放入到对应的事件列表中
-            self.update_tick_info(c, t);
+            // todo self.update_tick_info(c, t);
             c.info.tick_info = t;
         }
         (index, column.clone())
     }
-    /// 扫描当前列，将已有的实体设置tick，或放入到对应的事件列表中
+    /// 扫描当前列，将已有的实体设置tick，或放入到对应的事件列表中，主要是解决不同的Plugin，依次添加时，监听和tick被后设置的问题
     pub(crate) fn update_tick_info(&self, c: &mut Column, tick_info: u8) {
         for _ar in self.archetype_arr.iter() {
             // todo 判断该原型含有该组件
@@ -325,18 +334,16 @@ impl World {
             // }
         }
     }
+    /// 初始化指定组件
+    pub fn init_component<T: 'static>(&mut self) -> ComponentIndex {
+        self.add_component_info(ComponentInfo::of::<T>(0)).0
+    }
     /// 计算所有原型信息，设置了所有组件的索引，按索引大小进行排序
-    pub(crate) fn archetype_info(&self, components: Vec<ComponentInfo>) -> ArchetypeInfo {
-        // for c in components.iter_mut() {
-        //     let (index, change) = self.add_component_info(c.clone());
-        //     c.world_index = index;
-        //     if let Some(tick_removed) = change {
-        //         c.tick_info = tick_removed;
-        //     }
-        // }
-        let vec: Vec<Share<Column>> = components.into_iter().map(|c|{
-            self.add_component_info(c).1
-        }).collect();
+    pub(crate) fn archetype_info(&mut self, components: Vec<ComponentInfo>) -> ArchetypeInfo {
+        let vec: Vec<Share<Column>> = components
+            .into_iter()
+            .map(|c| self.add_component_info(c).1)
+            .collect();
         ArchetypeInfo::sort(vec)
     }
     /// 创建一个查询器
@@ -363,7 +370,7 @@ impl World {
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
-        alter_state.align(self,  &query_state.archetypes);
+        alter_state.align(self, &query_state.archetypes);
         Alterer::new(self, query_state, alter_state)
     }
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
@@ -558,10 +565,15 @@ impl World {
     //     self.component_removed_map.get(&index).map(|r| r.clone())
     // }
     /// 初始化事件记录
-    pub(crate) fn init_event_record(&mut self, type_id: TypeId, event_record: Share<dyn EventRecord>) -> Share<dyn EventRecord> {
-        let r = self.event_map.entry(type_id).or_insert_with(|| {
-            event_record
-        });
+    pub(crate) fn init_event_record(
+        &mut self,
+        type_id: TypeId,
+        event_record: Share<dyn EventRecord>,
+    ) -> Share<dyn EventRecord> {
+        let r = self
+            .event_map
+            .entry(type_id)
+            .or_insert_with(|| event_record);
         r.clone()
     }
     /// 获得事件记录
@@ -571,7 +583,7 @@ impl World {
 
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
     pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&T, QueryError> {
-        let index = self.init_component::<T>();
+        let index = self.get_component_index(&TypeId::of::<T>());
         self.get_component_by_index(e, index)
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
@@ -579,8 +591,7 @@ impl World {
         &mut self,
         e: Entity,
     ) -> Result<Mut<'static, T>, QueryError> {
-        //    self.get_component_info(index)
-        let index = self.init_component::<T>();
+        let index = self.get_component_index(&TypeId::of::<T>());
         self.get_component_mut_by_index(e, index)
     }
 
@@ -630,7 +641,7 @@ impl World {
         e: Entity,
         index: ComponentIndex,
     ) -> Result<&T, QueryError> {
-        let (ptr, _row) =  self.get_component_ptr_by_index(e, index)?;
+        let (ptr, _row) = self.get_component_ptr_by_index(e, index)?;
         Ok(unsafe { transmute(ptr) })
     }
     /// 获得指定实体的指定组件，为了安全，必须保证不在ECS执行中调用
@@ -653,7 +664,7 @@ impl World {
                 let t = self.tick();
                 let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
                 Ok(unsafe { transmute(value) })
-            },
+            }
             None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
         }
     }
@@ -806,18 +817,12 @@ impl World {
         self.archetype_arr.iter()
     }
     // 返回原型及是否新创建 todo 改成mut
-    pub(crate) fn find_ar(
-        &self,
-        infos: Vec<ComponentInfo>,
-    ) -> ShareArchetype {
+    pub(crate) fn find_ar(&mut self, infos: Vec<ComponentInfo>) -> ShareArchetype {
         let info = self.archetype_info(infos);
         self.find_archtype(info)
     }
     // 返回原型及是否新创建
-    pub(crate) fn find_archtype(
-        &self,
-        info: ArchetypeInfo,
-    ) -> ShareArchetype {
+    pub(crate) fn find_archtype(&self, info: ArchetypeInfo) -> ShareArchetype {
         // 如果world上没有找到对应的原型，则创建并放入world中
         let (mut ar, b) = match self.archetype_map.entry(info.hash) {
             Entry::Occupied(entry) => (entry.get().clone(), false),
@@ -900,10 +905,6 @@ impl World {
         self.entities
             .insert(EntityAddr::new(0usize.into(), Row::null()))
     }
-    /// 初始化指定组件
-    pub fn init_component<T: 'static>(&self) -> ComponentIndex {
-        self.add_component_info(ComponentInfo::of::<T>(0)).0
-    }
     /// 替换Entity的原型及行
     #[inline(always)]
     pub(crate) fn replace_row(&self, e: Entity, row: Row) {
@@ -925,10 +926,14 @@ impl World {
         self.entities.settle(0);
         // 整理原型数组
         self.archetype_arr.settle(0);
+        let len = self.archetype_arr.len();
         // 整理列数组
-        for c in self.component_arr.iter() {
-            let c = unsafe { Share::get_mut_unchecked(c) };
-            c.arr.settle(self.archetype_arr.len(), 0, 1);
+        if self.archetype_arr_len < len {
+            for c in self.component_arr.iter_mut() {
+                let c = unsafe { Share::get_mut_unchecked(c) };
+                c.arr.settle(len, 0, 1);
+            }
+            self.archetype_arr_len = len;
         }
         // 整理事件列表
         for aer in self.event_map.values_mut() {
@@ -982,14 +987,14 @@ unsafe impl Send for SingleResource {}
 unsafe impl Sync for SingleResource {}
 
 #[derive(Debug, Clone)]
-pub struct MultiResource{
+pub struct MultiResource {
     vec: Share<SyncUnsafeCell<Vec<SingleResource>>>,
     tick: Share<ShareUsize>,
     name: Cow<'static, str>,
 }
 impl MultiResource {
     fn new(name: Cow<'static, str>) -> Self {
-        Self{
+        Self {
             vec: Share::new(SyncUnsafeCell::new(Vec::new())),
             tick: Share::new(ShareUsize::new(0)),
             name,
@@ -1038,10 +1043,7 @@ unsafe impl Send for EntityAddr {}
 impl EntityAddr {
     #[inline(always)]
     pub(crate) fn new(index: ArchetypeIndex, row: Row) -> Self {
-        EntityAddr {
-            index,
-            row,
-        }
+        EntityAddr { index, row }
     }
     #[inline(always)]
     pub(crate) fn is_mark(&self) -> bool {

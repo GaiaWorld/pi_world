@@ -221,36 +221,8 @@ macro_rules! impl_tuple_filter {
                 )*
                 true
             }
-
-            // fn init_listeners(_world: &mut World, _listeners: &mut Vec<ComponentIndex>) {
-            //     ($($name::init_listeners(_world, _listeners),)*);
-            // }
-            // fn archetype_filter(_world: &World, _archetype: &Archetype) -> bool {
-            //     $(
-            //         if $name::archetype_filter(_world, _archetype){return true};
-            //     )*
-            //     false
-            // }
         }
 
     };
 }
 all_tuples!(impl_tuple_filter, 0, 15, F, S);
-
-// macro_rules! impl_or_tuple_fetch {
-//     ($($name: ident),*) => {
-//         #[allow(non_snake_case)]
-//         #[allow(clippy::unused_unit)]
-//         impl<$($name: FilterArchetype),*> FilterArchetype for ($($name,)*) {
-
-//             fn filter_archetype(_world: &World, _archetype: &Archetype) -> bool {
-//                 $(
-//                     if !$name::filter_archetype(_world, _archetype){return false};
-//                 )*
-//                 true
-//             }
-//         }
-
-//     };
-// }
-// all_tuples!(impl_or_tuple_fetch, 1, 15, F);

@@ -427,7 +427,7 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
                     #(let c = #tuple_types::components(c);)*
                     c
                 }
-                fn init_item(_world: & #world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
+                fn init_item(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
                     (#(<#tuple_types as #world_path::insert::Bundle>::init_item(_world, _archetype),)*)
                 }
 

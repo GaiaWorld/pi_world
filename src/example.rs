@@ -305,7 +305,7 @@ mod test_mod {
     #[test]
     fn test_system_meta2() {
         let mut app = SingleThreadApp::new();
-        let w = &app.world;
+        let w = &mut app.world;
         let info = w.archetype_info(vec![ComponentInfo::of::<Transform>(0), ComponentInfo::of::<Position>(0), ComponentInfo::of::<Velocity>(0), ComponentInfo::of::<Rotation>(0)]);
         let ar = Archetype::new(info);
 
@@ -1594,11 +1594,12 @@ mod test_mod {
             let (e, age1, age0) = r.unwrap();
 
             println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-            edit.alter_components_by_index(e, &[
+            let arr = [
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
-            ]).unwrap();
+            ];
+            edit.alter_components_by_index(e, &arr).unwrap();
  
             println!("alter_add2 end");
         }
@@ -1696,12 +1697,12 @@ mod test_mod {
             assert_eq!(r.is_some(), true);
             let (e, age1, age0) = r.unwrap();
             assert_eq!(iter.next(), None);
-
-            edit.alter_components_by_index(e, &[
+            let arr = [
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
-            ]).unwrap();
+            ];
+            edit.alter_components_by_index(e, &arr).unwrap();
         }
 
         pub fn alter_add3(
@@ -1789,7 +1790,8 @@ mod test_mod {
             assert_eq!(entity.is_some(), true);
             {
                 let editor = p.p1();
-                editor.remove_components_by_index(entity.unwrap(), &[editor.init_component::<Age0>()]);
+                let index = editor.init_component::<Age0>();
+                editor.remove_components_by_index(entity.unwrap(), &[index]);
             }
 
             println!("query end!!!");

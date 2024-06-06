@@ -246,7 +246,7 @@ impl<'w> EntityEditor<'w> {
     }
 
     /// 获取组件id
-    pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
+    pub fn init_component<B: Bundle + 'static>(&mut self) -> ComponentIndex {
         self.world.init_component::<B>()
     }
 
