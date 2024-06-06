@@ -129,6 +129,10 @@ impl<'w> EntityEditor<'w> {
         let mapping = unsafe { editor_state.vec.get_unchecked_mut(local_index.index()) };
         state.find_mapping(&self.world, mapping, true);
 
+        if mapping.dst.id() == mapping.src.id() {
+            return Ok(());
+        }
+
         let (_, dst_row) = mapping.dst.alloc();
         // println!("edit: {:?}", (e, addr.row, dst_row, &mapping.dst));
 
