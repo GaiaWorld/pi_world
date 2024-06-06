@@ -92,7 +92,7 @@ impl Column {
         if self.info.size() == 0 {
             return;
         }
-        println!("Column settle, {:?}", (index, self.info.index, len, action));
+        // println!("Column settle, {:?}", (index, self.info.index, len, action));
         // 判断ticks，进行ticks的整理
         let blob = unsafe { self.arr.get_unchecked_mut(index.index()) };
         let r = BlobRef::new(
