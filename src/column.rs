@@ -1,7 +1,8 @@
 use core::fmt::*;
 use std::{
     mem::transmute,
-    ops::{Deref, DerefMut}, sync::atomic::AtomicUsize,
+    ops::{Deref, DerefMut},
+    sync::atomic::AtomicUsize,
 };
 
 use pi_arr::Arr;
@@ -12,12 +13,10 @@ use crate::{
     world::{Entity, Tick},
 };
 
-
 #[cfg(debug_assertions)]
 pub static COMPONENT_INDEX: AtomicUsize = AtomicUsize::new(usize::MAX);
 #[cfg(debug_assertions)]
 pub static ARCHETYPE_INDEX: AtomicUsize = AtomicUsize::new(usize::MAX);
-    
 
 pub struct Column {
     pub(crate) info: ComponentInfo,
@@ -52,8 +51,14 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
-        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("blob_ref_unchecked, {} {:p}", self.arr.vec_capacity(), unsafe { self.arr.load_unchecked(index.index())});
+        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "blob_ref_unchecked, {} {:p}",
+                self.arr.vec_capacity(),
+                unsafe { self.arr.load_unchecked(index.index()) }
+            );
         }
         BlobRef::new(
             unsafe { self.arr.load_unchecked(index.index()) },
@@ -64,15 +69,19 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
-        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("blob_ref, {} {:p}", self.arr.vec_capacity(), unsafe { self.arr.load_unchecked(index.index())});
+        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!("blob_ref, {} {:p}", self.arr.vec_capacity(), unsafe {
+                self.arr.load_unchecked(index.index())
+            });
         }
-        let blob = match self.arr.load(index.index()){
+        let blob = match self.arr.load(index.index()) {
             Some(b) => b,
             _ => return None,
         };
         if blob.blob.vec_capacity().is_null() {
-            return None
+            return None;
         }
         Some(BlobRef::new(
             blob,
@@ -165,7 +174,6 @@ impl DerefMut for Blob {
     }
 }
 
-
 #[derive(Default)]
 pub(crate) struct BlobTicks {
     blob: Blob,
@@ -185,8 +193,7 @@ impl<'a> BlobRef<'a> {
     pub(crate) fn new(
         blob: &'a mut BlobTicks,
         info: &'a ComponentInfo,
-        #[cfg(debug_assertions)]
-        index: ArchetypeIndex,
+        #[cfg(debug_assertions)] index: ArchetypeIndex,
     ) -> Self {
         Self {
             blob,
@@ -197,7 +204,16 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
-        // todo !()
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column get_tick_unchecked:===={:?} {:p}",
+                (row, self.index, self.blob.ticks.get(row.index())),
+                self.blob
+            );
+        }
         self.blob
             .ticks
             .get(row.index())
@@ -232,22 +248,31 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get<T>(&self, row: Row) -> &T {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column get:===={:?} {:p}", row, self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!("Column get:===={:?} {:p}", (row, self.index), self.blob);
         }
         unsafe { transmute(self.load(row)) }
     }
     #[inline(always)]
     pub fn get_mut<T>(&self, row: Row) -> &mut T {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column get_mut:===={:?} {:p}", (row, self.blob.blob.vec_capacity()), self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!("Column get_mut:===={:?} {:p}", (row, self.index), self.blob);
         }
         unsafe { transmute(self.load(row)) }
     }
     #[inline(always)]
     pub(crate) fn write<T>(&self, row: Row, val: T) {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column write:===={:?} {:p}", (row, self.blob.blob.vec_capacity()), self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!("Column write:===={:?} {:p}", (row, self.index), self.blob);
         }
         unsafe {
             let ptr: *mut T = transmute(self.load(row));
@@ -257,19 +282,36 @@ impl<'a> BlobRef<'a> {
     // 如果没有分配内存，则返回的指针为is_null()
     #[inline(always)]
     pub fn get_row(&self, row: Row) -> *mut u8 {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column get_row:===={:?} {:p}", (row, self.blob.blob.vec_capacity()), self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column get_row:===={:?}  blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                self.blob
+                    .blob
+                    .load_alloc_multiple(row.index(), self.info.size())
+            );
         }
         unsafe { transmute(self.blob.blob.get_multiple(row.index(), self.info.size())) }
     }
     // 一定会返回分配后的内存
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column load:===={:?} {:p} {:p}", (row, self.blob.blob.vec_capacity()), self.blob,
-            self.blob
-            .blob
-            .load_alloc_multiple(row.index(), self.info.size()));
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column load:===={:?} blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                self.blob
+                    .blob
+                    .load_alloc_multiple(row.index(), self.info.size())
+            );
         }
         assert!(!row.is_null());
         transmute(
@@ -280,18 +322,47 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn write_row(&self, row: Row, data: *mut u8) {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column write_row:===={:?} {:p} {:p}", (row, self.blob.blob.vec_capacity()), data, self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column write_row:===={:?} blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                data,
+            );
         }
         unsafe {
             let dst = self.load(row);
             data.copy_to_nonoverlapping(dst, self.info.size());
         }
+
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column write_row:===={:?} blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                data,
+            );
+        }
     }
     #[inline(always)]
     pub(crate) fn drop_row(&self, row: Row) {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column drop_row:===={:?} {:p}", (row, self.blob.blob.vec_capacity()), self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column drop_row:===={:?} blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                self.blob
+                    .blob
+                    .load_alloc_multiple(row.index(), self.info.size())
+            );
         }
         if let Some(f) = self.info.drop_fn {
             f(unsafe { transmute(self.load(row)) })
@@ -303,8 +374,18 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn drop_row_unchecked(&self, row: Row) {
-        if self.index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed) && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Column drop_row_unchecked:===={:?} {:p}", (row, self.blob.blob.vec_capacity()), self.blob);
+        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        if (debug_index.is_null() || self.index.index() == debug_index)
+            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            println!(
+                "Column drop_row_unchecked:===={:?} blob:{:p} data:{:p}",
+                (row, self.index, self.blob.blob.vec_capacity()),
+                self.blob,
+                self.blob
+                    .blob
+                    .load_alloc_multiple(row.index(), self.info.size())
+            );
         }
         self.info.drop_fn.unwrap()(unsafe { transmute(self.blob.blob.get(row.index())) })
     }

@@ -171,7 +171,14 @@ impl World {
         #[cfg(debug_assertions)]
         match std::env::var("ECS_DEBUG") {
             Ok(r) => {
-                let r = r.split(",").map(|r| {r.parse::<usize>().unwrap()}).collect::<Vec<usize>>();
+                let r = r.split(",").map(|r| {
+                    if r == "*" {
+                        std::usize::MAX
+                    } else {
+                        r.parse::<usize>().unwrap()
+                    }
+
+                }).collect::<Vec<usize>>();
                 if r.len() == 2 {
                     ARCHETYPE_INDEX.store(r[0], Ordering::Relaxed);
                     COMPONENT_INDEX.store(r[1], Ordering::Relaxed); 

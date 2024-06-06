@@ -486,6 +486,33 @@ impl<T: 'static> FetchComponents for Has<T> {
 }
 
 #[derive(Debug)]
+pub struct Component<T: 'static>(pub ComponentIndex, PhantomData<T>);
+impl<T: 'static> FetchComponents for Component<T> {
+    type Fetch<'w> = ComponentIndex;
+    type Item<'w> = ComponentIndex;
+    type ReadOnly = Component<T>;
+    type State = ComponentIndex;
+
+    fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
+        world.init_component::<T>()
+    }
+
+    fn init_fetch<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        _index: ArchetypeIndex,
+        _tick: Tick,
+        _last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        *state
+    }
+
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
+        *fetch
+    }
+}
+
+#[derive(Debug)]
 pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub ArchetypeIndex, pub Row);
 impl FetchComponents for ArchetypeName<'_> {
     type Fetch<'w> = (&'w Cow<'static, str>, ArchetypeIndex);

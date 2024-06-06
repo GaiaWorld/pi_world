@@ -142,7 +142,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 
     #[inline(always)]
-    fn filter<'w>(fetch: &Self::Filter<'w>, row: Row, _e: Entity) -> bool {
+    fn filter<'w>(fetch: &Self::Filter<'w>, row: Row, e: Entity) -> bool {
         fetch.0.get_tick_unchecked(row) <= fetch.1
     }
 }
