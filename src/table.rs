@@ -206,6 +206,7 @@ impl Table {
     }
     /// 整理每个列
     pub(crate) fn settle_columns(&mut self, len: usize, additional: usize, vec: &Vec<(Row, Row)>) {
+        // println!("Table settle_columns, {:?}", (self.index, len));
         for c in self.sorted_columns.iter_mut() {
             let c = unsafe { Share::get_mut_unchecked(c) };
             c.settle(self.index, len, additional, vec);
@@ -433,7 +434,7 @@ impl Drop for Table {
             if c.info().drop_fn.is_none() {
                 continue;
             }
-            let c = c.blob_ref_unchecked(self.index);
+            let c = c.blob_ref(self.index).unwrap();
             // 释放每个列中还存在的row
             for (row, e) in self.entities.iter().enumerate() {
                 if !e.is_null() {

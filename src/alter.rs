@@ -340,7 +340,7 @@ impl<A: Bundle> AlterState<A> {
     }
 
     pub(crate) fn push_archetype(&mut self, world: &World, ar: ShareArchetype) {
-        self.state.push_map(ar.index());
+        self.state.push_map(ar.index(), self.vec.len());
         self.vec
             .push(ArchetypeMapping::new(ar, world.empty_archetype().clone()));
         self.bundle_vec.push(MaybeUninit::uninit());
@@ -355,7 +355,7 @@ impl<A: Bundle> AlterState<A> {
         components: A,
         tick: Tick,
     ) -> Option<(&ShareArchetype, ArchetypeIndex)> {
-        let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
+        let mapping = unsafe { self.vec.get_mut(ar_index.index()).unwrap() };
         // println!("alter: {:?}", (e, src_row, ar_index));
         let (is_new, new_ar) = self.state.find_mapping(world, mapping, false);
         if is_new {
@@ -434,8 +434,7 @@ impl AState {
         }
     }
     // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
-    pub(crate) fn push_map(&mut self, index: ArchetypeIndex) {
-        let len = self.map.len();
+    pub(crate) fn push_map(&mut self, index: ArchetypeIndex, len: usize) {
         if len == 0 {
             self.map_start = index.index();
         }
@@ -452,7 +451,7 @@ impl AState {
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         for ar_index in mapping_dirtys.drain(..) {
-            let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
+            let am = unsafe { vec.get_mut(ar_index.index()).unwrap() };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
                 let (src_row, dst_row, _e) = unsafe { am.moves.get_unchecked(i) };

@@ -1,14 +1,13 @@
-
 use std::marker::PhantomData;
 use std::mem::transmute;
 
 use pi_proc_macros::all_tuples;
+use pi_share::Share;
 use pi_slot::SlotMap;
 // use pi_world_macros::ParamSetElement;
 
 use crate::archetype::*;
-use crate::column::BlobTicks;
-use crate::column::BlobRef;
+use crate::column::Column;
 use crate::editor::EntityEditor;
 use crate::prelude::QueryError;
 use crate::system::SystemMeta;
@@ -26,11 +25,7 @@ pub struct Inserter<'world, I: Bundle> {
 
 impl<'world, I: Bundle> Inserter<'world, I> {
     #[inline(always)]
-    pub fn new(
-        world: &'world World,
-        state: (ShareArchetype, I::Item),
-        tick: Tick,
-    ) -> Self {
+    pub fn new(world: &'world World, state: (ShareArchetype, I::Item), tick: Tick) -> Self {
         Self { world, state, tick }
     }
     #[inline(always)]
@@ -53,7 +48,6 @@ impl<'world, I: Bundle> Inserter<'world, I> {
         }
     }
 }
-
 
 pub struct Insert<'world, I: Bundle> {
     pub(crate) world: &'world World,
@@ -115,9 +109,7 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     }
 }
 
-
 pub trait Bundle {
-
     type Item: Send + Sync + Sized;
 
     fn components(c: Vec<ComponentInfo>) -> Vec<ComponentInfo>;
@@ -133,24 +125,21 @@ pub trait Bundle {
 //     fn insert_components(editor: &mut EntityEditor, components: Self) -> Result<Entity, QueryError>;
 // }
 
-
-pub struct TypeItem<T: 'static>(*const BlobTicks, *const ComponentInfo, PhantomData<T>);
+pub struct TypeItem<T: 'static>(Share<Column>, ArchetypeIndex, PhantomData<T>);
 unsafe impl<T> Sync for TypeItem<T> {}
 unsafe impl<T> Send for TypeItem<T> {}
 impl<T: 'static> TypeItem<T> {
     #[inline(always)]
     pub fn new(world: &World, ar: &Archetype) -> Self {
         // println!("TypeItem new:{:?} {:p}", (c.info().type_name), c);
-        let  c = world.add_component_info(ComponentInfo::of::<T>(0)).1;
-        let c = c.blob_ref_unchecked(ar.index());
-        TypeItem(unsafe { transmute(c.blob) },  unsafe { transmute(c.info) }, PhantomData)
+        let c = world.add_component_info(ComponentInfo::of::<T>(0)).1;
+        //let c = c.blob_ref_unchecked(ar.index());
+        TypeItem(c, ar.index(), PhantomData)
     }
     #[inline(always)]
     pub fn write(&self, val: T, e: Entity, row: Row, tick: Tick) {
         // println!("TypeItem write:{:?} {:p}", (e, row, tick), self.0);
-        let c = unsafe { transmute(self.0) };
-        let info = unsafe { transmute(self.1) };
-        let c = BlobRef::new(c, info);
+        let c = self.0.blob_ref_unchecked(self.1);
         c.write(row, val);
         c.added_tick(e, row, tick);
     }
@@ -201,26 +190,26 @@ all_tuples!(impl_tuple_insert, 0, 32, F, S);
 //                         (editor.init_component::<$name>(), true),
 //                     )*
 //                 ];
-            
+
 //                 editor.alter_components_by_index(e, &components_index)?;
 
 //                 let ($($item,)*) = components;
 //                 let [$($name1,)*] = components_index;
- 
+
 //                 $(
 //                     *editor.get_component_unchecked_mut_by_id(e, $name1.0) = $item;
 //                 )*
-               
+
 //                 Ok(())
 //             }
 
 //             fn add_bundle(_editor: &mut EntityEditor, _e: Entity,  components: Self) -> Result<(), crate::prelude::QueryError> {
 //                 let ($($item,)*) = components;
-    
+
 //                 $(
 //                     <$name as BundleExt>::add_bundle(_editor, _e, $item)?;
 //                 )*
-               
+
 //                 Ok(())
 //             }
 
@@ -230,15 +219,15 @@ all_tuples!(impl_tuple_insert, 0, 32, F, S);
 //                         editor.init_component::<$name>(),
 //                     )*
 //                 ];
-            
+
 //                 let e = editor.insert_entity(&components_index)?;
 //                 let ($($item,)*) = components;
 //                 let [$($name1,)*] = components_index;
- 
+
 //                 $(
 //                     *editor.get_component_unchecked_mut_by_id(e, $name1) = $item;
 //                 )*
-               
+
 //                 Ok(e)
 //             }
 //         }

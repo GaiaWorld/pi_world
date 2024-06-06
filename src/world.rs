@@ -19,7 +19,7 @@ use crate::archetype::{
     Archetype, ArchetypeInfo, ArchetypeIndex, ComponentInfo, Row, ShareArchetype,
     COMPONENT_CHANGED, COMPONENT_TICK,
 };
-use crate::column::Column;
+use crate::column::{Column, ARCHETYPE_INDEX, COMPONENT_INDEX};
 use crate::editor::{EditorState, EntityEditor};
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
@@ -168,6 +168,18 @@ impl Debug for World {
 }
 impl World {
     pub fn new() -> Self {
+        #[cfg(debug_assertions)]
+        match std::env::var("ECS_DEBUG") {
+            Ok(r) => {
+                let r = r.split(",").map(|r| {r.parse::<usize>().unwrap()}).collect::<Vec<usize>>();
+                if r.len() == 2 {
+                    ARCHETYPE_INDEX.store(r[0], Ordering::Relaxed);
+                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed); 
+                }
+            },
+            _ => (),
+        };
+
         let listener_mgr = ListenerMgr::default();
         let archetype_init_key = listener_mgr.init_register_event::<ArchetypeInit>();
         let archetype_ok_key = listener_mgr.init_register_event::<ArchetypeOk>();
@@ -268,6 +280,7 @@ impl World {
             Entry::Vacant(entry) => {
                 let e = self.component_arr.alloc_entry();
                 let index = e.index().into();
+                // println!("add component: {:?}", (info.type_name(), index));
                 info.index = index;
                 let c= Share::new(Column::new(info));
                 e.insert(c.clone());
@@ -820,6 +833,7 @@ impl World {
                 .notify_event(self.archetype_init_key, ArchetypeInit(&ar, &self));
             // 通知后，让原型就绪， 其他线程也就可以获得该原型
             let ar_index = self.archtype_ok(&mut ar);
+            // println!("add archtype: {:?}", (ar.name(), ar_index));
             self.listener_mgr
                 .notify_event(self.archetype_ok_key, ArchetypeOk(&ar, ar_index, &self));
             ar

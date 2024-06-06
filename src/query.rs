@@ -262,7 +262,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = *self.check(world, entity /* cache_mapping, */)?;
 
-        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  ar.name()));
+        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
         let filter = F::init_filter(
             world,
             &self.filter_state,
@@ -347,7 +347,7 @@ impl QState {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity(entity)),
         };
-        println!("check addr======{:?}", (entity, &addr));
+        // println!("check addr======{:?}", (entity, &addr));
         if !self.bit_set.contains(
             addr.archetype_index()
                 .index()
