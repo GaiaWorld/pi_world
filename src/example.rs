@@ -48,6 +48,9 @@ pub struct Age19(usize);
 #[derive(Component)]
 pub struct Age20(usize);
 
+#[derive(Component, Debug)]
+pub struct Age21(Vec<u64>);
+
 // #[derive(Bundle)]
 // pub struct Bundle1{
 //     a1: Age1,
@@ -1878,5 +1881,52 @@ mod test_mod {
         app.add_system(Update, query3);
         app.run();
 
+    }
+
+    #[test] 
+    fn test_editor3() {
+        pub struct EntityRes(Entity);
+
+        let mut app = SingleThreadApp::new();
+
+        pub fn insert_entity(mut editor: EntityEditor ) {
+            println!("insert_entity start!!!");
+            let e1 = editor.insert_entity((Age21(Vec::new()),));
+            let e2 = editor.insert_entity((Age21(Vec::new()),));
+
+            println!("insert_entity end!!! e: {:?}", (e1, e2));
+        }
+
+        pub fn add_components(mut q: Query<(Entity, &mut Age21)>, mut editor: EntityEditor){
+            println!("query2 start!!!");
+            let mut len = 0;
+            q.iter_mut().for_each(|(e, mut a21)|{
+                len += 1;
+                println!("v: {:?}", (e, &a21.0));
+                a21.0 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+                // a21.0.push(21);
+                // a21.0.push(22);
+            });
+            println!("query2 end!!!");
+            assert_eq!(len, 2);
+        }
+
+        pub fn query3(q: Query<(Entity, &Age21)>){
+            println!("query3 start!!!");
+            let mut len = 0;
+            q.iter().for_each(|(e, a21,  )|{
+                len += 1;
+                println!("v: {:?}", (e, a21));
+            });
+            println!("query3 end!!!");
+            assert_eq!(len, 2);
+        }
+
+       
+        app.add_system(Update, insert_entity);
+        app.add_system(Update, add_components);
+        app.add_system(Update, query3);
+        app.run();
+        println!("=======================end");
     }
 }

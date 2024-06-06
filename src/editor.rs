@@ -6,14 +6,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{AState, ArchetypeMapping},
-    archetype::{ArchetypeIndex, ArchetypeInfo, Row},
-    insert::Bundle,
-    prelude::{Entity, Mut, QueryError, Tick, World},
-    query::ArchetypeLocalIndex,
-    system::SystemMeta,
-    system_params::SystemParam,
-    world::ComponentIndex,
+    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::{ArchetypeLocalIndex, Queryer}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
 impl AState {
@@ -273,6 +266,13 @@ impl<'w> EntityEditor<'w> {
     ) -> Entity {
         self.world.make_inserter().insert(components)
         // B::insert_components(self,  components)
+    }
+
+     /// 创建一个查询器
+    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
+        &mut self,
+    )-> Queryer<Q, F> {
+         self.world.make_queryer::<Q, F>()
     }
 }
 
