@@ -7,11 +7,11 @@ use std::ops::{Deref, DerefMut};
 use pi_proc_macros::all_tuples;
 use pi_share::Share;
 
-use crate::archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
+use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::FromWorld;
 use crate::system::SystemMeta;
-use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
+use crate::world::{Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -624,49 +624,61 @@ impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
 /// Unique mutable borrow of an entity's component
 #[derive(Debug)]
 pub struct Mut<'a, T: 'static> {
-    pub(crate) column: BlobRef<'a>,
-    pub e: Entity,
+    pub(crate) c: ColumnTick<'a>,
+    pub(crate) e: Entity,
     pub(crate) row: Row,
-    pub(crate) tick: Tick,
     _p: PhantomData<T>,
 }
 impl<'a, T: Sized> Mut<'a, T> {
     pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
         Self {
-            column: c.column.clone(),
+            c: c.clone(),
             e,
             row,
-            tick: c.tick,
             _p: PhantomData,
         }
     }
 
-    pub fn into_inner(self) -> &'a mut T {
-        self.column.changed_tick(self.e, self.row, self.tick);
-        unsafe { transmute(self.column.get_row(self.row)) }
-
-        // self.column.get_mut::<T>(self.row)
+    pub fn entity(&self) -> Entity {
+        self.e
     }
 
+    pub fn tick(&self) -> Tick {
+        self.c.column.get_tick_unchecked(self.row)
+    }
+
+    pub fn last_tick(&self) -> Tick {
+        self.c.last_run
+    }
+
+    pub fn is_changed(&self) -> bool {
+        self.c.column.get_tick_unchecked(self.row) > self.c.last_run
+    }
     pub fn bypass_change_detection(&mut self) -> &mut T {
-        self.column.get_mut::<T>(self.row)
+        self.c.column.get_mut::<T>(self.row)
     }
 
     pub fn set_changed(&mut self) {
-        self.column.changed_tick(self.e, self.row, self.tick);
+        self.c.column.changed_tick(self.e, self.row, self.c.tick);
     }
+
+    pub fn into_inner(self) -> &'a mut T {
+        self.c.column.changed_tick(self.e, self.row, self.c.tick);
+        unsafe { transmute(self.c.column.get_row(self.row)) }
+    }
+
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.column.get::<T>(self.row)
+        self.c.column.get::<T>(self.row)
     }
 }
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.column.changed_tick(self.e, self.row, self.tick);
-        self.column.get_mut::<T>(self.row)
+        self.c.column.changed_tick(self.e, self.row, self.c.tick);
+        self.c.column.get_mut::<T>(self.row)
     }
 }
 

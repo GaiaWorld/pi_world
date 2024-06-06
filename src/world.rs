@@ -347,7 +347,7 @@ impl World {
         ArchetypeInfo::sort(vec)
     }
     /// 创建一个查询器
-    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static>(
+    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
     ) -> Queryer<Q, F> {
         let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
