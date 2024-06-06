@@ -508,10 +508,11 @@ impl AState {
     // 将需要移除的全部源组件移除，如果目标原型的移除列上有对应监听，则记录移除行
     pub(crate) fn remove_columns(&self, am: &mut ArchetypeMapping) {
         for i in am.removed_indexs.clone().into_iter() {
-            let c = unsafe { self.moving.get_unchecked(i) };
+            let c = unsafe { self.removing.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
                 let column = c.blob_ref_unchecked(am.src.index());
                 for (src_row, _dst_row, _e) in am.moves.iter() {
+                    // println!("drop_row_unchecked====={:?}", (c.info.type_name(), i, am.src.index(), _e,  src_row));
                     column.drop_row_unchecked(*src_row)
                 }
             }
