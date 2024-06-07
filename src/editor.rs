@@ -301,8 +301,9 @@ impl SystemParam for EntityEditor<'_> {
     type State = ();
     type Item<'w> = EntityEditor<'w>;
 
-    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        // 如果world上没有找到对应的原型，则创建并放入world中
+    fn init_state(_world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        meta.relate(crate::system::Relation::WriteAll);
+        meta.related_ok();
         ()
     }
 

@@ -66,7 +66,6 @@ pub mod async_function_system;
 pub mod insert;
 pub mod insert_batch;
 pub mod alter;
-pub mod dirty;
 pub mod safe_vec;
 pub mod exec_graph;
 pub mod dot;

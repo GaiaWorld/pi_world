@@ -216,7 +216,7 @@ mod test_mod {
     use super::*;
     use crate::{
         // app::*,
-        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
+        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{relate, Relation, SystemMeta, TypeInfo}, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -309,6 +309,13 @@ mod test_mod {
         meta.relate(Relation::With(3usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查ParamSet读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.relate(Relation::WriteAll);
+        meta.related_ok();
     }
     #[test]
     fn test_system_meta2() {
@@ -320,25 +327,25 @@ mod test_mod {
         // 测试空Fetch
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
-        assert_eq!(true, r.relate(&w.empty_archetype, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
+        assert_eq!(true, relate(&r, &w.empty_archetype, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Write(w.get_component_index(&TypeId::of::<Position>())));
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<A>())));
         let r = meta.related_ok();
-        assert_eq!(false, r.relate(&ar, 0));
+        assert_eq!(false, relate(&r, &ar, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Without(w.get_component_index(&TypeId::of::<Velocity>())));
         let r = meta.related_ok();
-        assert_eq!(false, r.relate(&ar, 0));
+        assert_eq!(false, relate(&r, &ar, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
@@ -347,8 +354,8 @@ mod test_mod {
         meta.relate(Relation::With(w.get_component_index(&TypeId::of::<A>())));
         meta.relate(Relation::End);
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
-        assert_eq!(false, r.relate(&w.empty_archetype, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
+        assert_eq!(false, relate(&r, &w.empty_archetype, 0));
 
     }
  

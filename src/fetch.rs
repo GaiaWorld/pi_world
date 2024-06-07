@@ -63,7 +63,7 @@ pub trait FetchComponents {
 impl FetchComponents for Entity {
     type Fetch<'w> = ();
     type Item<'w> = Entity;
-    type ReadOnly = Entity;
+    type ReadOnly = Self;
     type State = ();
 
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {}
@@ -86,7 +86,7 @@ impl FetchComponents for Entity {
 impl<T: 'static> FetchComponents for &T {
     type Fetch<'w> = ColumnTick<'w>; // 必须和&mut T的Fetch一致，因为Query做了Fetch的缓冲
     type Item<'w> = &'w T;
-    type ReadOnly = &'static T;
+    type ReadOnly = Self;
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -140,6 +140,74 @@ impl<T: 'static> FetchComponents for &mut T {
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Mut::new(fetch, e, row)
+    }
+}
+
+pub struct Ref<T: 'static>(PhantomData<T>);
+impl<T: 'static> FetchComponents for Ref<T> {
+    type Fetch<'w> = ColumnTick<'w>;
+    type Item<'w> = TickRef<'w, T>;
+    type ReadOnly = Self;
+    type State = Share<Column>;
+
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::Read(0usize.into()),
+        )
+        .1
+    }
+
+    fn init_fetch<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
+    }
+
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        TickRef::new(fetch, row)
+    }
+}
+
+impl<T: 'static> FetchComponents for Option<Ref<T>> {
+    type Fetch<'w> = Option<ColumnTick<'w>>;
+    type Item<'w> = Option<TickRef<'w, T>>;
+    type ReadOnly = Self;
+    type State = Share<Column>;
+
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        meta.component_relate(
+            world,
+            ComponentInfo::of::<T>(COMPONENT_TICK),
+            crate::system::Relation::OptRead(0usize.into()),
+        )
+        .1
+    }
+
+    fn init_fetch<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        if let Some(column) = state.blob_ref(index) {
+            Some(ColumnTick::new(column, tick, last_run))
+        } else {
+            None
+        }
+    }
+
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        match fetch {
+            Some(c) => Some(TickRef::new(c, row)),
+            None => None,
+        }
     }
 }
 
@@ -223,7 +291,6 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         .1
     }
 
-
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -286,7 +353,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
 impl<T: 'static> FetchComponents for Option<&T> {
     type Fetch<'w> = Option<ColumnTick<'w>>;
     type Item<'w> = Option<&'w T>;
-    type ReadOnly = Option<&'static T>;
+    type ReadOnly = Self;
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -363,7 +430,7 @@ pub struct OrDefault<T: 'static + FromWorld>(PhantomData<T>);
 impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     type Fetch<'w> = Result<BlobRef<'w>, &'w T>;
     type Item<'w> = &'w T;
-    type ReadOnly = OrDefault<T>;
+    type ReadOnly = Self;
     type State = (Share<Column>, SingleResource);
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -401,12 +468,64 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         }
     }
 }
+/// 不存在T时，使用默认值。
+/// 默认值取Res<DefaultValue<T>>
+/// DefaultValue<T>默认为DefaultValue::from_world的返回值，也可被应用程序覆盖
+pub struct OrDefaultRef<T: 'static + FromWorld>(PhantomData<T>);
+impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
+    type Fetch<'w> = Result<ColumnTick<'w>, (&'w T, Tick)>;
+    type Item<'w> = ValueRef<'w, T>;
+    type ReadOnly = Self;
+    type State = (Share<Column>, SingleResource);
+
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let column = meta
+            .component_relate(
+                world,
+                ComponentInfo::of::<T>(0),
+                crate::system::Relation::OptRead(0usize.into()),
+            )
+            .1;
+        let _index = world.init_single_res::<T>();
+        (
+            column,
+            world.get_single_res_any(&TypeId::of::<T>()).unwrap(),
+        )
+    }
+    fn init_fetch<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        tick: Tick,
+        last_run: Tick,
+    ) -> Self::Fetch<'w> {
+        if let Some(column) = state.0.blob_ref(index) {
+            Ok(ColumnTick::new(column, tick, last_run))
+        } else {
+            Err((unsafe { &mut *state.1.downcast::<T>() }, last_run))
+        }
+    }
+
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        match fetch {
+            Ok(c) => {
+                let tick = c.column.get_tick_unchecked(row);
+                ValueRef::new(
+                    unsafe { transmute(c.column.get_row(row)) },
+                    tick,
+                    c.last_run,
+                )
+            }
+            Err(r) => ValueRef::new(r.0, 0usize.into(), r.1),
+        }
+    }
+}
 
 pub struct Has<T: 'static>(PhantomData<T>);
 impl<T: 'static> FetchComponents for Has<T> {
     type Fetch<'w> = bool;
     type Item<'w> = bool;
-    type ReadOnly = Has<T>;
+    type ReadOnly = Self;
     type State = Share<Column>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -438,7 +557,7 @@ pub struct Component<T: 'static>(pub ComponentIndex, PhantomData<T>);
 impl<T: 'static> FetchComponents for Component<T> {
     type Fetch<'w> = ComponentIndex;
     type Item<'w> = ComponentIndex;
-    type ReadOnly = Component<T>;
+    type ReadOnly = Self;
     type State = ComponentIndex;
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
@@ -465,7 +584,7 @@ pub struct ArchetypeName<'a>(pub &'a Cow<'static, str>, pub ArchetypeIndex, pub 
 impl FetchComponents for ArchetypeName<'_> {
     type Fetch<'w> = (&'w Cow<'static, str>, ArchetypeIndex);
     type Item<'w> = ArchetypeName<'w>;
-    type ReadOnly = ArchetypeName<'static>;
+    type ReadOnly = Self;
     type State = ();
 
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {}
@@ -499,6 +618,78 @@ impl<'a> ColumnTick<'a> {
             tick,
             last_run,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct TickRef<'a, T> {
+    pub(crate) c: ColumnTick<'a>,
+    pub(crate) row: Row,
+    _p: PhantomData<T>,
+}
+
+impl<'a, T> TickRef<'a, T> {
+    pub fn new(c: &ColumnTick<'a>, row: Row) -> Self {
+        Self {
+            c: c.clone(),
+            row,
+            _p: PhantomData,
+        }
+    }
+
+    pub fn tick(&self) -> Tick {
+        self.c.column.get_tick_unchecked(self.row)
+    }
+
+    pub fn last_tick(&self) -> Tick {
+        self.c.last_run
+    }
+
+    pub fn is_changed(&self) -> bool {
+        self.c.column.get_tick_unchecked(self.row) > self.c.last_run
+    }
+}
+impl<'a, T: 'static> Deref for TickRef<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.c.column.get::<T>(self.row)
+    }
+}
+
+#[derive(Debug)]
+pub struct ValueRef<'a, T> {
+    pub(crate) value: &'a T,
+    pub(crate) tick: Tick,
+    pub(crate) last_run: Tick,
+}
+
+impl<'a, T> ValueRef<'a, T> {
+    pub fn new(value: &'a T, tick: Tick, last_run: Tick) -> Self {
+        Self {
+            value,
+            tick,
+            last_run,
+        }
+    }
+
+    pub fn tick(&self) -> Tick {
+        self.tick
+    }
+
+    pub fn last_tick(&self) -> Tick {
+        self.last_run
+    }
+
+    pub fn is_changed(&self) -> bool {
+        self.tick > self.last_run
+    }
+}
+impl<'a, T: 'static> Deref for ValueRef<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
     }
 }
 
@@ -614,7 +805,6 @@ impl<'a, T: Sized> Mut<'a, T> {
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
         unsafe { transmute(self.c.column.get_row(self.row)) }
     }
-
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;

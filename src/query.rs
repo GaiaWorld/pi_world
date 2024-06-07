@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 use crate::archetype::{Archetype, ArchetypeIndex, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
-use crate::system::{Related, SystemMeta};
+use crate::system::{relate, Related, SystemMeta};
 use crate::system_params::SystemParam;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
@@ -309,7 +309,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
 
 #[derive(Debug)]
 pub struct QState {
-    pub(crate) related: Share<Related>,         // 组件关系表
+    pub(crate) related: Share<Related<ComponentIndex>>,         // 组件关系表
     pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
     pub(crate) bit_set: FixedBitSet,  // world上的原型索引是否在本地
@@ -348,7 +348,7 @@ impl QState {
     pub fn add_archetype(&mut self, ar: &ShareArchetype, index: ArchetypeIndex) {
         // 判断原型是否和查询相关
         // println!("add_archetype======{:?}", (ar.name(), self.related.relate(ar, 0), &self.related));
-        if !self.related.relate(ar, 0) {
+        if !relate(&self.related, ar, 0) {
             return;
         }
         if self.archetypes.len() == 0 {

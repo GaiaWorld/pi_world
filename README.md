@@ -11,13 +11,14 @@
 ## 需要把执行图的图部分拆成单独的crate，这样静态依赖图和渲染图都可以重用这个图，同时也好检查是否循环引用。
 
 ## 优化原型名字的表达，类似use 模块。
-## 可查看出整个world的原型内存状态。过程包括（insert alter)，
-## 在EntityEditor上提供一个fetch函数，直接跳过Query的本地map检查
-## OrDefault加tick， &T也默认延迟和增加tick
-## archetype初始化时，将包含的Column的BlobTicks都初始化，这样fetch的init_fetch可以用ArchetypeIndex作为参数，query的get可以减少1跳。
+## 可查看出整个world的原型内存状态。
+## 增加OrDefaultRef
 ## 增加ComponentAdded和Changed
 ## 优化alter的clear，提前将ComponentAdded和Changed的Record准备好
 ## SetDefault改为FromWorld
+## 单例提前downcast
+## table增加也应该settle
+## meta将单例资源也记录关系
 
 # v0.1.11 
 ## 已经支持异步system
