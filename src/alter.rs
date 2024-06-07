@@ -74,7 +74,7 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
         self.query.get(e)
     }
 
-    pub fn get_mut(&'w mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
 
@@ -186,17 +186,16 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
         self.query.contains(entity)
     }
 
-    pub fn get<'a>(
-        &'a self,
+    pub fn get( &self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'a>, QueryError> {
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.query.get(e)
     }
 
-    pub fn get_mut<'a: 'w>(
-        &'a mut self,
+    pub fn get_mut(
+        &mut self,
         e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'a>, QueryError> {
+    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
 
