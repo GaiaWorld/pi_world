@@ -827,12 +827,11 @@ mod test_mod {
             }
             println!("alter1: end");
         }
-        pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
+        pub fn removed_l(mut q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
             println!("removed_l");
             for e in removed.iter() {
-                println!("e:{:?}, q0: {:?}", e, q0.get(*e));
+                println!("e:{:?}, q0: {:?}", e, q0.get_mut(*e));
             }
-        
             println!("removed_l: end");
         }
         let mut app = SingleThreadApp::new();

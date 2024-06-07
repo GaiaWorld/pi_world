@@ -36,7 +36,7 @@ pub trait FilterComponents {
         last_run: Tick,
     ) -> Self::Filter<'w>;
 
-    fn filter<'w>(_fetch: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
+    fn filter<'w>(_filter: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
         false
     }
 }
@@ -142,8 +142,8 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 
     #[inline(always)]
-    fn filter<'w>(fetch: &Self::Filter<'w>, row: Row, e: Entity) -> bool {
-        fetch.0.get_tick_unchecked(row) <= fetch.1
+    fn filter<'w>(filter: &Self::Filter<'w>, row: Row, e: Entity) -> bool {
+        filter.0.get_tick_unchecked(row) <= filter.1
     }
 }
 pub struct Or<T: 'static>(PhantomData<T>);

@@ -35,22 +35,22 @@ use crate::utils::VecExt;
 use crate::world::*;
 
 pub struct Alterer<
-    'world,
+    'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
     D: Bundle + 'static = (),
 > {
-    query: Queryer<'world, Q, F>,
+    query: Queryer<'w, Q, F>,
     state: AlterState<A>,
     is_delay: bool,
     _k: PhantomData<D>,
 }
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alterer<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Alterer<'w, Q, F, A, D>
 {
     pub(crate) fn new(
-        world: &'world World,
+        world: &'w World,
         query_state: QueryState<Q, F>,
         state: AlterState<A>,
     ) -> Self {
@@ -67,14 +67,14 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 
     pub fn get(
-        &'world self,
+        &'w self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'w>, QueryError>
     {
         self.query.get(e)
     }
 
-    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+    pub fn get_mut(&'w mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
 
@@ -137,8 +137,8 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 }
 
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
-    for Alterer<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
+    for Alterer<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         if self.is_delay{
@@ -151,30 +151,30 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 }
 pub struct Alter<
-    'world,
+    'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
     D: Bundle + 'static = (),
 > {
-    query: Query<'world, Q, F>,
-    state: &'world mut AlterState<A>,
+    query: Query<'w, Q, F>,
+    state: &'w mut AlterState<A>,
     _k: PhantomData<D>,
 }
 
-unsafe impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Send for Alter<'world, Q, F, A, D>
+unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Send for Alter<'w, Q, F, A, D>
 {
 }
-unsafe impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Sync for Alter<'world, Q, F, A, D>
+unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Sync for Alter<'w, Q, F, A, D>
 {
 }
 
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alter<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Alter<'w, Q, F, A, D>
 {
-    pub(crate) fn new(query: Query<'world, Q, F>, state: &'world mut AlterState<A>) -> Self {
+    pub(crate) fn new(query: Query<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
         Alter {
             query,
             state,
@@ -193,7 +193,7 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         self.query.get(e)
     }
 
-    pub fn get_mut<'a>(
+    pub fn get_mut<'a: 'w>(
         &'a mut self,
         e: Entity,
     ) -> Result<<Q as FetchComponents>::Item<'a>, QueryError> {
@@ -260,21 +260,21 @@ impl<
         state.0.align(world);
     }
 
-    fn get_param<'world>(
-        world: &'world World,
-        _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_param<'w>(
+        world: &'w World,
+        _system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
-    ) -> Self::Item<'world> {
+    ) -> Self::Item<'w> {
         // 将新多出来的原型，创建原型空映射
         state.1.align(world, &state.0.archetypes);
         Alter::new(Query::new(world, &mut state.0, tick), &mut state.1)
     }
 
-    fn get_self<'world>(
-        world: &'world World,
-        system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_self<'w>(
+        world: &'w World,
+        system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
@@ -282,12 +282,12 @@ impl<
 }
 
 impl<
-        'world,
+        'w,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
         D: Bundle + 'static,
-    > Drop for Alter<'world, Q, F, A, D>
+    > Drop for Alter<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         self.state.state.clear(

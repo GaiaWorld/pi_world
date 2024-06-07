@@ -2,16 +2,15 @@
 
 use core::fmt::*;
 use core::result::Result;
-use std::cell::UnsafeCell;
+use std::cell::SyncUnsafeCell;
 use std::mem::{transmute, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 
 use crate::archetype::{Archetype, ArchetypeIndex, Row, ShareArchetype};
 use crate::fetch::FetchComponents;
-use crate::filter::{self, FilterComponents};
+use crate::filter::FilterComponents;
 use crate::system::{Related, SystemMeta};
 use crate::system_params::SystemParam;
-use crate::utils::VecExt;
 use crate::world::*;
 use fixedbitset::FixedBitSet;
 use pi_null::*;
@@ -29,22 +28,28 @@ pub enum QueryError {
     RepeatAlter,
 }
 
-pub struct Queryer<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
-    pub(crate) world: &'world World,
+pub struct Queryer<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
+    pub(crate) world: &'w World,
     pub(crate) state: QueryState<Q, F>,
     pub(crate) tick: Tick,
     // 缓存上次的索引映射关系
-    pub(crate) cache_mapping: UnsafeCell<(ArchetypeIndex, ArchetypeLocalIndex)>,
+    cache_index: SyncUnsafeCell<ArchetypeIndex>,
+    filter: SyncUnsafeCell<
+        MaybeUninit<(
+            <Q as FetchComponents>::Fetch<'w>,
+            <F as FilterComponents>::Filter<'w>,
+        )>,
+    >,
 }
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'world, Q, F> {
-    pub(crate) fn new(world: &'world World, state: QueryState<Q, F>) -> Self {
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'w, Q, F> {
+    pub(crate) fn new(world: &'w World, state: QueryState<Q, F>) -> Self {
         let tick = world.increment_tick();
-        let cache_mapping = UnsafeCell::new((ArchetypeIndex::null(), ArchetypeLocalIndex(0)));
         Self {
             world,
             state,
             tick,
-            cache_mapping,
+            cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
+            filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
@@ -52,28 +57,22 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
         self.state.check(self.world, entity).is_ok()
     }
 
-    pub fn get(
-        &self,
+    pub fn get<'a>(
+        &'a self,
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
-        // let  (_addr, world_index, local_index) = check(
-        //     self.world,
-        //     entity,
-        //     // unsafe { &mut *self.cache_mapping.get() },
-        //     &self.state.map,
-        // )?;
-        self.state.as_readonly().get(
-            self.world, self.tick,
-            e, /* unsafe {
-                  &mut *self.cache_mapping.get()
-              } */
-        )
+        self.state
+            .as_readonly()
+            .get(self.world, self.tick, e, &self.cache_index, unsafe {
+                transmute(&self.filter)
+            })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        self.state.get(
-            self.world, self.tick, e, /* self.cache_mapping.get_mut() */
-        )
+        let r = self
+            .state
+            .get(self.world, self.tick, e, &self.cache_index, &self.filter);
+        unsafe { transmute(r) }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -92,18 +91,30 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static> Querye
     }
 }
 
-pub struct Query<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
-    pub(crate) world: &'world World,
-    pub(crate) state: &'world mut QueryState<Q, F>,
+pub struct Query<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
+    pub(crate) world: &'w World,
+    pub(crate) state: &'w mut QueryState<Q, F>,
     pub(crate) tick: Tick,
     // 缓存上次的索引映射关系
-    // pub(crate) cache_mapping: UnsafeCell<(ArchetypeWorldIndex, ArchetypeLocalIndex)>,
+    cache_index: SyncUnsafeCell<ArchetypeIndex>,
+    filter: SyncUnsafeCell<
+        MaybeUninit<(
+            <Q as FetchComponents>::Fetch<'w>,
+            <F as FilterComponents>::Filter<'w>,
+        )>,
+    >,
 }
-unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Send for Query<'world, Q, F> {}
-unsafe impl<'world, Q: FetchComponents, F: FilterComponents> Sync for Query<'world, Q, F> {}
-impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
-    pub fn new(world: &'world World, state: &'world mut QueryState<Q, F>, tick: Tick) -> Self {
-        Query { world, state, tick }
+unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Send for Query<'w, Q, F> {}
+unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Sync for Query<'w, Q, F> {}
+impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
+    pub fn new(world: &'w World, state: &'w mut QueryState<Q, F>, tick: Tick) -> Self {
+        Query {
+            world,
+            state,
+            tick,
+            cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
+            filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
+        }
     }
 
     pub fn tick(&self) -> Tick {
@@ -122,18 +133,18 @@ impl<'world, Q: FetchComponents, F: FilterComponents> Query<'world, Q, F> {
         &self,
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
-        self.state.as_readonly().get(
-            self.world, self.tick,
-            e, /* unsafe {
-                  &mut *self.cache_mapping.get()
-              } */
-        )
+        self.state
+            .as_readonly()
+            .get(self.world, self.tick, e, &self.cache_index, unsafe {
+                transmute(&self.filter)
+            })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        self.state.get(
-            self.world, self.tick, e, /* self.cache_mapping.get_mut() */
-        )
+        let r = self
+            .state
+            .get(self.world, self.tick, e, &self.cache_index, &self.filter);
+        unsafe { transmute(r) }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -169,26 +180,26 @@ impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> System
         state.align(world);
     }
 
-    fn get_param<'world>(
-        world: &'world World,
-        _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_param<'w>(
+        world: &'w World,
+        _system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
-    ) -> Self::Item<'world> {
+    ) -> Self::Item<'w> {
         Query::new(world, state, tick)
     }
 
-    fn get_self<'world>(
-        world: &'world World,
-        system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_self<'w>(
+        world: &'w World,
+        system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
 
-impl<'world, Q: FetchComponents, F: FilterComponents> Drop for Query<'world, Q, F> {
+impl<'w, Q: FetchComponents, F: FilterComponents> Drop for Query<'w, Q, F> {
     fn drop(&mut self) {
         self.state.last_run = self.tick;
     }
@@ -254,33 +265,45 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         }
     }
     pub fn get<'w>(
-        &'w self,
+        &self,
         world: &'w World,
         tick: Tick,
         entity: Entity,
-        // cache_mapping: &mut (ArchetypeWorldIndex, ArchetypeLocalIndex),
+        cache_index: &SyncUnsafeCell<ArchetypeIndex>,
+        fetch_filter: &SyncUnsafeCell<
+            MaybeUninit<(
+                <Q as FetchComponents>::Fetch<'w>,
+                <F as FilterComponents>::Filter<'w>,
+            )>,
+        >,
     ) -> Result<Q::Item<'w>, QueryError> {
         let addr = *self.check(world, entity /* cache_mapping, */)?;
 
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
-        let filter = F::init_filter(
-            world,
-            &self.filter_state,
-            addr.archetype_index(),
-            tick,
-            self.last_run,
-        );
-        if F::filter(&filter, addr.row, entity) {
+        if addr.archetype_index() != unsafe { *cache_index.get() } {
+            let fetch = Q::init_fetch(
+                world,
+                &self.fetch_state,
+                addr.archetype_index(),
+                tick,
+                self.last_run,
+            );
+            let filter = F::init_filter(
+                world,
+                &self.filter_state,
+                addr.archetype_index(),
+                tick,
+                self.last_run,
+            );
+
+            unsafe { *cache_index.get() = addr.archetype_index() };
+            unsafe { (&mut *fetch_filter.get()).write(transmute((fetch, filter))) };
+        };
+        let (fetch, filter) = unsafe { (&*fetch_filter.get()).assume_init_ref() };
+        if F::filter(filter, addr.row, entity) {
             return Err(QueryError::NoMatchEntity(entity));
         }
-        let mut fetch = Q::init_fetch(
-            world,
-            &self.fetch_state,
-            addr.archetype_index(),
-            tick,
-            self.last_run,
-        );
-        Ok(Q::fetch(&mut fetch, addr.row, entity))
+        Ok(Q::fetch(fetch, addr.row, entity))
     }
 }
 

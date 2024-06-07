@@ -28,17 +28,6 @@ pub trait FetchComponents {
 
     /// initializes ReadWrite for this [`FetchComponents`] type.
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State;
-    // fn archetype_depend(_world: &World, _archetype: &Archetype, _result: &mut ArchetypeDependResult) {}
-    // fn res_depend(
-    //     _res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     _single: bool,
-    //     _result: &mut Flags,
-    // ) {
-    // }
-
-    // /// Creates and initializes a [`State`](FetchComponents::State) for this [`FetchComponents`] type.
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State;
 
     /// Creates a new instance of this fetch.
     ///
@@ -95,7 +84,7 @@ impl FetchComponents for Entity {
 }
 
 impl<T: 'static> FetchComponents for &T {
-    type Fetch<'w> = BlobRef<'w>;
+    type Fetch<'w> = ColumnTick<'w>; // 必须和&mut T的Fetch一致，因为Query做了Fetch的缓冲
     type Item<'w> = &'w T;
     type ReadOnly = &'static T;
     type State = Share<Column>;
@@ -108,25 +97,19 @@ impl<T: 'static> FetchComponents for &T {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ);
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
         index: ArchetypeIndex,
-        _tick: Tick,
-        _last_run: Tick,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w> {
-        state.blob_ref_unchecked(index)
+        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        unsafe { transmute(fetch.get_row(row)) }
+        unsafe { transmute(fetch.column.get_row(row)) }
     }
 }
 
@@ -144,12 +127,6 @@ impl<T: 'static> FetchComponents for &mut T {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
@@ -180,12 +157,6 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::READ)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
@@ -251,12 +222,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
+
 
     fn init_fetch<'w>(
         _world: &'w World,
@@ -294,12 +260,6 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
@@ -324,7 +284,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
 }
 
 impl<T: 'static> FetchComponents for Option<&T> {
-    type Fetch<'w> = Option<BlobRef<'w>>;
+    type Fetch<'w> = Option<ColumnTick<'w>>;
     type Item<'w> = Option<&'w T>;
     type ReadOnly = Option<&'static T>;
     type State = Share<Column>;
@@ -337,22 +297,16 @@ impl<T: 'static> FetchComponents for Option<&T> {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::READ)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
         index: ArchetypeIndex,
-        _tick: Tick,
-        _last_run: Tick,
+        tick: Tick,
+        last_run: Tick,
     ) -> Self::Fetch<'w> {
         if let Some(column) = state.blob_ref(index) {
-            Some(column)
+            Some(ColumnTick::new(column, tick, last_run))
         } else {
             None
         }
@@ -360,7 +314,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
 
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
-            Some(c) => Some(unsafe { transmute(c.get_row(row)) }),
+            Some(c) => Some(unsafe { transmute(c.column.get_row(row)) }),
             None => None,
         }
     }
@@ -380,12 +334,6 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::empty(), Flags::WRITE)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
 
     fn init_fetch<'w>(
         _world: &'w World,
