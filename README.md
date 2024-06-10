@@ -12,13 +12,6 @@
 
 ## 优化原型名字的表达，类似use 模块。
 ## 可查看出整个world的原型内存状态。
-## 增加OrDefaultRef
-## 增加ComponentAdded和Changed
-## 优化alter的clear，提前将ComponentAdded和Changed的Record准备好
-## SetDefault改为FromWorld
-## 单例提前downcast
-## table增加也应该settle
-## meta将单例资源也记录关系
 
 # v0.1.11 
 ## 已经支持异步system
@@ -54,3 +47,14 @@
 # v0.6
 ## alter还是改为延迟，EntityEditor的alter为立即执行
 ## ComponentRemoved是一个SystemParam，可迭代出上次运行到这次的运行期间被删除的组件的实体
+
+# v0.7
+## 调整了Archetype和Column的关系， Column包含多个Archetype的Blob
+## 优化了Query的get方法的性能
+
+# v0.8
+## SetDefault改为SetFromWorld
+## 单例多例都提前downcast
+## meta将单例多例资源记录关系，事件支持安全的读写，所以不记录关系
+## 增加ComponentAdded和Changed
+## 增加OrDefaultRef

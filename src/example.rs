@@ -211,7 +211,7 @@ struct Velocity([f32; 3]);
 #[cfg(test)]
 mod test_mod {
   
-    use std::any::TypeId;
+    use std::{any::TypeId, ops::Deref};
 
     use super::*;
     use crate::{
@@ -229,21 +229,21 @@ mod test_mod {
 
     #[derive(ScheduleLabel, Hash, Eq, PartialEq, Clone, Debug)]
     pub struct AddSchedule;
-
+ 
     #[test] 
     fn test_columns() {
         let mut cc = Column::new(ComponentInfo::of::<Transform>(0));
         cc.init_blob(0usize.into());
         let mut c = cc.blob_ref_unchecked(0usize.into());
-        c.write(Row(0), Transform([0.0; 16]));
-        c.write(Row(1), Transform([1.0; 16]));
-        dbg!(c.get::<Transform>(Row(0)));
-        dbg!(c.get::<Transform>(Row(1)));
+        c.write(Row(0), Entity::null(), Transform([0.0; 16]));
+        c.write(Row(1), Entity::null(), Transform([1.0; 16]));
+        dbg!(c.get::<Transform>(Row(0), Entity::null()));
+        dbg!(c.get::<Transform>(Row(1), Entity::null()));
         let mut action = Default::default();
         cc.settle_by_index(0usize.into(), 2, 0, &mut action);
         let mut c = cc.blob_ref_unchecked(0usize.into());
-        dbg!(c.get::<Transform>(Row(0)));
-        dbg!(c.get::<Transform>(Row(1)));
+        dbg!(c.get::<Transform>(Row(0), Entity::null()));
+        dbg!(c.get::<Transform>(Row(1), Entity::null()));
     }
     #[test]
     fn test_removes_action() {
@@ -1134,10 +1134,6 @@ mod test_mod {
         }
         let mut app = SingleThreadApp::new();
         app.world.insert_single_res(A(1.0));
-        app.world.register_multi_res(TypeInfo::of::<B>());
-        app.world.register_multi_res(TypeInfo::of::<C>());
-        app.world.register_multi_res(TypeInfo::of::<D>());
-        app.world.register_multi_res(TypeInfo::of::<E>());
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -1152,10 +1148,14 @@ mod test_mod {
 
         app.world.assert_archetype_arr(&[None]);
 
-        assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<C>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
+        let r = app.world.get_multi_res::<B>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<C>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<D>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<E>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
     }
 
     #[test]

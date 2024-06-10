@@ -1,7 +1,5 @@
-use std::any::TypeId;
 use std::borrow::Cow;
 use std::marker::PhantomData;
-use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
 use pi_proc_macros::all_tuples;
@@ -10,8 +8,9 @@ use pi_share::Share;
 use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::FromWorld;
-use crate::system::SystemMeta;
-use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
+use crate::single_res::TickRes;
+use crate::system::{Relation, SystemMeta};
+use crate::world::{ComponentIndex, Entity, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
@@ -78,6 +77,7 @@ impl FetchComponents for Entity {
         ()
     }
 
+    #[inline(always)]
     fn fetch<'w>(_fetch: &Self::Fetch<'w>, _row: Row, e: Entity) -> Self::Item<'w> {
         e
     }
@@ -93,11 +93,11 @@ impl<T: 'static> FetchComponents for &T {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
-            crate::system::Relation::Read(0usize.into()),
+            Relation::Read(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -108,8 +108,9 @@ impl<T: 'static> FetchComponents for &T {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        unsafe { transmute(fetch.column.get_row(row)) }
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        fetch.column.get::<T>(row, e)
     }
 }
 
@@ -123,11 +124,11 @@ impl<T: 'static> FetchComponents for &mut T {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
-            crate::system::Relation::Write(0usize.into()),
+            Relation::Write(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -138,6 +139,7 @@ impl<T: 'static> FetchComponents for &mut T {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Mut::new(fetch, e, row)
     }
@@ -154,11 +156,11 @@ impl<T: 'static> FetchComponents for Ref<T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::Read(0usize.into()),
+            Relation::Read(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -169,8 +171,9 @@ impl<T: 'static> FetchComponents for Ref<T> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
-        TickRef::new(fetch, row)
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+        TickRef::new(fetch, row, e)
     }
 }
 
@@ -184,11 +187,11 @@ impl<T: 'static> FetchComponents for Option<Ref<T>> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::OptRead(0usize.into()),
+            Relation::OptRead(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -202,10 +205,10 @@ impl<T: 'static> FetchComponents for Option<Ref<T>> {
             None
         }
     }
-
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
-            Some(c) => Some(TickRef::new(c, row)),
+            Some(c) => Some(TickRef::new(c, row, e)),
             None => None,
         }
     }
@@ -221,11 +224,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::Read(0usize.into()),
+            Relation::Read(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -235,7 +238,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     ) -> Self::Fetch<'w> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -251,16 +254,11 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::Write(0usize.into()),
+            Relation::Write(0usize.into()),
         )
         .1
     }
-    // fn archetype_depend(world: &World, archetype: &Archetype, result: &mut ArchetypeDependResult) {
-    //     result.depend(archetype, world, &TypeId::of::<T>(), Flags::WITHOUT, Flags::WRITE)
-    // }
-    // fn init_statee(world: &World, archetype: &Archetype) -> Self::State {
-    //     archetype.get_column_index_by_tid(&world, &TypeId::of::<T>())
-    // }
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -270,7 +268,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     ) -> Self::Fetch<'w> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -286,11 +284,11 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::OptRead(0usize.into()),
+            Relation::OptRead(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -304,7 +302,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
             None
         }
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -323,11 +321,11 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(COMPONENT_TICK),
-            crate::system::Relation::OptWrite(0usize.into()),
+            Relation::OptWrite(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -341,7 +339,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
             None
         }
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -360,11 +358,11 @@ impl<T: 'static> FetchComponents for Option<&T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
-            crate::system::Relation::OptRead(0usize.into()),
+            Relation::OptRead(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -378,10 +376,10 @@ impl<T: 'static> FetchComponents for Option<&T> {
             None
         }
     }
-
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
-            Some(c) => Some(unsafe { transmute(c.column.get_row(row)) }),
+            Some(c) => Some(c.column.get::<T>(row, e)),
             None => None,
         }
     }
@@ -397,11 +395,11 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
-            crate::system::Relation::OptWrite(0usize.into()),
+            Relation::OptWrite(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -415,7 +413,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
             None
         }
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Mut::new(f, e, row)),
@@ -431,22 +429,18 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     type Fetch<'w> = Result<BlobRef<'w>, &'w T>;
     type Item<'w> = &'w T;
     type ReadOnly = Self;
-    type State = (Share<Column>, SingleResource);
+    type State = (Share<Column>, Share<TickRes<T>>);
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let info = ComponentInfo::of::<T>(0);
+        meta.add_res(Relation::Read(*info.type_id()));
         let column = meta
-            .component_relate(
-                world,
-                ComponentInfo::of::<T>(0),
-                crate::system::Relation::OptRead(0usize.into()),
-            )
+            .component_relate(world, info, Relation::OptRead(0usize.into()))
             .1;
         let _index = world.init_single_res::<T>();
-        (
-            column,
-            world.get_single_res_any(&TypeId::of::<T>()).unwrap(),
-        )
+        (column, world.get_share_single_res::<T>().unwrap())
     }
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -457,13 +451,13 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         if let Some(column) = state.0.blob_ref(index) {
             Ok(column)
         } else {
-            Err(unsafe { &mut *state.1.downcast::<T>() })
+            Err(&state.1)
         }
     }
-
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
-            Ok(c) => unsafe { transmute(c.get_row(row)) },
+            Ok(c) => c.get::<T>(row, e),
             Err(r) => *r,
         }
     }
@@ -476,22 +470,18 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
     type Fetch<'w> = Result<ColumnTick<'w>, (&'w T, Tick)>;
     type Item<'w> = ValueRef<'w, T>;
     type ReadOnly = Self;
-    type State = (Share<Column>, SingleResource);
+    type State = (Share<Column>, Share<TickRes<T>>);
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let info = ComponentInfo::of::<T>(0);
+        meta.add_res(Relation::Read(*info.type_id()));
         let column = meta
-            .component_relate(
-                world,
-                ComponentInfo::of::<T>(0),
-                crate::system::Relation::OptRead(0usize.into()),
-            )
+            .component_relate(world, info, Relation::OptRead(0usize.into()))
             .1;
         let _index = world.init_single_res::<T>();
-        (
-            column,
-            world.get_single_res_any(&TypeId::of::<T>()).unwrap(),
-        )
+        (column, world.get_share_single_res::<T>().unwrap())
     }
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -502,19 +492,15 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
         if let Some(column) = state.0.blob_ref(index) {
             Ok(ColumnTick::new(column, tick, last_run))
         } else {
-            Err((unsafe { &mut *state.1.downcast::<T>() }, last_run))
+            Err((&state.1, last_run))
         }
     }
-
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+    #[inline(always)]
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Ok(c) => {
                 let tick = c.column.get_tick_unchecked(row);
-                ValueRef::new(
-                    unsafe { transmute(c.column.get_row(row)) },
-                    tick,
-                    c.last_run,
-                )
+                ValueRef::new(c.column.get::<T>(row, e), tick, c.last_run)
             }
             Err(r) => ValueRef::new(r.0, 0usize.into(), r.1),
         }
@@ -532,11 +518,11 @@ impl<T: 'static> FetchComponents for Has<T> {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
-            crate::system::Relation::OptRead(0usize.into()),
+            Relation::OptRead(0usize.into()),
         )
         .1
     }
-
+    #[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -546,15 +532,15 @@ impl<T: 'static> FetchComponents for Has<T> {
     ) -> Self::Fetch<'w> {
         state.contains(index)
     }
-
+    #[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
         *fetch
     }
 }
 
 #[derive(Debug)]
-pub struct Component<T: 'static>(pub ComponentIndex, PhantomData<T>);
-impl<T: 'static> FetchComponents for Component<T> {
+pub struct ComponentId<T: 'static>(pub ComponentIndex, PhantomData<T>);
+impl<T: 'static> FetchComponents for ComponentId<T> {
     type Fetch<'w> = ComponentIndex;
     type Item<'w> = ComponentIndex;
     type ReadOnly = Self;
@@ -612,6 +598,7 @@ pub struct ColumnTick<'a> {
     pub(crate) last_run: Tick,
 }
 impl<'a> ColumnTick<'a> {
+    #[inline(always)]
     pub(crate) fn new(column: BlobRef<'a>, tick: Tick, last_run: Tick) -> Self {
         Self {
             column,
@@ -625,35 +612,41 @@ impl<'a> ColumnTick<'a> {
 pub struct TickRef<'a, T> {
     pub(crate) c: ColumnTick<'a>,
     pub(crate) row: Row,
+    pub(crate) e: Entity,
     _p: PhantomData<T>,
 }
 
 impl<'a, T> TickRef<'a, T> {
-    pub fn new(c: &ColumnTick<'a>, row: Row) -> Self {
+    #[inline(always)]
+    pub fn new(c: &ColumnTick<'a>, row: Row, e: Entity) -> Self {
         Self {
             c: c.clone(),
             row,
+            e,
             _p: PhantomData,
         }
     }
-
+    #[inline(always)]
+    pub fn entity(&self) -> Entity {
+        self.e
+    }
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
-
+    #[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.c.last_run
     }
-
+    #[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
     }
 }
 impl<'a, T: 'static> Deref for TickRef<'a, T> {
     type Target = T;
-
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row)
+        self.c.column.get::<T>(self.row, self.e)
     }
 }
 
@@ -665,6 +658,7 @@ pub struct ValueRef<'a, T> {
 }
 
 impl<'a, T> ValueRef<'a, T> {
+    #[inline(always)]
     pub fn new(value: &'a T, tick: Tick, last_run: Tick) -> Self {
         Self {
             value,
@@ -676,18 +670,18 @@ impl<'a, T> ValueRef<'a, T> {
     pub fn tick(&self) -> Tick {
         self.tick
     }
-
+    #[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.last_run
     }
-
+    #[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.tick > self.last_run
     }
 }
 impl<'a, T: 'static> Deref for ValueRef<'a, T> {
     type Target = T;
-
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.value
     }
@@ -731,7 +725,7 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row)
+        self.c.column.get::<T>(self.row, self.e)
     }
 }
 
@@ -739,13 +733,13 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ mut T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row)
+        self.c.column.get::<T>(self.row, self.e)
     }
 }
 
 impl<'a, T: 'static> Ticker<'a, &'_ mut T> {
     pub fn bypass_change_detection(&mut self) -> &mut T {
-        self.c.column.get_mut::<T>(self.row)
+        self.c.column.get_mut::<T>(self.row, self.e)
     }
 
     pub fn set_changed(&mut self) {
@@ -756,7 +750,7 @@ impl<'a, T: 'static> Ticker<'a, &'_ mut T> {
 impl<'a, T: 'static> DerefMut for Ticker<'a, &'_ mut T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
-        self.c.column.get_mut::<T>(self.row)
+        self.c.column.get_mut::<T>(self.row, self.e)
     }
 }
 
@@ -769,6 +763,7 @@ pub struct Mut<'a, T: 'static> {
     _p: PhantomData<T>,
 }
 impl<'a, T: Sized> Mut<'a, T> {
+    #[inline(always)]
     pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
         Self {
             c: c.clone(),
@@ -777,24 +772,23 @@ impl<'a, T: Sized> Mut<'a, T> {
             _p: PhantomData,
         }
     }
-
+    #[inline(always)]
     pub fn entity(&self) -> Entity {
         self.e
     }
-
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
-
+    #[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.c.last_run
     }
-
+    #[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
     }
     pub fn bypass_change_detection(&mut self) -> &mut T {
-        self.c.column.get_mut::<T>(self.row)
+        self.c.column.get_mut::<T>(self.row, self.e)
     }
 
     pub fn set_changed(&mut self) {
@@ -803,20 +797,21 @@ impl<'a, T: Sized> Mut<'a, T> {
 
     pub fn into_inner(self) -> &'a mut T {
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
-        unsafe { transmute(self.c.column.get_row(self.row)) }
+        self.c.column.get_mut::<T>(self.row, self.e)
     }
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
-
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row)
+        self.c.column.get::<T>(self.row, self.e)
     }
 }
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
-        self.c.column.get_mut::<T>(self.row)
+        self.c.column.get_mut::<T>(self.row, self.e)
     }
 }
 
@@ -835,6 +830,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init_state(_world, _meta),)*)
             }
             #[allow(clippy::unused_unit)]
+            #[inline(always)]
             fn init_fetch<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -847,6 +843,7 @@ macro_rules! impl_tuple_fetch {
             }
 
             #[allow(clippy::unused_unit)]
+            #[inline(always)]
             fn fetch<'w>(
                 _fetch: &Self::Fetch<'w>,
                 _row: Row,

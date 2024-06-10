@@ -5,12 +5,9 @@ use std::mem::transmute;
 use pi_proc_macros::all_tuples;
 use pi_share::Share;
 use pi_slot::SlotMap;
-// use pi_world_macros::ParamSetElement;
 
 use crate::archetype::*;
 use crate::column::Column;
-use crate::editor::EntityEditor;
-use crate::prelude::QueryError;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -120,12 +117,6 @@ pub trait Bundle {
     fn insert(item: &Self::Item, components: Self, e: Entity, row: Row, tick: Tick);
 }
 
-// pub trait BundleExt: Bundle {
-//     fn add_components(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
-//     fn add_bundle(editor: &mut EntityEditor, e: Entity, components: Self) -> Result<(), QueryError>;
-//     fn insert_components(editor: &mut EntityEditor, components: Self) -> Result<Entity, QueryError>;
-// }
-
 pub struct TypeItem<T: 'static>(Share<Column>, ArchetypeIndex, PhantomData<T>);
 unsafe impl<T> Sync for TypeItem<T> {}
 unsafe impl<T> Send for TypeItem<T> {}
@@ -138,7 +129,7 @@ impl<T: 'static> TypeItem<T> {
     #[inline(always)]
     pub fn write(&self, val: T, e: Entity, row: Row, tick: Tick) {
         let c = self.0.blob_ref_unchecked(self.1);
-        c.write(row, val);
+        c.write(row, e, val);
         c.added_tick(e, row, tick);
     }
 }

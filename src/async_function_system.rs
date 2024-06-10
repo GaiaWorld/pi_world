@@ -1,7 +1,6 @@
 use std::{any::TypeId, borrow::Cow, future::Future, mem::transmute, pin::Pin};
 
 use crate::{
-    archetype::{Archetype, ArchetypeDependResult, Flags},
     function_system::ParamSystem,
     system::{AsyncRunSystem, IntoAsyncSystem, System, SystemMeta, TypeInfo},
     system_params::SystemParam,

@@ -23,11 +23,6 @@ pub trait FilterComponents {
     /// initializes ReadWrite for this [`FilterComponents`] type.
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State;
 
-    // fn filter_archetype(_world: &World, _state: &Self::State, _archetype: &Archetype) -> bool {
-    //     false
-    // }
-    // /// initializes listener for this [`FilterComponents`] type
-    // fn init_listeners(_world: &mut World, _listeners: &mut Vec<ComponentIndex>) {}
     fn init_filter<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -41,18 +36,9 @@ pub trait FilterComponents {
     }
 }
 
-// /// Empty表示取World的空原型
-// pub struct Empty;
-// impl FilterComponents for Empty {
-//     const LISTENER_COUNT: usize = 0;
-//     fn archetype_filter(_world: &World, archetype: &Archetype) -> bool {
-//         archetype.id() != &0
-//     }
-// }
-
 pub struct Without<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Without<T> {
-    // const LISTENER_COUNT: usize = 0;
+
     type Filter<'w> = ();
     type State = ComponentIndex;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -63,9 +49,7 @@ impl<T: 'static> FilterComponents for Without<T> {
         )
         .0
     }
-    // fn filter_archetype(_world: &World, state: &Self::State, archetype: &Archetype) -> bool {
-    //     archetype.contains(*state)
-    // }
+
     #[inline]
     fn init_filter<'w>(
         _world: &'w World,
@@ -76,23 +60,11 @@ impl<T: 'static> FilterComponents for Without<T> {
     ) -> Self::Filter<'w> {
         ()
     }
-    // fn init_state(world: &mut World, meta: &mut SystemMeta) {
-    //     world.add_component_info(ComponentInfo::of::<T>(0));
-    //     meta.cur_param.withouts.insert(TypeId::of::<T>(), std::any::type_name::<T>().into());
-    // }
-    // fn archetype_filter(world: &World, archetype: &Archetype) -> bool {
-    //     !archetype.get_column_index_by_tid(world, &TypeId::of::<T>()).is_null()
-    // }
 }
 
 pub struct With<T: 'static>(PhantomData<T>);
-// impl<T: 'static> FilterArchetype for With<T> {
-//     fn filter_archetype(world: &World, archetype: &Archetype) -> bool {
-//         Self::archetype_filter(world, archetype)
-//     }
-// }
 impl<T: 'static> FilterComponents for With<T> {
-    // const LISTENER_COUNT: usize = 0;
+
     type Filter<'w> = ();
     type State = ComponentIndex;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -118,7 +90,7 @@ impl<T: 'static> FilterComponents for With<T> {
 
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
-    // const LISTENER_COUNT: usize = 1;
+
     type Filter<'w> = (BlobRef<'w>, Tick);
     type State = Share<Column>;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
@@ -142,7 +114,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 
     #[inline(always)]
-    fn filter<'w>(filter: &Self::Filter<'w>, row: Row, e: Entity) -> bool {
+    fn filter<'w>(filter: &Self::Filter<'w>, row: Row, _e: Entity) -> bool {
         filter.0.get_tick_unchecked(row) <= filter.1
     }
 }

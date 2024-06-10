@@ -9,7 +9,7 @@ mod label;
 mod manifest;
 
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use label::derive_label;
 use manifest::Manifest;

@@ -1,12 +1,6 @@
 use std::{
-    any::TypeId,
-    borrow::Cow,
-    collections::HashMap,
-    fmt::Debug,
-    future::Future,
-    mem::take,
-    ops::Range,
-    pin::Pin,
+    any::{Any, TypeId}, borrow::Cow, collections::HashMap, fmt::Debug, future::Future, mem::take,
+    ops::Range, pin::Pin,
 };
 
 use pi_share::Share;
@@ -14,7 +8,7 @@ use pi_share::Share;
 use crate::{
     archetype::{Archetype, ComponentInfo, ShareArchetype},
     column::Column,
-    world::{ComponentIndex, World},
+    world::{ComponentIndex, TickMut, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -30,7 +24,6 @@ impl TypeInfo {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum Relation<T: Eq> {
@@ -179,20 +172,34 @@ fn archetype_relate<'a>(r: &Relation<ComponentIndex>, arg: &mut ArchetypeFilter<
     }
 }
 
-
 #[derive(Debug, Default)]
 pub struct Related<T: Eq> {
     pub(crate) vec: Vec<Relation<T>>,
 }
 impl<T: Eq + Copy + Debug> Related<T> {
+    pub fn new() -> Self {
+        Self { vec: Vec::new() }
+    }
     // 检查新旧读写在reads或writes是否完全不重合
     pub fn check_conflict(&self, other: &Related<T>) {
         // 先检查withouts
         if self.check_without(other) || other.check_without(self) {
             return;
         }
-        assert_eq!(self.check_rw(other), None, "conflict1!, {:?} {:?}", self, other);
-        assert_eq!(other.check_rw(self), None, "conflict2!, {:?} {:?}", self, other);
+        assert_eq!(
+            self.check_rw(other),
+            None,
+            "conflict1!, {:?} {:?}",
+            self,
+            other
+        );
+        assert_eq!(
+            other.check_rw(self),
+            None,
+            "conflict2!, {:?} {:?}",
+            self,
+            other
+        );
     }
     // 检查other的每一个without，和self的with read或writes判断，返回true表示查询完全不重合
     pub fn check_without(&self, other: &Related<T>) -> bool {
@@ -317,8 +324,8 @@ pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
     pub(crate) vec: Vec<Share<Related<ComponentIndex>>>, // SystemParam参数的组件关系列表
     pub(crate) cur_related: Related<ComponentIndex>,     // 当前SystemParam参数的关系
-    pub(crate) param_set_locations: Vec<Range<usize>>, // 参数集在vec的位置
-    pub(crate) res_related: Vec<Relation<TypeId>>, // Res资源的关系
+    pub(crate) param_set_locations: Vec<Range<usize>>,   // 参数集在vec的位置
+    pub(crate) res_related: Related<TypeId>,             // Res资源的关系
 
     pub(crate) res_reads: HashMap<TypeId, Cow<'static, str>>, // 读Res
     pub(crate) res_writes: HashMap<TypeId, Cow<'static, str>>, // 写ResMut
@@ -331,8 +338,7 @@ impl SystemMeta {
             vec: Default::default(),
             cur_related: Default::default(),
             param_set_locations: Default::default(),
-            res_related: Default::default(),
-
+            res_related: Related::new(),
 
             res_reads: Default::default(),
             res_writes: Default::default(),
@@ -389,9 +395,43 @@ impl SystemMeta {
     pub fn param_set_end(&mut self) {
         self.param_set_locations.last_mut().unwrap().end = self.vec.len();
     }
+    /// 加入一个资源
+    pub fn add_single_res<'w>(
+        &mut self,
+        world: &'w mut World,
+        info: TypeInfo,
+        r: Relation<TypeId>,
+    ) -> Option<&'w Share<dyn TickMut>> {
+        self.res_related.vec.push(r.replace(info.type_id));
+        world.get_single_res_any(&info.type_id)
+    }
+    /// 加入一个资源
+    pub fn add_or_single_res<'w>(
+        &mut self,
+        world: &'w mut World,
+        info: TypeInfo,
+        r: Relation<TypeId>,
+    ) -> usize {
+        self.res_related.vec.push(r.replace(info.type_id));
+        world.or_register_single_res(info)
+    }
+    /// 加入一个资源
+    pub fn add_res<'w>(
+        &mut self,
+        r: Relation<TypeId>,
+    ) {
+        self.res_related.vec.push(r);
+    }
 
     // 检查冲突
     pub fn check_conflict(&self) {
+        // 先检查资源是否冲突
+        assert_eq!(
+            self.res_related.check_self(),
+            None,
+            "self res conflict, related:{:?}",
+            &self.res_related
+        );
         for r in self.vec.iter() {
             // 先检查自身
             assert_eq!(r.check_self(), None, "self conflict, related:{:?}", r);
@@ -418,7 +458,6 @@ impl SystemMeta {
         }
     }
 
-    
     pub fn res_read(&mut self, type_info: &TypeInfo) {
         if self.res_writes.contains_key(&type_info.type_id) {
             panic!("res_read conflict, name:{}", type_info.type_name);
@@ -455,7 +494,6 @@ pub trait System: Send + Sync + 'static {
 
     /// system align the world archetypes
     fn align(&mut self, world: &World);
-
 }
 
 pub trait RunSystem: System {

@@ -321,7 +321,7 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         let _unused = inner.lock.lock();
 
-        let aid = *archetype.id();
+        let aid = archetype.id() as u128;
         let mut nodes = Vec::new();
         let mut ar_component_index_node_index_map = Vec::new();
         // 遍历该原型的全部组件
