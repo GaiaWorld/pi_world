@@ -24,33 +24,32 @@ use pi_share::Share;
 
 use crate::archetype::*;
 use crate::column::{BlobRef, Column};
-use crate::event::ComponentRemovedRecord;
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::Bundle;
-use crate::query::{ArchetypeLocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
+use crate::query::{LocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
 
 pub struct Alterer<
-    'world,
+    'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
     D: Bundle + 'static = (),
 > {
-    query: Queryer<'world, Q, F>,
+    query: Queryer<'w, Q, F>,
     state: AlterState<A>,
     is_delay: bool,
     _k: PhantomData<D>,
 }
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alterer<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Alterer<'w, Q, F, A, D>
 {
     pub(crate) fn new(
-        world: &'world World,
+        world: &'w World,
         query_state: QueryState<Q, F>,
         state: AlterState<A>,
     ) -> Self {
@@ -67,10 +66,9 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 
     pub fn get(
-        &'world self,
+        &'w self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'world>, QueryError>
-    {
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'w>, QueryError> {
         self.query.get(e)
     }
 
@@ -137,11 +135,11 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 }
 
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
-    for Alterer<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
+    for Alterer<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
-        if self.is_delay{
+        if self.is_delay {
             self.state.state.clear(
                 self.query.world,
                 &mut self.state.vec,
@@ -151,30 +149,30 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
     }
 }
 pub struct Alter<
-    'world,
+    'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle + 'static = (),
     D: Bundle + 'static = (),
 > {
-    query: Query<'world, Q, F>,
-    state: &'world mut AlterState<A>,
+    query: Query<'w, Q, F>,
+    state: &'w mut AlterState<A>,
     _k: PhantomData<D>,
 }
 
-unsafe impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Send for Alter<'world, Q, F, A, D>
+unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Send for Alter<'w, Q, F, A, D>
 {
 }
-unsafe impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Sync for Alter<'world, Q, F, A, D>
+unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Sync for Alter<'w, Q, F, A, D>
 {
 }
 
-impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alter<'world, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    Alter<'w, Q, F, A, D>
 {
-    pub(crate) fn new(query: Query<'world, Q, F>, state: &'world mut AlterState<A>) -> Self {
+    pub(crate) fn new(query: Query<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
         Alter {
             query,
             state,
@@ -186,17 +184,14 @@ impl<'world, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bun
         self.query.contains(entity)
     }
 
-    pub fn get<'a>(
-        &'a self,
+    pub fn get(
+        &self,
         e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'a>, QueryError> {
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.query.get(e)
     }
 
-    pub fn get_mut<'a>(
-        &'a mut self,
-        e: Entity,
-    ) -> Result<<Q as FetchComponents>::Item<'a>, QueryError> {
+    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         self.query.get_mut(e)
     }
 
@@ -260,21 +255,21 @@ impl<
         state.0.align(world);
     }
 
-    fn get_param<'world>(
-        world: &'world World,
-        _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_param<'w>(
+        world: &'w World,
+        _system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
-    ) -> Self::Item<'world> {
+    ) -> Self::Item<'w> {
         // 将新多出来的原型，创建原型空映射
         state.1.align(world, &state.0.archetypes);
         Alter::new(Query::new(world, &mut state.0, tick), &mut state.1)
     }
 
-    fn get_self<'world>(
-        world: &'world World,
-        system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
+    fn get_self<'w>(
+        world: &'w World,
+        system_meta: &'w SystemMeta,
+        state: &'w mut Self::State,
         tick: Tick,
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
@@ -282,12 +277,12 @@ impl<
 }
 
 impl<
-        'world,
+        'w,
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
         D: Bundle + 'static,
-    > Drop for Alter<'world, Q, F, A, D>
+    > Drop for Alter<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         self.state.state.clear(
@@ -301,7 +296,7 @@ impl<
 pub struct AlterState<A: Bundle> {
     bundle_vec: Vec<MaybeUninit<A::Item>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
-    mapping_dirtys: Vec<ArchetypeLocalIndex>, // 本次变更的原型映射在vec上的索引
+    mapping_dirtys: Vec<LocalIndex>, // 本次变更的原型映射在vec上的索引
     state: AState,
 }
 impl<A: Bundle> Deref for AlterState<A> {
@@ -349,13 +344,13 @@ impl<A: Bundle> AlterState<A> {
     pub(crate) fn alter<'w>(
         &mut self,
         world: &'w World,
-        ar_index: ArchetypeLocalIndex,
+        ar_index: LocalIndex,
         e: Entity,
         src_row: Row,
         components: A,
         tick: Tick,
     ) -> Option<(&ShareArchetype, ArchetypeIndex)> {
-        let mapping = unsafe { self.vec.get_mut(ar_index.index()).unwrap() };
+        let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
         let (is_new, new_ar) = self.state.find_mapping(world, mapping, false);
         if is_new {
@@ -401,13 +396,12 @@ impl<A: Bundle> AlterState<A> {
 
 #[derive(Debug)]
 pub struct AState {
-    map: Vec<ArchetypeLocalIndex>, // 本地mapping映射的索引
+    map: Vec<LocalIndex>, // 本地mapping映射的索引
     map_start: usize,
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
-    pub(crate) adding: Vec<Share<Column>>, // ColumnIndex是组件在目标原型vec中的位置
-    moving: Vec<Share<Column>>, // 两个ColumnIndex分别是源原型vec中的位置及目标原型vec中的位置
-    removing: Vec<Share<Column>>, // ColumnIndex是组件在源原型vec中的位置
-    removed_columns: Vec<Option<Share<ComponentRemovedRecord>>>, // 源原型的被移除的组件的移除记录
+    pub(crate) adding: Vec<Share<Column>>, // 所有映射添加的列
+    moving: Vec<Share<Column>>, // 所有映射移动的列
+    removing: Vec<Share<Column>>, // 所有映射移除的列
 }
 impl AState {
     pub(crate) fn make(
@@ -430,10 +424,10 @@ impl AState {
             adding: Default::default(),
             moving: Default::default(),
             removing: Default::default(),
-            removed_columns: Default::default(),
+            // removed_columns: Default::default(),
         }
     }
-    // 计算源和目标原型，哪些组件是一样，一样就需要获得列位置映射。哪些组件是新增或移除的
+    // 放入本地映射
     pub(crate) fn push_map(&mut self, index: ArchetypeIndex, len: usize) {
         if len == 0 {
             self.map_start = index.index();
@@ -447,11 +441,11 @@ impl AState {
         &self,
         world: &'a World,
         vec: &mut Vec<ArchetypeMapping>, // 记录所有的原型映射
-        mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
+        mapping_dirtys: &mut Vec<LocalIndex>,
     ) {
         // 处理标记移除的条目， 将要移除的组件释放，将相同的组件拷贝
         for ar_index in mapping_dirtys.drain(..) {
-            let am = unsafe { vec.get_mut(ar_index.index()).unwrap() };
+            let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
                 let (src_row, dst_row, _e) = unsafe { am.moves.get_unchecked(i) };
@@ -494,9 +488,9 @@ impl AState {
         moves: &Vec<(Row, Row, Entity)>,
         is_tick: bool,
     ) {
-        for (src_row, dst_row, _) in moves.iter() {
-            let src_data: *mut u8 = src_column.get_row(*src_row);
-            dst_column.write_row(*dst_row, src_data);
+        for (src_row, dst_row, e) in moves.iter() {
+            let src_data: *mut u8 = src_column.get_row(*src_row, *e);
+            dst_column.write_row(*dst_row, *e, src_data);
         }
         if is_tick {
             for (src_row, dst_row, _e) in moves.iter() {
@@ -511,13 +505,13 @@ impl AState {
             let c = unsafe { self.removing.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
                 let column = c.blob_ref_unchecked(am.src.index());
-                for (src_row, _dst_row, _e) in am.moves.iter() {
+                for (src_row, _dst_row, e) in am.moves.iter() {
                     // println!("drop_row_unchecked====={:?}", (c.info.type_name(), i, am.src.index(), _e,  src_row));
-                    column.drop_row_unchecked(*src_row)
+                    column.drop_row_unchecked(*src_row, *e)
                 }
             }
             // 如果移除列上有对应监听，则记录移除行
-            if let Some(record) = unsafe { self.removed_columns.get_unchecked(i) } {
+            if let Some(record) = &c.info.removed {
                 for (_src_row, _dst_row, e) in am.moves.iter() {
                     // 记录移除实体
                     record.record(*e);
@@ -532,7 +526,6 @@ impl AState {
         mapping: &mut ArchetypeMapping,
         existed_adding_is_move: bool,
     ) -> (bool, bool) {
-        // let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("find_mapping: {:?}", (ar_index, mapping.src.index(), mapping.dst.index(), mapping.dst_index));
         if !mapping.dst_index.is_null() {
             return (false, false);
@@ -552,8 +545,8 @@ impl AState {
         mapping.add_indexs = add_start..self.adding.len();
         mapping.move_indexs = move_start..self.moving.len();
         mapping.removed_indexs = removing_start..self.removing.len();
-        // 有可能和本system的ar重合，由于alter是延迟的，也不会有引用被改写的问题
-        if &info.id == mapping.src.id() {
+        // 有可能和本system的ar重合，转成立地修改，由于alter是有可写引用的，也不会有引用被改写的问题
+        if info.id == mapping.src.id() {
             // 同原型内移动，由于bundle_vec的对应位置还未初始化，所以is_new应为true
             mapping.dst = mapping.src.clone();
             mapping.dst_index = mapping.src.index();
@@ -562,24 +555,6 @@ impl AState {
         let dst = world.find_archtype(info);
         mapping.dst_index = dst.index();
         mapping.dst = dst;
-        // 计算移除列及对应移除记录
-        for i in mapping.removed_indexs.clone() {
-            let c = unsafe { self.removing.get_unchecked(i) };
-            let crr = world.get_event_record(&c.info().type_id()).map(|r| {
-                // todo 首次alter时，就state上记录crr。不需要removes_columns上记录很多次
-                Share::downcast::<ComponentRemovedRecord>(r.into_any()).unwrap()
-            });
-            self.removed_columns.push(crr);
-        }
-        // let move_removed_start = self.move_removed_columns.len();
-        // // 计算源原型的RemovedColumns，在目标原型上RemovedColumns对应的位置
-        // for (i, r) in mapping.src.get_remove_columns().iter().enumerate() {
-        //     // 获取被移除的组件在目标原型的移除列的位置
-        //     let remove_column_index = mapping.dst.add_remove_column_index(r.index);
-        //     self.move_removed_columns
-        //         .push((i.into(), remove_column_index));
-        // }
-        // mapping.move_removed_indexs = move_removed_start..self.move_removed_columns.len();
         (true, true)
     }
     pub(crate) fn alter_row(
@@ -594,7 +569,7 @@ impl AState {
         if !src_row.is_null() {
             mapping.src.mark_remove(src_row);
             mapping.move_columns(src_row, dst_row, e, &self.moving);
-            mapping.remove_columns(src_row, e, &self.removing, &self.removed_columns);
+            mapping.remove_columns(src_row, e, &self.removing);
             // 写目标行的Entity
             mapping.dst.set(dst_row, e);
         }
@@ -626,7 +601,7 @@ impl AState {
         &self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<(&'w mut EntityAddr, ArchetypeLocalIndex), QueryError> {
+    ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
         let (addr, local_index) = self.check(world, entity)?;
         if addr.is_mark() {
             return Err(QueryError::RepeatAlter);
@@ -640,7 +615,7 @@ impl AState {
         &self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<(&'w mut EntityAddr, ArchetypeLocalIndex), QueryError> {
+    ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
         // assert!(!entity.is_null());
         let addr = match world.entities.load(entity) {
             Some(v) => v,
@@ -663,7 +638,6 @@ pub struct ArchetypeMapping {
     pub(crate) add_indexs: Range<usize>,     // 目标原型上新增的组件的起始和结束位置
     pub(crate) move_indexs: Range<usize>,    // 源原型和目标原型的组件映射的起始和结束位置
     pub(crate) removed_indexs: Range<usize>, // 源原型上被移除的组件的起始和结束位置
-    // pub(crate) move_removed_indexs: Range<usize>, // 源原型上被移除的组件的起始和结束位置
     pub(crate) moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
 }
 
@@ -685,8 +659,8 @@ impl ArchetypeMapping {
         src_row: Row,
         dst_row: Row,
         e: Entity,
-        ar_index: ArchetypeLocalIndex,
-        mapping_dirtys: &mut Vec<ArchetypeLocalIndex>,
+        ar_index: LocalIndex,
+        mapping_dirtys: &mut Vec<LocalIndex>,
     ) {
         self.moves.push((src_row, dst_row, e));
         // 目标原型和源原型不同，需要移动数据
@@ -721,13 +695,13 @@ impl ArchetypeMapping {
         &self,
         src_row: Row,
         dst_row: Row,
-        _e: Entity,
+        e: Entity,
         src_column: BlobRef<'a>,
         dst_column: BlobRef<'a>,
         is_tick: bool,
     ) {
-        let src_data: *mut u8 = src_column.get_row(src_row);
-        dst_column.write_row(dst_row, src_data);
+        let src_data: *mut u8 = src_column.get_row(src_row, e);
+        dst_column.write_row(dst_row, e, src_data);
         if is_tick {
             let tick = src_column.get_tick_unchecked(src_row);
             dst_column.set_tick_unchecked(dst_row, tick);
@@ -738,16 +712,15 @@ impl ArchetypeMapping {
         src_row: Row,
         e: Entity,
         removing: &Vec<Share<Column>>,
-        removed_columns: &Vec<Option<Share<ComponentRemovedRecord>>>,
     ) {
         for i in self.removed_indexs.clone().into_iter() {
             let c = unsafe { removing.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
                 let src_column = c.blob_ref_unchecked(self.src.index());
-                src_column.drop_row_unchecked(src_row);
+                src_column.drop_row_unchecked(src_row, e);
             }
             // 如果移除列上有对应监听，则记录移除实体
-            if let Some(record) = unsafe { removed_columns.get_unchecked(i) } {
+            if let Some(record) = &c.info.removed {
                 record.record(e);
             }
         }

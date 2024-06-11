@@ -6,17 +6,17 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::{ArchetypeLocalIndex, Queryer}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
+    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::{LocalIndex, Queryer}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
 impl AState {
-    fn insert_columns(&self, am: &mut ArchetypeMapping, dst_row: Row, e: Entity, tick: Tick) {
+    fn insert_columns(&mut self, world: &mut World, am: &mut ArchetypeMapping, dst_row: Row, e: Entity, tick: Tick) {
         for i in am.add_indexs.clone().into_iter() {
             let c = unsafe { self.adding.get_unchecked(i) };
             let dst_column = c.blob_ref_unchecked(am.dst.index());
             // println!("dst_column: {:?}", dst_column.info());
-            let dst_data: *mut u8 = unsafe { dst_column.load(dst_row) };
-            c.info().default_fn.unwrap()(dst_data);
+            let dst_data: *mut u8 = dst_column.load(dst_row, e);
+            c.info().set_fn.unwrap()(world, dst_data);
             dst_column.added_tick(e, dst_row, tick)
         }
     }
@@ -76,7 +76,7 @@ impl<'w> EntityEditor<'w> {
         self.alter_components_impl(e)
     }
 
-    fn alter_components_impl(& self, e: Entity) -> Result<(), QueryError> {
+    fn alter_components_impl(&mut self, e: Entity) -> Result<(), QueryError> {
         let ptr: *const EditorState = &self.world.entity_editor_state;
         let editor_state = unsafe { &mut *(ptr as *mut EditorState) };
         editor_state.tmp.sort_by(|a, b| a.cmp(b)); // 只比较ComponentIndex，并且保持原始顺序的排序
@@ -86,7 +86,7 @@ impl<'w> EntityEditor<'w> {
         let hash = hasher.finish();
 
         let addr = match self.world.entities.get(e) {
-            Some(v) => v,
+            Some(v) => *v,
             None => return Err(QueryError::NoSuchEntity(e)),
         };
 
@@ -120,7 +120,7 @@ impl<'w> EntityEditor<'w> {
                     ar.clone(),
                     self.world.empty_archetype.clone(),
                 ));
-                let local_index = ArchetypeLocalIndex::from(editor_state.vec.len() - 1);
+                let local_index = LocalIndex::from(editor_state.vec.len() - 1);
                 editor_state
                     .archetype_map
                     .insert((ar_index, hash), local_index);
@@ -139,12 +139,16 @@ impl<'w> EntityEditor<'w> {
         let mapping = unsafe { editor_state.vec.get_unchecked_mut(local_index.index()) };
         state.find_mapping(&self.world, mapping, true);
 
+        if mapping.dst.id() == mapping.src.id() {
+            return Ok(());
+        }
+
         let (_, dst_row) = mapping.dst.alloc();
         // println!("edit: {:?}", (e, addr.row, dst_row, &mapping.dst));
 
         let tick = self.world.tick();
         // println!("mapping: {}")
-        state.insert_columns(mapping, dst_row.into(), e, tick.clone());
+        state.insert_columns(self.world, mapping, dst_row.into(), e, tick.clone());
 
         state.alter_row(&self.world, mapping, addr.row, dst_row.into(), e);
         // println!("edit--------: {:?}", (e, addr.row, dst_row, &mapping.dst));
@@ -153,7 +157,7 @@ impl<'w> EntityEditor<'w> {
 
     /// 根据组件id列表一次插入多个相应组件
     // todo 参数components改为sort_components或&mut自己排序
-    pub fn insert_entity_by_index(& self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
+    pub fn insert_entity_by_index(&mut self, components: &[ComponentIndex]) -> Result<Entity, QueryError> {
         let components = components
             .iter()
             .map(|index| self.world.get_column(*index).unwrap().clone())
@@ -165,7 +169,7 @@ impl<'w> EntityEditor<'w> {
         let e = self.world.insert(ar.index(), row.into());
         let tick = self.world.tick();
         // println!("mapping: {}")
-        ar.init_row(row.into(), e, tick);
+        ar.init_row(self.world, row.into(), e, tick);
         *r = e;
         Ok(e)
     }
@@ -194,63 +198,63 @@ impl<'w> EntityEditor<'w> {
     }
 
     /// 获取组件只读引用
-    pub fn get_component<B: Bundle + 'static>(&self, e: Entity) -> Result<&B, QueryError> {
-        self.world.get_component::<B>(e)
+    pub fn get_component<T: 'static>(&self, e: Entity) -> Result<&T, QueryError> {
+        self.world.get_component::<T>(e)
     }
 
     /// 获取组件可写引用
-    pub fn get_component_mut<B: Bundle + 'static>(
+    pub fn get_component_mut<T: 'static>(
         &mut self,
         e: Entity,
-    ) -> Result<Mut<B>, QueryError> {
-        self.world.get_component_mut::<B>(e)
+    ) -> Result<Mut<T>, QueryError> {
+        self.world.get_component_mut::<T>(e)
     }
 
-    pub fn get_component_unchecked<B: Bundle + 'static>(&self, e: Entity) -> &B {
-        self.world.get_component::<B>(e).unwrap()
+    pub fn get_component_unchecked<T: 'static>(&self, e: Entity) -> &T {
+        self.world.get_component::<T>(e).unwrap()
     }
 
-    pub fn get_component_unchecked_mut<B: Bundle + 'static>(&mut self, e: Entity) -> Mut<B> {
-        self.world.get_component_mut::<B>(e).unwrap()
+    pub fn get_component_unchecked_mut<T: 'static>(&mut self, e: Entity) -> Mut<T> {
+        self.world.get_component_mut::<T>(e).unwrap()
     }
 
     /// 根据组件id获取组件只读引用（性能相较get_component更好）
-    pub fn get_component_by_index<B: Bundle + 'static>(
+    pub fn get_component_by_index<T: 'static>(
         &self,
         e: Entity,
         index: ComponentIndex,
-    ) -> Result<&B, QueryError> {
-        self.world.get_component_by_index::<B>(e, index)
+    ) -> Result<&T, QueryError> {
+        self.world.get_component_by_index::<T>(e, index)
     }
 
     /// 根据组件id获取组件可写引用（性能相较get_component_mut更好）
-    pub fn get_component_mut_by_index<B: Bundle + 'static>(
+    pub fn get_component_mut_by_index<T: 'static>(
         &mut self,
         e: Entity,
         index: ComponentIndex,
-    ) -> Result<Mut<B>, QueryError> {
+    ) -> Result<Mut<T>, QueryError> {
         self.world.get_component_mut_by_index(e, index)
     }
 
-    pub fn get_component_unchecked_by_index<B: Bundle + 'static>(
+    pub fn get_component_unchecked_by_index<T: 'static>(
         &self,
         e: Entity,
         index: ComponentIndex,
-    ) -> &B {
-        self.world.get_component_by_index::<B>(e, index).unwrap()
+    ) -> &T {
+        self.world.get_component_by_index::<T>(e, index).unwrap()
     }
 
-    pub fn get_component_unchecked_mut_by_index<B: Bundle + 'static>(
+    pub fn get_component_unchecked_mut_by_index<T: 'static>(
         &mut self,
         e: Entity,
         index: ComponentIndex,
-    ) -> Mut<B> {
+    ) -> Mut<T> {
         self.world.get_component_mut_by_index(e, index).unwrap()
     }
 
     /// 获取组件id
-    pub fn init_component<B: Bundle + 'static>(&self) -> ComponentIndex {
-        self.world.init_component::<B>()
+    pub fn init_component<T: 'static>(&mut self) -> ComponentIndex {
+        self.world.init_component::<T>()
     }
 
     /// 是否包含实体
@@ -258,7 +262,7 @@ impl<'w> EntityEditor<'w> {
         self.world.contains_entity(e)
     }
 
-    /// 添加多个组件
+    /// 添加多个组件 todo 改成add_bundle
     pub fn add_components<B: Bundle + 'static>(
         &mut self,
         e: Entity,
@@ -289,7 +293,7 @@ impl<'w> EntityEditor<'w> {
 #[derive(Default)]
 pub(crate) struct EditorState {
     alter_map: HashMap<u64, AState>, // sorted_add_removes的hash值
-    archetype_map: HashMap<(ArchetypeIndex, u64), ArchetypeLocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
+    archetype_map: HashMap<(ArchetypeIndex, u64), LocalIndex>, // (原型id和sorted_add_removes的hash值)为键, 值为State.vec的索引
     vec: Vec<ArchetypeMapping>,
     tmp: Vec<(ComponentIndex, bool)>,
 }
@@ -307,8 +311,9 @@ impl SystemParam for EntityEditor<'_> {
     type State = ();
     type Item<'w> = EntityEditor<'w>;
 
-    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        // 如果world上没有找到对应的原型，则创建并放入world中
+    fn init_state(_world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        meta.relate(crate::system::Relation::WriteAll);
+        meta.related_ok();
         ()
     }
 

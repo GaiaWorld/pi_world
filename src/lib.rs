@@ -24,13 +24,14 @@ pub mod prelude {
         insert::{Insert, Bundle, Component},
         insert_batch::InsertBatchIter,
         alter::Alter,
-        event:: {Event, EventSender, ComponentRemoved},
+        editor::EntityEditor,
+        event:: {Event, EventSender, ComponentChanged, ComponentAdded, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
         filter::{Changed, With, Without, Or, FilterComponents},
-        fetch::{Has, Mut, OrDefault, Ticker, ArchetypeName},
-        system::{BoxedSystem, IntoSystem, IntoAsyncSystem},
+        fetch::{Has, Ref, Mut, OrDefault, OrDefaultRef, Ticker, ComponentId, ArchetypeName},
+        system::{BoxedSystem, IntoSystem, IntoAsyncSystem, SystemMeta},
         system_params::{SystemParam, Local},
         world::{Entity, World, FromWorld, Tick},
         listener::Listener,
@@ -66,7 +67,6 @@ pub mod async_function_system;
 pub mod insert;
 pub mod insert_batch;
 pub mod alter;
-pub mod dirty;
 pub mod safe_vec;
 pub mod exec_graph;
 pub mod dot;

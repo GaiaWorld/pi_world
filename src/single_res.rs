@@ -1,66 +1,104 @@
 //! 单例资源， 先system依次写，然后多system并行读
 
-use std::any::TypeId;
-use std::borrow::Cow;
+use std::any::{Any, TypeId};
 use std::mem::{replace, transmute};
 use std::ops::{Deref, DerefMut};
 
-use crate::archetype::Flags;
-use crate::system::{SystemMeta, TypeInfo};
-use crate::system_params::SystemParam;
-use crate::world::{SingleResource, Tick, World};
+use pi_share::Share;
 
+use crate::system::{Relation, SystemMeta, TypeInfo};
+use crate::system_params::SystemParam;
+use crate::world::{Downcast, Tick, TickMut, World};
+
+#[derive(Debug, Default)]
+pub struct TickRes<T> {
+    pub(crate) res: T,
+    pub(crate) changed_tick: Tick,
+}
+unsafe impl<T> Send for TickRes<T> {}
+unsafe impl<T> Sync for TickRes<T> {}
+impl<T: 'static> Downcast for TickRes<T> {
+    fn into_any(self: Share<Self>) -> Share<dyn Any + Send + Sync> {
+        self
+    }
+    fn into_box_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+impl<T: 'static> TickMut for TickRes<T> {
+    fn get_tick(&self) -> Tick {
+        self.changed_tick
+    }
+    fn set_tick(&mut self, tick: Tick) {
+        self.changed_tick = tick;
+    }
+}
+impl<T: 'static> TickRes<T> {
+    pub fn new(res: T) -> Self {
+        TickRes {
+            res,
+            changed_tick: Tick::default(),
+        }
+    }
+}
+impl<T: 'static> Deref for TickRes<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.res
+    }
+}
+impl<T: 'static> DerefMut for TickRes<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.res
+    }
+}
 #[derive(Debug)]
 pub struct SingleRes<'w, T: 'static> {
-    pub(crate) value: &'w T,
-    pub(crate) changed_tick: Tick,
+    pub(crate) value: &'w TickRes<T>,
     pub(crate) last_run: Tick,
 }
 unsafe impl<T> Send for SingleRes<'_, T> {}
 unsafe impl<T> Sync for SingleRes<'_, T> {}
 impl<'w, T: 'static> SingleRes<'w, T> {
-    
-    pub(crate) fn new(state: &'w SingleResource, last_run: Tick) -> Self {
-        SingleRes {
-            value: unsafe { &*state.downcast::<T>() },
-            changed_tick: state.1,
-            last_run,
-        }
+    pub(crate) fn new(value: &'w TickRes<T>, last_run: Tick) -> Self {
+        SingleRes { value, last_run }
     }
-    
+
     pub fn changed_tick(&self) -> Tick {
-        self.changed_tick
+        self.value.changed_tick
     }
-    
+
     pub fn is_changed(&self) -> bool {
-        self.changed_tick > self.last_run
+        self.value.changed_tick > self.last_run
     }
 }
 
-impl<T: 'static> SystemParam for SingleRes<'_, T> {
-    type State = (SingleResource, Tick); // todo 改成SingleResource<T>
+impl<T: 'static + Send + Sync> SystemParam for SingleRes<'_, T> {
+    type State = (Share<TickRes<T>>, Tick);
     type Item<'w> = SingleRes<'w, T>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        // println!("system_meta: {:?}, info: {:?}", system_meta, info);
-        (single_resource(world, system_meta, &info, true).unwrap(), Tick::default())
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let s = meta
+            .add_single_res(
+                world,
+                TypeInfo::of::<T>(),
+                Relation::Read(TypeId::of::<()>()),
+            )
+            .unwrap()
+            .clone();
+        (
+            Share::downcast::<TickRes<T>>(s.into_any()).unwrap(),
+            Tick::default(),
+        )
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if single && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::READ, true)
-    //     }
-    // }
-
-    
     fn get_param<'world>(
         _world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -70,7 +108,7 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
         let last_run = replace(&mut state.1, tick);
         SingleRes::new(&state.0, last_run)
     }
-    
+
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -83,70 +121,56 @@ impl<T: 'static> SystemParam for SingleRes<'_, T> {
 
 impl<'w, T: Sync + Send + 'static> Deref for SingleRes<'w, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
-        self.value
+        &self.value.res
     }
 }
 
 #[derive(Debug)]
 pub struct SingleResMut<'w, T: 'static> {
-    pub(crate) value: &'w mut T,
-    pub(crate) changed_tick: &'w mut Tick,
+    pub(crate) value: &'w mut TickRes<T>,
     pub(crate) tick: Tick,
 }
 unsafe impl<T> Send for SingleResMut<'_, T> {}
 unsafe impl<T> Sync for SingleResMut<'_, T> {}
 impl<'w, T: 'static> SingleResMut<'w, T> {
-    
-    pub(crate) fn new(state: &'w mut SingleResource, tick: Tick) -> Self {
-        SingleResMut {
-            value: unsafe { &mut *state.downcast::<T>() },
-            changed_tick: &mut state.1,
-            tick,
-        }
+    pub(crate) fn new(value: &'w mut TickRes<T>, tick: Tick) -> Self {
+        SingleResMut { value, tick }
     }
-    
+
     pub fn changed_tick(&self) -> Tick {
-        *self.changed_tick
+        self.value.changed_tick
+    }
+    pub fn tick(&self) -> Tick {
+        self.tick
     }
 }
 impl<T: 'static> SystemParam for SingleResMut<'_, T> {
-    type State = SingleResource;
+    type State = Share<TickRes<T>>;
     type Item<'w> = SingleResMut<'w, T>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        // println!("mut system_meta: {:?}, info: {:?}", system_meta, info);
-        match single_resource(world, system_meta, &info, false) {
-            Some(r) => r,
-            None => panic!("init SingleRes fail, {:?} is not exist", std::any::type_name::<T>()),
-        }
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let s = meta
+            .add_single_res(
+                world,
+                TypeInfo::of::<T>(),
+                Relation::Read(TypeId::of::<()>()),
+            )
+            .unwrap()
+            .clone();
+        Share::downcast::<TickRes<T>>(s.into_any()).unwrap()
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if single && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::WRITE, true)
-    //     }
-    // }
 
-    
     fn get_param<'world>(
         _world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        SingleResMut::new(state, tick)
+        SingleResMut::new(unsafe { Share::get_mut_unchecked(state) }, tick)
     }
-    
+
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -158,16 +182,15 @@ impl<T: 'static> SystemParam for SingleResMut<'_, T> {
 }
 impl<'w, T: Sync + Send + 'static> Deref for SingleResMut<'w, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
-        self.value
+        &self.value.res
     }
 }
 impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
-    
     fn deref_mut(&mut self) -> &mut Self::Target {
-        *self.changed_tick = self.tick;
-        self.value
+        self.value.changed_tick = self.tick;
+        &mut self.value.res
     }
 }
 
@@ -175,25 +198,14 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
     type State = (usize, Tick);
     type Item<'w> = Option<SingleRes<'w, T>>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        (or_single_resource(world, system_meta, info, true), Tick::default())
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let s = meta.add_or_single_res(
+            world,
+            TypeInfo::of::<T>(),
+            Relation::Read(TypeId::of::<()>()),
+        );
+        (s, Tick::default())
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if single && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::READ, true)
-    //     }
-    // }
-
-    
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -203,12 +215,12 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         match world.index_single_res_any(state.0) {
             Some(r) => {
                 let last_run = replace(&mut state.1, tick);
-                Some(SingleRes::new(r, last_run))
+                Some(SingleRes::new(r.as_any().downcast_ref().unwrap(), last_run))
             }
             None => None,
         }
     }
-    
+
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -223,25 +235,14 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
     type State = usize;
     type Item<'w> = Option<SingleResMut<'w, T>>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        or_single_resource(world, system_meta, info, false)
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        meta.add_or_single_res(
+            world,
+            TypeInfo::of::<TickRes<T>>(),
+            Relation::Write(TypeId::of::<()>()),
+        )
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if single && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::WRITE, true)
-    //     }
-    // }
- 
-    
+
     fn get_param<'world>(
         world: &'world World,
         _system_meta: &'world SystemMeta,
@@ -249,11 +250,16 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         tick: Tick,
     ) -> Self::Item<'world> {
         match world.index_single_res_any(*state) {
-            Some(r) => Some(SingleResMut::new(r, tick)),
+            Some(r) => {
+                let value = unsafe {
+                    &mut *(r.as_any().downcast_ref_unchecked() as *const TickRes<T> as usize as *mut TickRes<T>)
+                };
+                Some(SingleResMut::new(value, tick))
+            }
             None => None,
         }
     }
-    
+
     fn get_self<'world>(
         world: &'world World,
         system_meta: &'world SystemMeta,
@@ -262,21 +268,4 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
-}
-
-fn single_resource(world: &World, system_meta: &mut SystemMeta, info: &TypeInfo, read: bool) -> Option<SingleResource> {
-    if read {
-        system_meta.res_read(&info);
-    }else{
-        system_meta.res_write(&info);
-    }
-    world.get_single_res_any(&info.type_id)
-}
-fn or_single_resource(world: &mut World, system_meta: &mut SystemMeta, info: TypeInfo, read: bool) -> usize {
-    if read {
-        system_meta.res_read(&info);
-    }else{
-        system_meta.res_write(&info);
-    }
-    world.or_register_single_res(info)
 }

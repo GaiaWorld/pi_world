@@ -1,43 +1,69 @@
 //! 多例资源， 每个独立system都维护该类型的自己独立的资源。
-//! 这样多个独立system可以并行写，然后多读system并行读，读的时候遍历所有写system的独立资源。
+//! 这样多个独立system可以并行写，然后多个system并行读，读的时候遍历所有写system的独立资源。
 //! 这样就实现了并行写，并行读。
-//! 每个独立的资源都有自己的Tick， 并且多例资源有一个共享的Tick。 todo!()
+//! 每个独立的资源都有自己的Tick， 并且多例资源有一个共享的Tick。
 
 use std::any::TypeId;
-use std::borrow::Cow;
-use std::marker::PhantomData;
 use std::mem::{replace, transmute};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 
 use pi_share::{Share, ShareUsize};
 
-use crate::archetype::Flags;
-use crate::single_res::{SingleRes, SingleResMut};
-use crate::system::{SystemMeta, TypeInfo};
+use crate::single_res::{SingleRes, SingleResMut, TickRes};
+use crate::system::{Relation, SystemMeta};
 use crate::system_params::SystemParam;
 use crate::world::*;
 
+#[derive(Debug)]
+pub struct ResVec<T: 'static> {
+    vec: Vec<TickRes<T>>,
+}
+impl<T: 'static> ResVec<T> {
+    pub fn new() -> Self {
+        Self { vec: Vec::new() }
+    }
+    pub fn insert(&mut self, value: T) -> usize {
+        let index = self.vec.len();
+        self.vec.push(TickRes::new(value));
+        index
+    }
+    pub fn len(&self) -> usize {
+        self.vec.len()
+    }
+    #[inline(always)]
+    pub fn get(&self, index: usize) -> Option<&TickRes<T>> {
+        self.vec.get(index)
+    }
+    #[inline(always)]
+    pub unsafe fn get_unchecked(&self, index: usize) -> &TickRes<T> {
+        self.vec.get_unchecked(index)
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &TickRes<T>> {
+        self.vec.iter()
+    }
+}
+
+unsafe impl<T: 'static> Send for ResVec<T> {}
+unsafe impl<T: 'static> Sync for ResVec<T> {}
+
 pub struct MultiRes<'w, T: 'static> {
-    pub(crate) vec: &'w Vec<SingleResource>,
+    pub(crate) vec: &'w ResVec<T>,
     changed_tick: Tick,
     last_run: Tick,
     tick: Tick,
-    _p: PhantomData<T>,
 }
-unsafe impl<T> Send for MultiRes<'_, T> {}
-unsafe impl<T> Sync for MultiRes<'_, T> {}
+unsafe impl<T: 'static> Send for MultiRes<'_, T> {}
+unsafe impl<T: 'static> Sync for MultiRes<'_, T> {}
 
 impl<'w, T: 'static> MultiRes<'w, T> {
     #[inline]
-    pub(crate) fn new(state: &'w mut (MultiResource, Tick), tick: Tick) -> Self {
-        let last_run = replace(&mut state.1, tick);
+    pub(crate) fn new(vec: &'w ResVec<T>, changed_tick: Tick, last_run: Tick, tick: Tick) -> Self {
         MultiRes {
-            vec: state.0.vec(),
-            changed_tick: state.0.changed_tick(),
+            vec,
+            changed_tick,
             last_run,
             tick,
-            _p: PhantomData,
         }
     }
     pub fn len(&self) -> usize {
@@ -68,26 +94,15 @@ impl<'w, T: 'static> MultiRes<'w, T> {
     }
 }
 impl<T: 'static> SystemParam for MultiRes<'_, T> {
-    type State = (MultiResource, Tick);
+    type State = (Share<ResVec<T>>, Share<ShareUsize>, Tick);
     type Item<'w> = MultiRes<'w, T>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        (multi_resource(&world, system_meta, &info).unwrap(), Tick::default())
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let id: TypeId = TypeId::of::<T>();
+        meta.add_res(Relation::Read(id));
+        let (r, changed_tick) = world.init_multi_res(id, Share::new(ResVec::<T>::new()));
+        (Share::downcast(r).unwrap(), changed_tick, Tick::default())
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if (!single) && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::READ, true)
-    //     }
-    // }
 
     #[inline]
     fn get_param<'world>(
@@ -96,7 +111,13 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        MultiRes::new(state, tick)
+        let last_run = replace(&mut state.2, tick);
+        MultiRes::new(
+            &state.0,
+            state.1.load(Ordering::Relaxed).into(),
+            last_run,
+            tick,
+        )
     }
     #[inline]
     fn get_self<'world>(
@@ -109,20 +130,18 @@ impl<T: 'static> SystemParam for MultiRes<'_, T> {
     }
 }
 
-pub struct MultiResMut<'w, T: Default + 'static> {
+pub struct MultiResMut<'w, T: FromWorld + 'static> {
     pub(crate) value: SingleResMut<'w, T>,
     changed_tick: &'w Share<ShareUsize>,
-    tick: Tick,
 }
-unsafe impl<T: Default> Send for MultiResMut<'_, T> {}
-unsafe impl<T: Default> Sync for MultiResMut<'_, T> {}
-impl<'w, T: Default + 'static> MultiResMut<'w, T> {
+unsafe impl<T: FromWorld> Send for MultiResMut<'_, T> {}
+unsafe impl<T: FromWorld> Sync for MultiResMut<'_, T> {}
+impl<'w, T: FromWorld + 'static> MultiResMut<'w, T> {
     #[inline]
-    fn new(state: &'w mut (SingleResource, Share<ShareUsize>), tick: Tick) -> Self {
+    fn new(value: SingleResMut<'w, T>, changed_tick: &'w Share<ShareUsize>) -> Self {
         MultiResMut {
-            value: SingleResMut::new(&mut state.0, tick),
-            changed_tick: &state.1,
-            tick,
+            value,
+            changed_tick,
         }
     }
     #[inline(always)]
@@ -130,29 +149,19 @@ impl<'w, T: Default + 'static> MultiResMut<'w, T> {
         Tick::from(self.changed_tick.load(Ordering::Relaxed))
     }
 }
-impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
-    type State = (SingleResource, Share<ShareUsize>);
+impl<T: FromWorld + 'static> SystemParam for MultiResMut<'_, T> {
+    type State = (Share<ResVec<T>>, Share<ShareUsize>, usize);
     type Item<'w> = MultiResMut<'w, T>;
 
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        system_meta.res_write(&info);
-        world.system_init_write_multi_res(T::default).unwrap()
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        let id: TypeId = TypeId::of::<T>();
+        meta.add_res(Relation::ShareWrite(id));
+        let (r, changed_tick) = world.init_multi_res(id, Share::new(ResVec::<T>::new()));
+        let mut res_vec: Share<ResVec<T>> = Share::downcast(r).unwrap();
+        let vec = unsafe { Share::get_mut_unchecked(&mut res_vec) };
+        let index = vec.insert(T::from_world(world));
+        (res_vec, changed_tick, index)
     }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if (!single) && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::SHARE_WRITE, true)
-    //     }
-    // }
-
     #[inline]
     fn get_param<'world>(
         _world: &'world World,
@@ -160,7 +169,10 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        MultiResMut::new(state, tick)
+        let vec = unsafe { Share::get_mut_unchecked(&mut state.0) };
+        let res = unsafe { vec.vec.get_unchecked_mut(state.2) };
+        let value = SingleResMut::new(res, tick);
+        MultiResMut::new(value, &state.1)
     }
     #[inline]
     fn get_self<'world>(
@@ -172,113 +184,18 @@ impl<T: Default + 'static> SystemParam for MultiResMut<'_, T> {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
-impl<'w, T: Default + Sync + Send + 'static> Deref for MultiResMut<'w, T> {
+impl<'w, T: FromWorld + Sync + Send + 'static> Deref for MultiResMut<'w, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.value
     }
 }
-impl<'w, T: Default + Sync + Send + 'static> DerefMut for MultiResMut<'w, T> {
+impl<'w, T: FromWorld + Sync + Send + 'static> DerefMut for MultiResMut<'w, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.changed_tick.store(self.tick.index(), Ordering::Relaxed);
+        self.changed_tick
+            .store(self.value.tick().index(), Ordering::Relaxed);
         &mut self.value
     }
-}
-
-impl<T: 'static> SystemParam for Option<MultiRes<'_, T>> {
-    type State = Option<(MultiResource, Tick)>;
-    type Item<'w> = Option<MultiRes<'w, T>>;
-
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        multi_resource(&world, system_meta, &info).map(|r| (r, Tick::default()))
-    }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if (!single) && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::READ, true)
-    //     }
-    // }
-
-    #[inline]
-    fn get_param<'world>(
-        _world: &'world World,
-        _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
-        tick: Tick,
-    ) -> Self::Item<'world> {
-        match state {
-            Some(s) => Some(MultiRes::new(s, tick)),
-            None => None,
-        }
-    }
-    #[inline]
-    fn get_self<'world>(
-        world: &'world World,
-        system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
-        tick: Tick,
-    ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
-    }
-}
-
-impl<T: Default + 'static> SystemParam for Option<MultiResMut<'_, T>> {
-    type State = Option<(SingleResource, Share<ShareUsize>)>;
-    type Item<'w> = Option<MultiResMut<'w, T>>;
-
-    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let info = TypeInfo::of::<T>();
-        system_meta.res_write(&info);
-        world.system_init_write_multi_res(T::default)
-    }
-    // fn res_depend(
-    //     _world: &World,
-    //     _system_meta: &SystemMeta,
-    //     _state: &Self::State,
-    //     res_tid: &TypeId,
-    //     _res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     if (!single) && &TypeId::of::<T>() == res_tid {
-    //         result.set(Flags::WRITE, true)
-    //     }
-    // }
-
-    #[inline]
-    fn get_param<'world>(
-        _world: &'world World,
-        _system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
-        tick: Tick,
-    ) -> Self::Item<'world> {
-        match state {
-            Some(s) => Some(MultiResMut::new(s, tick)),
-            None => None,
-        }
-    }
-    #[inline]
-    fn get_self<'world>(
-        world: &'world World,
-        system_meta: &'world SystemMeta,
-        state: &'world mut Self::State,
-        tick: Tick,
-    ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
-    }
-}
-
-fn multi_resource(world: &World, system_meta: &mut SystemMeta, info: &TypeInfo) -> Option<MultiResource> {
-    system_meta.res_read(&info);
-    world.system_read_multi_res(&info.type_id)
 }

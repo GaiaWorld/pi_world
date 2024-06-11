@@ -51,6 +51,11 @@ pub struct Age20(usize);
 #[derive(Component, Debug)]
 pub struct Age21(Vec<u64>);
 
+impl Drop for Age21 {
+    fn drop(&mut self) {
+        println!("Age21 drop, {:p} {}", self, self.0.len());
+    }
+}
 // #[derive(Bundle)]
 // pub struct Bundle1{
 //     a1: Age1,
@@ -206,12 +211,12 @@ struct Velocity([f32; 3]);
 #[cfg(test)]
 mod test_mod {
   
-    use std::any::TypeId;
+    use std::{any::TypeId, ops::Deref};
 
     use super::*;
     use crate::{
         // app::*,
-        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{Relation, SystemMeta, TypeInfo}, table::Table
+        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{relate, Relation, SystemMeta, TypeInfo}, table::Table
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -224,21 +229,21 @@ mod test_mod {
 
     #[derive(ScheduleLabel, Hash, Eq, PartialEq, Clone, Debug)]
     pub struct AddSchedule;
-
+ 
     #[test] 
     fn test_columns() {
         let mut cc = Column::new(ComponentInfo::of::<Transform>(0));
         cc.init_blob(0usize.into());
         let mut c = cc.blob_ref_unchecked(0usize.into());
-        c.write(Row(0), Transform([0.0; 16]));
-        c.write(Row(1), Transform([1.0; 16]));
-        dbg!(c.get::<Transform>(Row(0)));
-        dbg!(c.get::<Transform>(Row(1)));
+        c.write(Row(0), Entity::null(), Transform([0.0; 16]));
+        c.write(Row(1), Entity::null(), Transform([1.0; 16]));
+        dbg!(c.get::<Transform>(Row(0), Entity::null()));
+        dbg!(c.get::<Transform>(Row(1), Entity::null()));
         let mut action = Default::default();
-        cc.settle(0usize.into(), 2, 0, &mut action);
+        cc.settle_by_index(0usize.into(), 2, 0, &mut action);
         let mut c = cc.blob_ref_unchecked(0usize.into());
-        dbg!(c.get::<Transform>(Row(0)));
-        dbg!(c.get::<Transform>(Row(1)));
+        dbg!(c.get::<Transform>(Row(0), Entity::null()));
+        dbg!(c.get::<Transform>(Row(1), Entity::null()));
     }
     #[test]
     fn test_removes_action() {
@@ -304,36 +309,43 @@ mod test_mod {
         meta.relate(Relation::With(3usize.into()));
         meta.related_ok();
         meta.check_conflict(); // 检查ParamSet读写
+        let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
+        meta.relate(Relation::Read(1usize.into()));
+        meta.relate(Relation::Write(2usize.into()));
+        meta.relate(Relation::Without(3usize.into()));
+        meta.related_ok();
+        meta.relate(Relation::WriteAll);
+        meta.related_ok();
     }
     #[test]
     fn test_system_meta2() {
         let mut app = SingleThreadApp::new();
-        let w = &app.world;
+        let w = &mut app.world;
         let info = w.archetype_info(vec![ComponentInfo::of::<Transform>(0), ComponentInfo::of::<Position>(0), ComponentInfo::of::<Velocity>(0), ComponentInfo::of::<Rotation>(0)]);
         let ar = Archetype::new(info);
 
         // 测试空Fetch
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
-        assert_eq!(true, r.relate(&w.empty_archetype, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
+        assert_eq!(true, relate(&r, &w.empty_archetype, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Write(w.get_component_index(&TypeId::of::<Position>())));
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<A>())));
         let r = meta.related_ok();
-        assert_eq!(false, r.relate(&ar, 0));
+        assert_eq!(false, relate(&r, &ar, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
         meta.relate(Relation::Without(w.get_component_index(&TypeId::of::<Velocity>())));
         let r = meta.related_ok();
-        assert_eq!(false, r.relate(&ar, 0));
+        assert_eq!(false, relate(&r, &ar, 0));
 
         let mut meta: SystemMeta = SystemMeta::new(TypeInfo::of::<SystemMeta>());
         meta.relate(Relation::Read(w.get_component_index(&TypeId::of::<Transform>())));
@@ -342,8 +354,8 @@ mod test_mod {
         meta.relate(Relation::With(w.get_component_index(&TypeId::of::<A>())));
         meta.relate(Relation::End);
         let r = meta.related_ok();
-        assert_eq!(true, r.relate(&ar, 0));
-        assert_eq!(false, r.relate(&w.empty_archetype, 0));
+        assert_eq!(true, relate(&r, &ar, 0));
+        assert_eq!(false, relate(&r, &w.empty_archetype, 0));
 
     }
  
@@ -822,12 +834,11 @@ mod test_mod {
             }
             println!("alter1: end");
         }
-        pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
+        pub fn removed_l(mut q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
             println!("removed_l");
             for e in removed.iter() {
-                println!("e:{:?}, q0: {:?}", e, q0.get(*e));
+                println!("e:{:?}, q0: {:?}", e, q0.get_mut(*e));
             }
-        
             println!("removed_l: end");
         }
         let mut app = SingleThreadApp::new();
@@ -1123,10 +1134,6 @@ mod test_mod {
         }
         let mut app = SingleThreadApp::new();
         app.world.insert_single_res(A(1.0));
-        app.world.register_multi_res(TypeInfo::of::<B>());
-        app.world.register_multi_res(TypeInfo::of::<C>());
-        app.world.register_multi_res(TypeInfo::of::<D>());
-        app.world.register_multi_res(TypeInfo::of::<E>());
         app.add_system(Update, ab);
         app.add_system(Update, cd);
         app.add_system(Update, ce);
@@ -1141,10 +1148,14 @@ mod test_mod {
 
         app.world.assert_archetype_arr(&[None]);
 
-        assert_eq!(app.world.get_multi_res::<B>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<C>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<D>(0).unwrap().0, 4.0);
-        assert_eq!(app.world.get_multi_res::<E>(0).unwrap().0, 4.0);
+        let r = app.world.get_multi_res::<B>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<C>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<D>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
+        let rs = app.world.get_multi_res::<E>().unwrap().0.get(0).unwrap().deref().0;
+        assert_eq!(r, 4.0);
     }
 
     #[test]
@@ -1597,11 +1608,12 @@ mod test_mod {
             let (e, age1, age0) = r.unwrap();
 
             println!("alter_add2!! e: {:?}, age1: {:?}, age0:{:?}", e, age1, age0);
-            edit.alter_components_by_index(e, &[
+            let arr = [
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
-            ]).unwrap();
+            ];
+            edit.alter_components_by_index(e, &arr).unwrap();
  
             println!("alter_add2 end");
         }
@@ -1699,12 +1711,12 @@ mod test_mod {
             assert_eq!(r.is_some(), true);
             let (e, age1, age0) = r.unwrap();
             assert_eq!(iter.next(), None);
-
-            edit.alter_components_by_index(e, &[
+            let arr = [
                 (edit.init_component::<Age2>(), true),
                 (edit.init_component::<Age3>(), true),
                 (edit.init_component::<Age0>(), false),
-            ]).unwrap();
+            ];
+            edit.alter_components_by_index(e, &arr).unwrap();
         }
 
         pub fn alter_add3(
@@ -1792,7 +1804,8 @@ mod test_mod {
             assert_eq!(entity.is_some(), true);
             {
                 let editor = p.p1();
-                editor.remove_components_by_index(entity.unwrap(), &[editor.init_component::<Age0>()]);
+                let index = editor.init_component::<Age0>();
+                editor.remove_components_by_index(entity.unwrap(), &[index]);
             }
 
             println!("query end!!!");

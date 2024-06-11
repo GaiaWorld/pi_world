@@ -30,32 +30,36 @@ use pi_share::{Share, ShareBool};
 use crate::column::Column;
 use crate::system::TypeInfo;
 use crate::table::Table;
-use crate::world::{ComponentIndex, SetDefault, World};
+use crate::world::{ComponentIndex, SetFromWorld, World};
 
 pub type ShareArchetype = Share<Archetype>;
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Row(pub(crate) u32);
 impl Row {
+    #[inline(always)]
     pub fn index(&self) -> usize {
         self.0 as usize
     }
 }
 impl From<u32> for Row {
+    #[inline(always)]
     fn from(index: u32) -> Self {
         Self(index)
     }
 }
 impl From<usize> for Row {
+    #[inline(always)]
     fn from(index: usize) -> Self {
         Self(index as u32)
     }
 }
 impl pi_null::Null for Row {
+    #[inline(always)]
     fn null() -> Self {
         Self(u32::null())
     }
-
+    #[inline(always)]
     fn is_null(&self) -> bool {
         self.0 == u32::null()
     }
@@ -63,56 +67,34 @@ impl pi_null::Null for Row {
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArchetypeIndex(pub(crate) i32);
 impl ArchetypeIndex {
+    #[inline(always)]
     pub fn index(&self) -> usize {
         self.0 as usize
     }
 }
 impl From<u32> for ArchetypeIndex {
+    #[inline(always)]
     fn from(index: u32) -> Self {
         Self(index as i32)
     }
 }
 impl From<usize> for ArchetypeIndex {
+    #[inline(always)]
     fn from(index: usize) -> Self {
         Self(index as i32)
     }
 }
 impl pi_null::Null for ArchetypeIndex {
+    #[inline(always)]
     fn null() -> Self {
         Self(i32::null())
     }
-
+    #[inline(always)]
     fn is_null(&self) -> bool {
         self.0.is_null()
     }
 }
 
-// #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-// pub struct ColumnIndex(u16);
-// impl ColumnIndex {
-//     pub fn index(&self) -> usize {
-//         self.0 as usize
-//     }
-// }
-// impl From<u16> for ColumnIndex {
-//     fn from(index: u16) -> Self {
-//         Self(index)
-//     }
-// }
-// impl From<usize> for ColumnIndex {
-//     fn from(index: usize) -> Self {
-//         Self(index as u16)
-//     }
-// }
-// impl pi_null::Null for ColumnIndex {
-//     fn null() -> Self {
-//         Self(u16::null())
-//     }
-
-//     fn is_null(&self) -> bool {
-//         self.0 == u16::null()
-//     }
-// }
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -159,9 +141,9 @@ impl ArchetypeDependResult {
     }
     pub fn insert(&mut self, ar: &Archetype, world: &World, components: Vec<ComponentInfo>) {
         let id = ComponentInfo::calc_id(&components);
-        if &id != ar.id() {
-            return;
-        }
+        // if &id != ar.id() {
+        //     return;
+        // }
         self.merge(ArchetypeDepend::Flag(Flags::WRITE));
         for c in components {
             let index = world.get_component_index(&c.type_id());
@@ -202,7 +184,7 @@ impl ArchetypeDependResult {
 
 /// Thread-safe archetype
 pub struct Archetype {
-    id: u128,
+    id: u64,
     name: Cow<'static, str>,
     table: Table,
     pub(crate) ready: ShareBool, //表示是否已就绪，脏列表是否已经被全部的system添加好了
@@ -348,8 +330,8 @@ impl Archetype {
     /// assert_eq!(ar.id(), 136982586060323025009695824984285423444);
     /// ```
     #[inline(always)]
-    pub fn id(&self) -> &u128 {
-        &self.id
+    pub fn id(&self) -> u64 {
+        self.id
     }
     #[inline]
     pub fn name(&self) -> &Cow<'static, str> {
@@ -398,9 +380,9 @@ impl Debug for Archetype {
 }
 #[derive(Debug, Default)]
 pub struct ArchetypeInfo {
-    pub(crate) id: u128,
+    pub(crate) id: u64,
     pub(crate) sorted_components: Vec<Share<Column>>,
-    pub(crate) hash: u64,
+    // pub(crate) hash: u64,
 }
 impl ArchetypeInfo {
     pub(crate) fn sort(mut components: Vec<Share<Column>>) -> Self {
@@ -409,16 +391,15 @@ impl ArchetypeInfo {
     }
     pub(crate) fn new(sorted_components: Vec<Share<Column>>) -> Self {
         let mut hasher = DefaultHasher::new();
-        let mut id = 0;
+        // let mut id = 0;
         for c in sorted_components.iter() {
             c.info().index.hash(&mut hasher);
-            id ^= c.info().id();
+            // id ^= c.info().id();
         }
-        let hash = hasher.finish();
+        let id = hasher.finish();
         Self {
             id,
             sorted_components,
-            hash,
         }
     }
     pub(crate) fn name(&self) -> Cow<'static, str> {
@@ -432,25 +413,18 @@ impl ArchetypeInfo {
         }
         s.into()
     }
-    // pub(crate) fn add(&mut self, info: Share<ComponentInfo>) {
-    //     self.id ^= info.id();
-    //     self.sorted_components.push(info.clone());
-    // }
-    // pub(crate) fn len(&self) -> usize {
-    //     self.sorted_components.len()
-    // }
 }
 
 pub const COMPONENT_TICK: u8 = 1;
-pub const COMPONENT_CHANGED: u8 = 2;
-pub const COMPONENT_ADDED: u8 = 4;
-pub const COMPONENT_REMOVED: u8 = 8;
+// pub const COMPONENT_CHANGED: u8 = 2;
+// pub const COMPONENT_ADDED: u8 = 4;
+// pub const COMPONENT_REMOVED: u8 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentInfo {
     pub type_info: Share<TypeInfo>,
     pub drop_fn: Option<fn(*mut u8)>,
-    pub default_fn: Option<fn(*mut u8)>,
+    pub set_fn: Option<fn(&mut World, *mut u8)>,
     pub index: ComponentIndex, // 在world上的索引
     pub mem_size: u32,             // 内存大小
     pub tick_info: u8,            // tick信息 tick = 1 changed = 2 added = 4 removed = 8
@@ -461,7 +435,7 @@ impl ComponentInfo {
             TypeId::of::<T>(),
             std::any::type_name::<T>().into(),
             get_drop::<T>(),
-            <T as SetDefault>::default_fn(),
+            <T as SetFromWorld>::set_fn(),
             size_of::<T>() as u32,
             tick_info,
         )
@@ -470,7 +444,7 @@ impl ComponentInfo {
         type_id: TypeId,
         type_name: Cow<'static, str>,
         drop_fn: Option<fn(*mut u8)>,
-        default_fn: Option<fn(*mut u8)>,
+        set_fn: Option<fn(&mut World, *mut u8)>,
         mem_size: u32,
         tick_info: u8,
     ) -> Self {
@@ -478,7 +452,7 @@ impl ComponentInfo {
         ComponentInfo {
             type_info,
             drop_fn,
-            default_fn,
+            set_fn,
             mem_size,
             index: ComponentIndex::null(),
             tick_info,
@@ -498,10 +472,7 @@ impl ComponentInfo {
         unsafe { transmute::<TypeId, u128>(*self.type_id()) }.into()
     }
     pub fn is_tick(&self) -> bool {
-        self.tick_info & COMPONENT_TICK != 0
-    }
-    pub fn is_changed(&self) -> bool {
-        self.tick_info & COMPONENT_CHANGED != 0
+        self.tick_info > 0
     }
     pub fn calc_id(vec: &Vec<ComponentInfo>) -> u128 {
         let mut id = 0;
@@ -525,5 +496,7 @@ impl Ord for ComponentInfo {
 
 /// 获得指定类型的释放函数
 pub fn get_drop<T>() -> Option<fn(*mut u8)> {
-    needs_drop::<T>().then_some(|ptr: *mut u8| unsafe { (ptr as *mut T).drop_in_place() })
+    needs_drop::<T>().then_some(|ptr: *mut u8| {
+        unsafe { (ptr as *mut T).drop_in_place() }
+    })
 }

@@ -1,12 +1,6 @@
 use std::{
-    any::TypeId,
-    borrow::Cow,
-    collections::HashMap,
-    fmt::Debug,
-    future::Future,
-    mem::take,
-    ops::Range,
-    pin::Pin,
+    any::{Any, TypeId}, borrow::Cow, collections::HashMap, fmt::Debug, future::Future, mem::take,
+    ops::Range, pin::Pin,
 };
 
 use pi_share::Share;
@@ -14,7 +8,7 @@ use pi_share::Share;
 use crate::{
     archetype::{Archetype, ComponentInfo, ShareArchetype},
     column::Column,
-    world::{ComponentIndex, World},
+    world::{ComponentIndex, TickMut, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,47 +25,18 @@ impl TypeInfo {
     }
 }
 
-/// The metadata of a [`System`].
-#[derive(Clone, Debug, Default)]
-pub struct ReadWrite {
-    pub(crate) reads: HashMap<TypeId, Cow<'static, str>>, // 该系统所有读的组件
-    pub(crate) writes: HashMap<TypeId, Cow<'static, str>>, // 该系统所有写的组件。用来和读进行判断，不允许一个组件又读又写
-    pub(crate) withs: HashMap<TypeId, Cow<'static, str>>,
-    pub(crate) withouts: HashMap<TypeId, Cow<'static, str>>,
-}
-impl ReadWrite {
-    pub fn merge(&mut self, rw: ReadWrite) {
-        self.reads.extend(rw.reads);
-        self.writes.extend(rw.writes);
-        self.withs.extend(rw.withs);
-        self.withouts.extend(rw.withouts);
-    }
-    pub fn contains(&self, sub: &ReadWrite) -> Result<(), Cow<'static, str>> {
-        Self::check(&self.reads, &sub.reads)?;
-        Self::check(&self.writes, &sub.writes)
-    }
-    pub fn check(
-        map: &HashMap<TypeId, Cow<'static, str>>,
-        sub: &HashMap<TypeId, Cow<'static, str>>,
-    ) -> Result<(), Cow<'static, str>> {
-        for (id, name) in sub.iter() {
-            if !map.contains_key(id) {
-                return Err(name.clone());
-            }
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Relation<T: Eq> {
     With(T),
     Without(T),
     Read(T),
     Write(T),
+    ShareWrite(T),
     OptRead(T),
     OptWrite(T),
     Count(usize),
+    ReadAll,
+    WriteAll,
     Or,
     And,
     End,
@@ -83,6 +48,7 @@ impl<T: Eq> Relation<T> {
             Relation::Without(_) => Relation::Without(arg),
             Relation::Read(_) => Relation::Read(arg),
             Relation::Write(_) => Relation::Write(arg),
+            Relation::ShareWrite(_) => Relation::ShareWrite(arg),
             Relation::OptRead(_) => Relation::OptRead(arg),
             Relation::OptWrite(_) => Relation::OptWrite(arg),
             _ => self,
@@ -93,22 +59,39 @@ impl<T: Eq> Relation<T> {
             Relation::With(id) if id == arg => true,
             Relation::Read(id) if id == arg => true,
             Relation::Write(id) if id == arg => true,
+            Relation::ShareWrite(id) if id == arg => true,
             _ => false,
         }
     }
     pub fn read(&self, arg: &mut T) -> bool {
         match self {
             Relation::Write(id) if id == arg => false,
+            Relation::ShareWrite(id) if id == arg => false,
             Relation::OptWrite(id) if id == arg => false,
+            Relation::WriteAll => false,
             _ => true,
         }
     }
     pub fn write(&self, arg: &mut T) -> bool {
         match self {
-            Relation::Read(id) if id == arg => true,
+            Relation::Read(id) if id == arg => false,
+            Relation::OptRead(id) if id == arg => false,
+            Relation::Write(id) if id == arg => false,
+            Relation::ShareWrite(id) if id == arg => false,
+            Relation::OptWrite(id) if id == arg => false,
+            Relation::ReadAll => false,
+            Relation::WriteAll => false,
+            _ => true,
+        }
+    }
+    pub fn share_write(&self, arg: &mut T) -> bool {
+        match self {
+            Relation::Read(id) if id == arg => false,
             Relation::OptRead(id) if id == arg => false,
             Relation::Write(id) if id == arg => false,
             Relation::OptWrite(id) if id == arg => false,
+            Relation::ReadAll => false,
+            Relation::WriteAll => false,
             _ => true,
         }
     }
@@ -189,24 +172,37 @@ fn archetype_relate<'a>(r: &Relation<ComponentIndex>, arg: &mut ArchetypeFilter<
     }
 }
 
-
 #[derive(Debug, Default)]
-pub struct Related {
-    pub(crate) vec: Vec<Relation<ComponentIndex>>,
-    // pub(crate) map: HashMap<TypeId, Cow<'static, str>>,
+pub struct Related<T: Eq> {
+    pub(crate) vec: Vec<Relation<T>>,
 }
-impl Related {
+impl<T: Eq + Copy + Debug> Related<T> {
+    pub fn new() -> Self {
+        Self { vec: Vec::new() }
+    }
     // 检查新旧读写在reads或writes是否完全不重合
-    pub fn check_conflict(&self, other: &Related) {
+    pub fn check_conflict(&self, other: &Related<T>) {
         // 先检查withouts
         if self.check_without(other) || other.check_without(self) {
             return;
         }
-        assert_eq!(self.check_rw(other), None);
-        assert_eq!(other.check_rw(self), None);
+        assert_eq!(
+            self.check_rw(other),
+            None,
+            "conflict1!, {:?} {:?}",
+            self,
+            other
+        );
+        assert_eq!(
+            other.check_rw(self),
+            None,
+            "conflict2!, {:?} {:?}",
+            self,
+            other
+        );
     }
     // 检查other的每一个without，和self的with read或writes判断，返回true表示查询完全不重合
-    pub fn check_without(&self, other: &Related) -> bool {
+    pub fn check_without(&self, other: &Related<T>) -> bool {
         for w in other.vec.iter() {
             match w {
                 Relation::Without(t) => {
@@ -228,7 +224,7 @@ impl Related {
         false
     }
     // 检查自身数据集是否读写冲突, 返回Some(ComponentIndex)表示冲突
-    pub fn check_self(&self) -> Option<ComponentIndex> {
+    pub fn check_self(&self) -> Option<T> {
         for i in 0..self.vec.len() {
             let r = unsafe { self.vec.get_unchecked(i) };
             match r {
@@ -258,7 +254,7 @@ impl Related {
         None
     }
     // 检查数据集是否读写冲突, 返回Some(ComponentIndex)表示冲突
-    pub fn check_rw(&self, other: &Related) -> Option<ComponentIndex> {
+    pub fn check_rw(&self, other: &Related<T>) -> Option<T> {
         for w in other.vec.iter() {
             match w {
                 Relation::Read(t) => {
@@ -287,7 +283,7 @@ impl Related {
         None
     }
     // 检查数据集是否读冲突
-    pub fn check_read(&self, mut t: ComponentIndex, mut start: usize) -> bool {
+    pub fn check_read(&self, mut t: T, mut start: usize) -> bool {
         // println!("check_read {:?}", (t, start));
         traversal(
             &self.vec,
@@ -298,7 +294,7 @@ impl Related {
         )
     }
     // 检查数据集是否读冲突
-    pub fn check_write(&self, mut t: ComponentIndex, mut start: usize) -> bool {
+    pub fn check_write(&self, mut t: T, mut start: usize) -> bool {
         traversal(
             &self.vec,
             &Relation::write,
@@ -307,36 +303,30 @@ impl Related {
             RelateNode::new(true),
         )
     }
-    // 判断该原型是否相关
-    pub fn relate(&self, archetype: &Archetype, mut start: usize) -> bool {
-        let mut filter = ArchetypeFilter(archetype);
-        traversal(
-            &self.vec,
-            &archetype_relate,
-            &mut filter,
-            &mut start,
-            RelateNode::new(true),
-        )
-    }
-    // 获取该原型的每组件的读写依赖
-    pub fn depend(&self, archetype: &Archetype) {
-        todo!()
-    }
+}
+// 判断该原型是否相关
+pub fn relate(r: &Related<ComponentIndex>, archetype: &Archetype, mut start: usize) -> bool {
+    let mut filter = ArchetypeFilter(archetype);
+    traversal(
+        &r.vec,
+        &archetype_relate,
+        &mut filter,
+        &mut start,
+        RelateNode::new(true),
+    )
+}
+// 获取该原型的每组件的读写依赖
+pub fn depend(r: &Related<ComponentIndex>, archetype: &Archetype) {
+    todo!()
 }
 /// The metadata of a [`System`].
 pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
-    pub(crate) vec: Vec<Share<Related>>, // SystemParam参数的组件关系列表
-    pub(crate) cur_related: Related,     // 当前SystemParam参数的关系
-    pub(crate) param_set_locations: Vec<Range<usize>>, // 参数集在vec的位置
-    pub(crate) res_related: Vec<Relation<TypeId>>, // Res资源的关系
+    pub(crate) vec: Vec<Share<Related<ComponentIndex>>>, // SystemParam参数的组件关系列表
+    pub(crate) cur_related: Related<ComponentIndex>,     // 当前SystemParam参数的关系
+    pub(crate) param_set_locations: Vec<Range<usize>>,   // 参数集在vec的位置
+    pub(crate) res_related: Related<TypeId>,             // Res资源的关系
 
-    
-    pub(crate) res_map: HashMap<TypeId, (u8, Cow<'static, str>)>, // 参数集的读写依赖
-    pub(crate) map: HashMap<TypeId, Cow<'static, str>>, // 当前参数的读写依赖
-    pub(crate) components: ReadWrite,    // 该系统所有组件级读写依赖
-    pub(crate) cur_param: ReadWrite,     // 当前参数的读写依赖
-    pub(crate) param_set: ReadWrite,     // 参数集的读写依赖
     pub(crate) res_reads: HashMap<TypeId, Cow<'static, str>>, // 读Res
     pub(crate) res_writes: HashMap<TypeId, Cow<'static, str>>, // 写ResMut
 }
@@ -348,12 +338,8 @@ impl SystemMeta {
             vec: Default::default(),
             cur_related: Default::default(),
             param_set_locations: Default::default(),
-            res_related: Default::default(),
-            res_map: Default::default(),
-            map: Default::default(),
-            components: Default::default(),
-            cur_param: Default::default(),
-            param_set: Default::default(),
+            res_related: Related::new(),
+
             res_reads: Default::default(),
             res_writes: Default::default(),
         }
@@ -397,7 +383,7 @@ impl SystemMeta {
         self.cur_related.vec.push(r);
     }
     /// 关系表结束
-    pub fn related_ok(&mut self) -> Share<Related> {
+    pub fn related_ok(&mut self) -> Share<Related<ComponentIndex>> {
         let ar = Share::new(take(&mut self.cur_related));
         self.vec.push(ar.clone());
         ar
@@ -409,36 +395,46 @@ impl SystemMeta {
     pub fn param_set_end(&mut self) {
         self.param_set_locations.last_mut().unwrap().end = self.vec.len();
     }
-
-
-
-
-
-
-
-
-    /// 当前参数检查通过
-    pub fn cur_param_ok(&mut self) {
-        // 检查前面查询的rw是否有组件读写冲突
-        Self::check_rw(&self.components, &self.cur_param);
-        self.components.merge(take(&mut self.cur_param));
+    /// 加入一个资源
+    pub fn add_single_res<'w>(
+        &mut self,
+        world: &'w mut World,
+        info: TypeInfo,
+        r: Relation<TypeId>,
+    ) -> Option<&'w Share<dyn TickMut>> {
+        self.res_related.vec.push(r.replace(info.type_id));
+        world.get_single_res_any(&info.type_id)
     }
-    /// 参数集检查读写
-    pub fn param_set_check(&mut self) {
-        // 检查前面查询的rw是否有组件读写冲突
-        Self::check_rw(&self.components, &self.cur_param);
-        self.param_set.merge(take(&mut self.cur_param));
+    /// 加入一个资源
+    pub fn add_or_single_res<'w>(
+        &mut self,
+        world: &'w mut World,
+        info: TypeInfo,
+        r: Relation<TypeId>,
+    ) -> usize {
+        self.res_related.vec.push(r.replace(info.type_id));
+        world.or_register_single_res(info)
     }
-    /// 参数集检查通过
-    pub fn param_set_ok(&mut self) {
-        self.components.merge(take(&mut self.param_set));
+    /// 加入一个资源
+    pub fn add_res<'w>(
+        &mut self,
+        r: Relation<TypeId>,
+    ) {
+        self.res_related.vec.push(r);
     }
 
     // 检查冲突
     pub fn check_conflict(&self) {
+        // 先检查资源是否冲突
+        assert_eq!(
+            self.res_related.check_self(),
+            None,
+            "self res conflict, related:{:?}",
+            &self.res_related
+        );
         for r in self.vec.iter() {
             // 先检查自身
-            assert_eq!(r.check_self(), None);
+            assert_eq!(r.check_self(), None, "self conflict, related:{:?}", r);
         }
         let mut range_it = self.param_set_locations.iter();
         let mut set_loc = range_it.next();
@@ -461,37 +457,7 @@ impl SystemMeta {
             }
         }
     }
-    // 检查withouts，without在reads或writes中，表示查询完全不重合
-    // 检查新旧读写在reads或writes是否完全不重合
-    pub fn check_rw(old: &ReadWrite, rw: &ReadWrite) {
-        // 先检查withouts
-        if Self::check_without(&old.withouts, &rw) || Self::check_without(&rw.withouts, old) {
-            return;
-        }
-        assert_eq!(Self::check_w(&old.reads, &rw.writes), None);
-        assert_eq!(Self::check_w(&old.writes, &rw.writes), None);
-        assert_eq!(Self::check_w(&rw.reads, &old.writes), None);
-    }
-    pub fn check_without(withouts: &HashMap<TypeId, Cow<'static, str>>, rw: &ReadWrite) -> bool {
-        for w in withouts.keys() {
-            if rw.reads.contains_key(w) || rw.writes.contains_key(w) || rw.withs.contains_key(w) {
-                return true;
-            }
-        }
-        false
-    }
-    // 检查数据集是否和写冲突
-    pub fn check_w(
-        map: &HashMap<TypeId, Cow<'static, str>>,
-        writes: &HashMap<TypeId, Cow<'static, str>>,
-    ) -> Option<Cow<'static, str>> {
-        for t in map.iter() {
-            if writes.contains_key(t.0) {
-                return Some(t.1.clone());
-            }
-        }
-        None
-    }
+
     pub fn res_read(&mut self, type_info: &TypeInfo) {
         if self.res_writes.contains_key(&type_info.type_id) {
             panic!("res_read conflict, name:{}", type_info.type_name);
@@ -525,42 +491,9 @@ pub trait System: Send + Sync + 'static {
     fn type_id(&self) -> TypeId;
     /// Initialize the system.
     fn initialize(&mut self, world: &mut World);
-    // /// system depend the archetype.
-    // fn archetype_depend(
-    //     &self,
-    //     world: &World,
-    //     archetype: &Archetype,
-    //     result: &mut ArchetypeDependResult,
-    // );
-    // /// system depend the res.
-    // fn res_depend(
-    //     &self,
-    //     world: &World,
-    //     res_tid: &TypeId,
-    //     res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // );
 
     /// system align the world archetypes
     fn align(&mut self, world: &World);
-
-    // /// Runs the system with the given input in the world. Unlike [`System::run`], this function
-    // /// can be called in parallel with other systems and may break Rust's aliasing rules
-    // /// if used incorrectly, making it unsafe to call.
-    // ///
-    // /// # Safety
-    // ///
-    // /// - The caller must ensure that `world` has permission to access any world data
-    // ///   registered in [`Self::archetype_component_access`]. There must be no conflicting
-    // ///   simultaneous accesses while the system is running.
-    // /// - The method [`Self::update_archetype_component_access`] must be called at some
-    // ///   point before this one, with the same exact [`World`]. If `update_archetype_component_access`
-    // ///   panics (or otherwise does not return for any reason), this method must not be called.
-    // fn run(&mut self, world: &World);
-    // fn async_run(&mut self, _world: &World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-    //     Box::pin(async move {})
-    // }
 }
 
 pub trait RunSystem: System {
@@ -624,32 +557,6 @@ impl BoxedSystem {
         }
     }
 
-    // pub fn archetype_depend(
-    //     &self,
-    //     world: &World,
-    //     archetype: &Archetype,
-    //     result: &mut ArchetypeDependResult,
-    // ) {
-    //     match self {
-    //         BoxedSystem::Sync(s) => s.archetype_depend(world, archetype, result),
-    //         BoxedSystem::Async(s) => s.archetype_depend(world, archetype, result),
-    //     }
-    // }
-
-    // pub fn res_depend(
-    //     &self,
-    //     world: &World,
-    //     res_tid: &TypeId,
-    //     res_name: &Cow<'static, str>,
-    //     single: bool,
-    //     result: &mut Flags,
-    // ) {
-    //     match self {
-    //         BoxedSystem::Sync(s) => s.res_depend(world, res_tid, res_name, single, result),
-    //         BoxedSystem::Async(s) => s.res_depend(world, res_tid, res_name, single, result),
-    //     }
-    // }
-
     pub fn align(&mut self, world: &World) {
         match self {
             BoxedSystem::Sync(s) => s.align(world),
@@ -678,11 +585,3 @@ pub trait IntoAsyncSystem<Marker>: Sized {
     /// Turns this value into its corresponding [`System`].
     fn into_async_system(self) -> Self::System;
 }
-
-// All systems implicitly implement IntoSystem.
-// impl<Marker, T: System> IntoSystem<Marker> for T {
-//     type System = T;
-//     fn into_system(this: Self) -> Self {
-//         this
-//     }
-// }
