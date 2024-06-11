@@ -1,15 +1,17 @@
 //! App包含一个world，一个调度器，及一个运行时
 //!
 //!
-use pi_async_rt::rt::{
-    multi_thread::{MultiTaskRuntime, MultiTaskRuntimeBuilder, StealableTaskPool},
-    single_thread::{SingleTaskPool, SingleTaskRunner, SingleTaskRuntime},
-    AsyncRuntime, AsyncRuntimeExt,
-};
+#[cfg(not(any(feature="single_thread", target_arch = "wasm32")))]
+use pi_async_rt::rt::multi_thread::{MultiTaskRuntime, MultiTaskRuntimeBuilder, StealableTaskPool};
+#[cfg(any(feature="single_thread", target_arch = "wasm32"))]
+use pi_async_rt::prelude::{SingleTaskRuntime, SingleTaskPool, SingleTaskRunner};
+use pi_async_rt::prelude::{AsyncRuntime, AsyncRuntimeExt};
 
 use crate::{schedule::{MainSchedule, Schedule}, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs, ScheduleLabel, StageLabel}, world::World};
 
+#[cfg(any(feature="single_thread", target_arch = "wasm32"))]
 pub type SingleThreadApp = App<SingleTaskRuntime>;
+#[cfg(not(any(feature="single_thread", target_arch = "wasm32")))]
 pub type MultiThreadApp = App<MultiTaskRuntime>;
 
 pub struct App<A: AsyncRuntime + AsyncRuntimeExt> {
@@ -19,6 +21,7 @@ pub struct App<A: AsyncRuntime + AsyncRuntimeExt> {
     pub rt: A,
     pub is_first_run: bool,
 }
+#[cfg(any(feature="single_thread", target_arch = "wasm32"))]
 impl App<SingleTaskRuntime> {
     pub fn new() -> Self {
         let pool = SingleTaskPool::default();
@@ -32,6 +35,7 @@ impl App<SingleTaskRuntime> {
         }
     }
 }
+#[cfg(not(any(feature="single_thread", target_arch = "wasm32")))]
 impl App<MultiTaskRuntime> {
     pub fn new() -> Self {
         let pool = StealableTaskPool::with(4, 100000, [1, 254], 3000);

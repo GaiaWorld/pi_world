@@ -35,7 +35,6 @@ pub mod prelude {
         system_params::{SystemParam, Local},
         world::{Entity, World, FromWorld, Tick},
         listener::Listener,
-        app::{SingleThreadApp, MultiThreadApp},
         plugin::{Plugin, Plugins},
         plugin_group::WorldPluginExtent,
         schedule::{Schedule, Update, PreUpdate, Startup, PostUpdate, Last, First},

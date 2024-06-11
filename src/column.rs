@@ -158,7 +158,9 @@ impl Column {
         }
         // 判断ticks，进行ticks的整理
         let blob = unsafe { self.arr.get_unchecked_mut(index.index()) };
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {

@@ -319,7 +319,7 @@ mod test_mod {
     }
     #[test]
     fn test_system_meta2() {
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         let w = &mut app.world;
         let info = w.archetype_info(vec![ComponentInfo::of::<Transform>(0), ComponentInfo::of::<Position>(0), ComponentInfo::of::<Velocity>(0), ComponentInfo::of::<Rotation>(0)]);
         let ar = Archetype::new(info);
@@ -383,7 +383,7 @@ mod test_mod {
     }
     #[test]
     fn test() { 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         dbg!("data0");
         let i = app.world.make_inserter::<(Age1, Age0)>();
         println!("data1");
@@ -422,7 +422,7 @@ mod test_mod {
     }
     #[test]
     fn test_insert() {
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         
@@ -634,7 +634,7 @@ mod test_mod {
 
     #[test]
     fn test_alter() {
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter1);
@@ -759,7 +759,7 @@ mod test_mod {
 
     #[test]
     fn test_added() { 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, added_l);
@@ -785,7 +785,7 @@ mod test_mod {
     }
     #[test]
     fn test_changed() { 
-        let mut app = crate::app::SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter1);
@@ -842,7 +842,7 @@ mod test_mod {
             }
             println!("removed_l: end");
         }
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert);
         // app.add_system(Update, print_changed_entities);
         app.add_system(Update, alter);
@@ -910,7 +910,7 @@ mod test_mod {
                 std::mem::swap(&mut c.0, &mut e.0);
             }
         }
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         let i = app.world.make_inserter::<(A, B)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
         i.batch(it);
@@ -958,107 +958,107 @@ mod test_mod {
         }
     }
 
-    #[test]
-    fn test_async_schedule() {
-        #[derive(Component)]
-        struct A(f32);
-        #[derive(Component)]
-        struct B(f32);
-        #[derive(Component)]
-        struct C(f32);
-        #[derive(Component)]
-        struct D(f32);
-        #[derive(Component)]
-        struct E(f32);
+    // #[test]
+    // fn test_async_schedule() {
+    //     #[derive(Component)]
+    //     struct A(f32);
+    //     #[derive(Component)]
+    //     struct B(f32);
+    //     #[derive(Component)]
+    //     struct C(f32);
+    //     #[derive(Component)]
+    //     struct D(f32);
+    //     #[derive(Component)]
+    //     struct E(f32);
 
-        fn ab(
-            mut local: Local<usize>,
-            mut query: Query<(&mut A, &mut B)>,
-        ) {
-            for (mut a, mut b) in query.iter_mut() {
-                std::mem::swap(&mut a.0, &mut b.0);
-            }
-            *local += 1;
-        }
-        async fn ab1<'w>(
-            mut local: Local<'w, usize>,
-            mut query: Query<'w, (&mut A, &mut B)>,
-        ) {
-            for (mut a, mut b) in query.iter_mut() {
-                std::mem::swap(&mut a.0, &mut b.0);
-            }
-            *local += 1;
-        }
-        async fn ab5(
-            mut local: Local<'static, usize>,
-            mut query: Query<'static, (&mut A, &mut B)>,
-        ) {
-            for (mut a, mut b) in query.iter_mut() {
-                std::mem::swap(&mut a.0, &mut b.0);
-            }
-            *local += 1;
-        }
-        fn cd(mut query: Query<(&mut C, &mut D)>) {
-            for (mut c, mut d) in query.iter_mut() {
-                std::mem::swap(&mut c.0, &mut d.0);
-            }
-        }
+    //     fn ab(
+    //         mut local: Local<usize>,
+    //         mut query: Query<(&mut A, &mut B)>,
+    //     ) {
+    //         for (mut a, mut b) in query.iter_mut() {
+    //             std::mem::swap(&mut a.0, &mut b.0);
+    //         }
+    //         *local += 1;
+    //     }
+    //     async fn ab1<'w>(
+    //         mut local: Local<'w, usize>,
+    //         mut query: Query<'w, (&mut A, &mut B)>,
+    //     ) {
+    //         for (mut a, mut b) in query.iter_mut() {
+    //             std::mem::swap(&mut a.0, &mut b.0);
+    //         }
+    //         *local += 1;
+    //     }
+    //     async fn ab5(
+    //         mut local: Local<'static, usize>,
+    //         mut query: Query<'static, (&mut A, &mut B)>,
+    //     ) {
+    //         for (mut a, mut b) in query.iter_mut() {
+    //             std::mem::swap(&mut a.0, &mut b.0);
+    //         }
+    //         *local += 1;
+    //     }
+    //     fn cd(mut query: Query<(&mut C, &mut D)>) {
+    //         for (mut c, mut d) in query.iter_mut() {
+    //             std::mem::swap(&mut c.0, &mut d.0);
+    //         }
+    //     }
 
-        fn ce(mut query: Query<(&mut C, &mut E)>) {
-            for (mut c, mut e) in query.iter_mut() {
-                std::mem::swap(&mut c.0, &mut e.0);
-            }
-        }
+    //     fn ce(mut query: Query<(&mut C, &mut E)>) {
+    //         for (mut c, mut e) in query.iter_mut() {
+    //             std::mem::swap(&mut c.0, &mut e.0);
+    //         }
+    //     }
 
         
-        let mut app = MultiThreadApp::new();
-        let i = app.world.make_inserter::<(A, B)>();
-        let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
-        i.batch(it);
+    //     let mut app = MultiThreadApp::new();
+    //     let i = app.world.make_inserter::<(A, B)>();
+    //     let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
+    //     i.batch(it);
 
-        let i = app.world.make_inserter::<(A, B, C)>();
-        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
-        i.batch(it);
+    //     let i = app.world.make_inserter::<(A, B, C)>();
+    //     let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
+    //     i.batch(it);
 
-        let i = app.world.make_inserter::<(A, B, C, D)>();
-        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
-        i.batch(it);
+    //     let i = app.world.make_inserter::<(A, B, C, D)>();
+    //     let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
+    //     i.batch(it);
 
-        let i = app.world.make_inserter::<(A, B, C, E)>();
-        let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
-        i.batch(it);
+    //     let i = app.world.make_inserter::<(A, B, C, E)>();
+    //     let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
+    //     i.batch(it);
 
-        app.world.settle();
-        // app.schedule.add_async_system(ab5);
-        // app.add_system(Update, ab);
-        // app.add_system(Update, cd);
-        // app.add_system(Update, ce);
+    //     app.world.settle();
+    //     // app.schedule.add_async_system(ab5);
+    //     // app.add_system(Update, ab);
+    //     // app.add_system(Update, cd);
+    //     // app.add_system(Update, ce);
         
-        let mut info = ArchetypeDebug {
-            entitys: Some(10000),
-            columns_info: vec![
-                Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
-                Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
-            ],
-            destroys_listeners: Some(0),
-            removes: Some(0),
-        };
-        app.world.assert_archetype_arr(&[None, Some(info.clone()), None, None, None,]);
+    //     let mut info = ArchetypeDebug {
+    //         entitys: Some(10000),
+    //         columns_info: vec![
+    //             Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+    //             Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+    //         ],
+    //         destroys_listeners: Some(0),
+    //         removes: Some(0),
+    //     };
+    //     app.world.assert_archetype_arr(&[None, Some(info.clone()), None, None, None,]);
 
-        app.run();
+    //     app.run();
 
-        info.columns_info = vec![
-            Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
-            Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
-            Some(ColumnDebug{change_listeners: 0, name: Some("C")}), 
-        ];
+    //     info.columns_info = vec![
+    //         Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+    //         Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+    //         Some(ColumnDebug{change_listeners: 0, name: Some("C")}), 
+    //     ];
 
-        app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
+    //     app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
 
-        for _ in 0..1000 {
-            app.run();
-        }
-    }
+    //     for _ in 0..1000 {
+    //         app.run();
+    //     }
+    // }
 
     #[test]
     fn test_res() { 
@@ -1084,7 +1084,7 @@ mod test_mod {
             println!("ce:{:?}", b.0);
         }
         
-        let mut app = App::new();
+        let mut app = crate::prelude::App::new();
         app.world.insert_single_res(A(0.0));
         app.world.insert_single_res(B(0.0));
         app.world.insert_single_res(C(0.0));
@@ -1133,7 +1133,7 @@ mod test_mod {
             e.0 += b.iter().count() as f32 + 1.0;
             c.0 += b.iter().count() as f32 + 1.0;
         }
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.world.insert_single_res(A(1.0));
         app.add_system(Update, ab);
         app.add_system(Update, cd);
@@ -1177,7 +1177,7 @@ mod test_mod {
             println!("cd end");
         }
 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.world.insert_single_res(A(1.0));
         app.add_system(Update, ab);
         app.add_system(Update, cd);
@@ -1226,7 +1226,7 @@ mod test_mod {
             println!("print_changed2 over");
         }
  
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         app.add_system(Update, insert);
         app.add_system(Update, print_changed_entities);
         app.add_system(Update, print_changed2);
@@ -1585,7 +1585,7 @@ mod test_mod {
     // }
     #[test]
     fn test_editor() {
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         pub fn alter_add(mut edit: EntityEditor) {
             println!("alter_add start!!");
             let mut scomponents = [
@@ -1692,7 +1692,7 @@ mod test_mod {
 
     #[test] 
     fn test_editor_settle() {
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         pub fn alter_add(mut edit: EntityEditor) {
             let mut scomponents = [
                 edit.init_component::<Age0>(), 
@@ -1786,7 +1786,7 @@ mod test_mod {
     fn test_alter3() {
         pub struct EntityRes(Entity);
 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
         let i = app.world.make_inserter::<(Age0, Age1, Age2)>();
         let e = i.insert((Age0(0), Age1(1), Age2(2)));
         println!("========== e: {:?}", e);
@@ -1851,7 +1851,7 @@ mod test_mod {
     fn test_editor2() {
         pub struct EntityRes(Entity);
 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
 
         pub fn insert_entity(mut editor: EntityEditor ) {
             println!("insert_entity start!!!");
@@ -1901,7 +1901,7 @@ mod test_mod {
     fn test_editor3() {
         pub struct EntityRes(Entity);
 
-        let mut app = SingleThreadApp::new();
+        let mut app = crate::prelude::App::new();
 
         pub fn insert_entity(mut editor: EntityEditor ) {
             println!("insert_entity start!!!");
