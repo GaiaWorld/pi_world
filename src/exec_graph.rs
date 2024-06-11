@@ -33,6 +33,7 @@ use pi_null::Null;
 use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
+#[cfg(debug_assertions)]
 use crate::column::ARCHETYPE_INDEX;
 #[cfg(debug_assertions)]
 use crate::column::COMPONENT_INDEX;

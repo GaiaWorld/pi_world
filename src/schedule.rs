@@ -14,7 +14,7 @@ use crate::{
 };
 use bevy_utils::intern::Interned;
 use fixedbitset::FixedBitSet;
-use pi_async_rt::rt::{AsyncRuntime, AsyncRuntimeExt};
+use pi_async_rt::prelude::{AsyncRuntime, AsyncRuntimeExt};
 use pi_share::Share;
 
 pub struct Schedule {

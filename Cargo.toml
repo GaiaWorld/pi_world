@@ -12,6 +12,7 @@ categories = ["data-structures", "memory-management", "ecs"]
 
 
 [features]
+default = ["single_thread"]
 single_thread = []
 trace = []
 
