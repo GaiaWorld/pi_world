@@ -58,7 +58,7 @@ where
     }
 
     #[inline]
-    fn type_id(&self) -> TypeId {
+    fn id(&self) -> TypeId {
         self.param.type_id()
     }
     #[inline]

@@ -1,9 +1,14 @@
-use std::{mem::transmute, ops::{Deref, DerefMut}};
+use std::{
+    mem::transmute,
+    ops::{Deref, DerefMut},
+};
 
 /// 系统参数的定义
 ///
 use crate::{
-    prelude::FromWorld, system::SystemMeta, world::{Tick, World}
+    prelude::FromWorld,
+    system::{Relation, SystemMeta},
+    world::{Tick, World},
 };
 
 use pi_proc_macros::all_tuples;
@@ -92,7 +97,7 @@ impl<'a, T: Sized> DerefMut for Local<'a, T> {
         self.0
     }
 }
-impl <'a, T: Sized> Local<'a, T> {
+impl<'a, T: Sized> Local<'a, T> {
     pub fn tick(&self) -> Tick {
         self.1
     }
@@ -130,7 +135,11 @@ impl SystemParam for &World {
 
     type Item<'world> = &'world World;
 
-    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
+    fn init_state(_world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        // meta上增加world的类型
+        meta.relate(Relation::ReadAll);
+        meta.related_ok();
+        meta.add_res(Relation::ReadAll);
         ()
     }
 
@@ -158,8 +167,11 @@ impl SystemParam for &mut World {
 
     type Item<'world> = &'world mut World;
 
-    fn init_state(_world: &mut World, _system_meta: &mut SystemMeta) -> Self::State {
-        //TODO meta上增加world的类型
+    fn init_state(_world: &mut World, meta: &mut SystemMeta) -> Self::State {
+        // meta上增加world的类型
+        meta.relate(Relation::WriteAll);
+        meta.related_ok();
+        meta.add_res(Relation::WriteAll);
         ()
     }
 

@@ -488,7 +488,7 @@ pub trait System: Send + Sync + 'static {
     /// Returns the system's name.
     fn name(&self) -> &Cow<'static, str>;
     /// Returns the [`TypeId`] of the underlying system type.
-    fn type_id(&self) -> TypeId;
+    fn id(&self) -> TypeId;
     /// Initialize the system.
     fn initialize(&mut self, world: &mut World);
 
@@ -543,10 +543,10 @@ impl BoxedSystem {
         }
     }
 
-    pub fn type_id(&self) -> TypeId {
+    pub fn id(&self) -> TypeId {
         match self {
-            BoxedSystem::Sync(s) => s.type_id(),
-            BoxedSystem::Async(s) => s.type_id(),
+            BoxedSystem::Sync(s) => s.id(),
+            BoxedSystem::Async(s) => s.id(),
         }
     }
 

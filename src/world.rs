@@ -1,8 +1,8 @@
-/// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：单例和多例资源、实体、组件
+/// system上只能看到Query等SystemParm参数，SystemParm参数一般包含：事件、单例和多例资源、实体、组件
 /// world上包含了全部的资源和实体，及实体原型。 加一个监听管理器，
-/// 查询过滤模块会注册监听器来监听新增的原型
 /// world上的数据（资源、实体和原型）的线程安全的保护仅在于保护容器，
 /// 由调度器生成的执行图，来保证正确的读写。
+/// 执行图会注册监听器来监听新增的原型
 /// 比如一个原型不可被多线程同时读写，是由执行图时分析依赖，先执行写的sys，再执行读的sys。
 /// 由于sys会进行组件的增删，导致实体对于的原型会变化，执行图可能会产生变化，执行图本身保证对原型的访问是安全的读写。
 /// 整理操作时，一般是在整个执行图执行完毕后，进行进行相应的调整。举例：
@@ -649,7 +649,7 @@ impl World {
         self.archetype_arr.settle(0);
         let len = self.archetype_arr.len();
         if self.archetype_arr_len < len {
-            // 整理列数组
+            // 原型增加，则整理所有的列
             for c in self.component_arr.iter_mut() {
                 let c = unsafe { Share::get_mut_unchecked(c) };
                 c.settle();
@@ -664,7 +664,7 @@ impl World {
         // 整理每个原型
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
-            archetype.settle(self, action, set)
+            archetype.settle(self, action, set);
         }
     }
 }
