@@ -96,6 +96,16 @@ impl<'w> EntityEditor<'w> {
         if !addr.row.is_null() {
             // todo 似乎state.alter_row内判断了，这里可以不用判断和mark_remove
             ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
+
+            let mut r = false;
+            for i in editor_state.tmp.iter() {
+                if !ar.contains(i.0) {
+                    r = true;
+                }
+            }
+            if !r {
+                return Ok(());
+            }
             let ae = ar.mark_remove(addr.row);
             if e != ae {
                 return Err(QueryError::NoMatchEntity(ae));

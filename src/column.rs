@@ -60,6 +60,7 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
+        #[cfg(debug_assertions)]
         if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -78,6 +79,7 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
+        #[cfg(debug_assertions)]
         if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -303,7 +305,9 @@ impl<'a> BlobRef<'a> {
         *self.blob.ticks.load_alloc(row.index()) = tick;
     }
     fn trace(&self, row: Row, e: Entity, path: &str, src_data: *mut u8) {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {

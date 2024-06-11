@@ -15,7 +15,9 @@ use crate::alter::{AlterState, Alterer};
 use crate::archetype::{
     Archetype, ArchetypeIndex, ArchetypeInfo, ComponentInfo, Row, ShareArchetype,
 };
-use crate::column::{Column, ARCHETYPE_INDEX, COMPONENT_INDEX};
+use crate::column::Column;
+#[cfg(debug_assertions)]
+use crate::column::{ARCHETYPE_INDEX, COMPONENT_INDEX};
 use crate::editor::{EditorState, EntityEditor};
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
