@@ -51,6 +51,7 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
+        #[cfg(debug_assertions)]
         if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -69,6 +70,7 @@ impl Column {
     }
     #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
+        #[cfg(debug_assertions)]
         if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -204,7 +206,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -248,7 +252,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get<T>(&self, row: Row) -> &T {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -258,7 +264,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get_mut<T>(&self, row: Row) -> &mut T {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -268,7 +276,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub(crate) fn write<T>(&self, row: Row, val: T) {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -282,7 +292,9 @@ impl<'a> BlobRef<'a> {
     // 如果没有分配内存，则返回的指针为is_null()
     #[inline(always)]
     pub fn get_row(&self, row: Row) -> *mut u8 {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -300,7 +312,9 @@ impl<'a> BlobRef<'a> {
     // 一定会返回分配后的内存
     #[inline(always)]
     pub unsafe fn load(&self, row: Row) -> *mut u8 {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -322,7 +336,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn write_row(&self, row: Row, data: *mut u8) {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -338,6 +354,7 @@ impl<'a> BlobRef<'a> {
             data.copy_to_nonoverlapping(dst, self.info.size());
         }
 
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -351,7 +368,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub(crate) fn drop_row(&self, row: Row) {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {
@@ -374,7 +393,9 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn drop_row_unchecked(&self, row: Row) {
+        #[cfg(debug_assertions)]
         let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
         if (debug_index.is_null() || self.index.index() == debug_index)
             && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
         {

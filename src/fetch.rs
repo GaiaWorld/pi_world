@@ -11,7 +11,7 @@ use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::FromWorld;
 use crate::system::SystemMeta;
-use crate::world::{Entity, SingleResource, Tick, World};
+use crate::world::{ComponentIndex, Entity, SingleResource, Tick, World};
 
 pub trait FetchComponents {
     /// The item returned by this [`FetchComponents`]
