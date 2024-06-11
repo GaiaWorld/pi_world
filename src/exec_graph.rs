@@ -33,6 +33,7 @@ use pi_null::Null;
 use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
+use crate::column::ARCHETYPE_INDEX;
 #[cfg(debug_assertions)]
 use crate::column::COMPONENT_INDEX;
 use crate::dot::{Config, Dot};
@@ -437,7 +438,7 @@ impl ExecGraph {
         // 从graph的froms开始执行
         // println!("run !!!!===={:?}", (&self.1, inner.froms.len(), inner.froms.iter().map(|r| {r.index()}).collect::<Vec<usize>>()));
         #[cfg(debug_assertions)]
-        if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)  < std::usize::MAX 
+        if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)  < std::usize::MAX ||  ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)  < std::usize::MAX
         {
             println!("run====={:?}, {:?}", &self.1,  self.2.len());
         }
@@ -461,7 +462,7 @@ impl ExecGraph {
                     // NODE_STATUS_RUNNING
                     // node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     #[cfg(debug_assertions)]
-                    if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) < std::usize::MAX 
+                    if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) < std::usize::MAX  ||  ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)  < std::usize::MAX
                 {
                     println!("run start===={:?}", sys.name());
                 }

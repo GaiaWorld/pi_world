@@ -61,8 +61,12 @@ impl Column {
     #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
         #[cfg(debug_assertions)]
-        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
-            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        let debug_a_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || index.index() == debug_a_index)
+            && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             println!(
                 "blob_ref_unchecked, {} {:p}",
@@ -80,8 +84,12 @@ impl Column {
     #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
         #[cfg(debug_assertions)]
-        if index.index() == ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)
-            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        let debug_a_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || index.index() == debug_a_index)
+            && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             println!("blob_ref, {} {:p}", self.arr.vec_capacity(), unsafe {
                 self.arr.load_unchecked(index.index())
@@ -127,7 +135,7 @@ impl Column {
     pub(crate) fn settle(&mut self) {
         let len = self.last_index.get_mut().index();
         if len >= self.arr.vec_capacity() {
-            self.arr.settle(len, 0, 1);
+            self.arr.settle(len + 1, 0, 1);
         }
     }
     /// 整理合并指定原型的空位
@@ -306,10 +314,12 @@ impl<'a> BlobRef<'a> {
     }
     fn trace(&self, row: Row, e: Entity, path: &str, src_data: *mut u8) {
         #[cfg(debug_assertions)]
-        let debug_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        let debug_a_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
         #[cfg(debug_assertions)]
-        if (debug_index.is_null() || self.index.index() == debug_index)
-            && self.info.index.index() == COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed)
+        let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || self.index.index() == debug_a_index)
+            && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             let ptr: *mut u8 = self
                 .blob

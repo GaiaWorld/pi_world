@@ -460,12 +460,12 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     #[inline(always)]
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            // println!("iter_normal: {:?}", (self.e, self.row, self.ar.name()));
+            // println!("iter_normal: {:?}", (self.e, self.row, self.ar.index(), self.ar.name()));
             if self.row.0 > 0 {
                 self.row.0 -= 1;
                 self.e = self.ar.get(self.row);
                 // 要求条目不为空
-                // println!("iter_normal: {:?}", (self.e, self.row));
+                // println!("iter_normal1: {:?}", (self.e, self.row));
                 if !self.e.is_null() {
                     // println!("iter_normal1111: {:?}", (self.e, self.row));
                     if F::filter(unsafe { &self.fetch_filter.assume_init_mut().1 }, self.row, self.e) {
@@ -501,6 +501,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_normal()
+        
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.size_hint_normal()

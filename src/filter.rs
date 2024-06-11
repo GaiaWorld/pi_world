@@ -91,7 +91,7 @@ impl<T: 'static> FilterComponents for With<T> {
 pub struct Changed<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Changed<T> {
 
-    type Filter<'w> = (BlobRef<'w>, Tick);
+    type Filter<'w> = (Option<BlobRef<'w>>, Tick);
     type State = Share<Column>;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.component_relate(
@@ -110,12 +110,16 @@ impl<T: 'static> FilterComponents for Changed<T> {
         _tick: Tick,
         last_run: Tick,
     ) -> Self::Filter<'w> {
-        (state.blob_ref_unchecked(index), last_run)
+        (state.blob_ref(index), last_run)
     }
 
     #[inline(always)]
     fn filter<'w>(filter: &Self::Filter<'w>, row: Row, _e: Entity) -> bool {
-        filter.0.get_tick_unchecked(row) <= filter.1
+        if let Some(r) = &filter.0 {
+            r.get_tick_unchecked(row) <= filter.1
+        }else{
+            true
+        }
     }
 }
 pub struct Or<T: 'static>(PhantomData<T>);
