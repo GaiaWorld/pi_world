@@ -11,7 +11,10 @@ use pi_null::Null;
 use pi_share::Share;
 
 use crate::{
-    archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, ShareArchetype}, event::ComponentEventVec, safe_vec::SafeVec, world::{Entity, Tick}
+    archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, ShareArchetype},
+    event::ComponentEventVec,
+    safe_vec::SafeVec,
+    world::{Entity, Tick},
 };
 
 #[cfg(debug_assertions)]
@@ -22,7 +25,7 @@ pub static ARCHETYPE_INDEX: AtomicUsize = AtomicUsize::new(usize::MAX);
 pub struct Column {
     pub(crate) info: ColumnInfo,
     pub(crate) arr: Arr<BlobTicks>,
-    pub(crate) last_index: SyncUnsafeCell<ArchetypeIndex>,
+    pub(crate) last_len: SyncUnsafeCell<usize>,
 }
 impl Column {
     #[inline(always)]
@@ -35,7 +38,7 @@ impl Column {
                 info,
             },
             arr: Arr::default(),
-            last_index: SyncUnsafeCell::new(0usize.into()),
+            last_len: SyncUnsafeCell::new(0usize.into()),
         }
     }
     #[inline(always)]
@@ -48,7 +51,7 @@ impl Column {
     }
     // 初始化原型对应列的blob
     pub fn init_blob(&self, index: ArchetypeIndex) {
-        *unsafe { &mut *self.last_index.get() } = index;
+        *unsafe { &mut *self.last_len.get() } = index.index() + 1;
         unsafe { self.arr.load_alloc(index.index()).blob.set_vec_capacity(0) };
     }
     // 列是否包含指定原型
@@ -65,7 +68,8 @@ impl Column {
         #[cfg(debug_assertions)]
         let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
         #[cfg(debug_assertions)]
-        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || index.index() == debug_a_index)
+        if (!debug_a_index.is_null() || !debug_c_index.is_null())
+            && (debug_a_index.is_null() || index.index() == debug_a_index)
             && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             println!(
@@ -88,7 +92,8 @@ impl Column {
         #[cfg(debug_assertions)]
         let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
         #[cfg(debug_assertions)]
-        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || index.index() == debug_a_index)
+        if (!debug_a_index.is_null() || !debug_c_index.is_null())
+            && (debug_a_index.is_null() || index.index() == debug_a_index)
             && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             println!("blob_ref, {} {:p}", self.arr.vec_capacity(), unsafe {
@@ -111,7 +116,9 @@ impl Column {
     }
     /// 扫描当前的所有原型，设置已有的实体，主要是解决不同的Plugin，依次添加时，Changed监听和tick被后设置的问题
     pub(crate) fn update<F>(&self, archetypes: &SafeVec<ShareArchetype>, set_fn: F)
-    where F: Fn(&BlobRef, Row, &Archetype) {
+    where
+        F: Fn(&BlobRef, Row, &Archetype),
+    {
         for ar in archetypes.iter() {
             if let Some(blob) = self.arr.load(ar.index.index()) {
                 // 判断该原型是否包含该列
@@ -133,9 +140,9 @@ impl Column {
     }
     /// 整理内存
     pub(crate) fn settle(&mut self) {
-        let len = self.last_index.get_mut().index();
-        if len >= self.arr.vec_capacity() {
-            self.arr.settle(len + 1, 0, 1);
+        let len = *self.last_len.get_mut();
+        if len > self.arr.vec_capacity() {
+            self.arr.settle(len, 0, 1);
         }
     }
     /// 整理合并指定原型的空位
@@ -201,7 +208,7 @@ impl Debug for Column {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Column")
             .field("info", &self.info.info)
-            .field("last_index", &self.last_index.get())
+            .field("last_index", &self.last_len.get())
             .finish()
     }
 }
@@ -318,7 +325,8 @@ impl<'a> BlobRef<'a> {
         #[cfg(debug_assertions)]
         let debug_c_index = COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed);
         #[cfg(debug_assertions)]
-        if (!debug_a_index.is_null()  || !debug_c_index.is_null() ) && (debug_a_index.is_null() || self.index.index() == debug_a_index)
+        if (!debug_a_index.is_null() || !debug_c_index.is_null())
+            && (debug_a_index.is_null() || self.index.index() == debug_a_index)
             && (debug_c_index.is_null() || self.info.index.index() == debug_c_index)
         {
             let ptr: *mut u8 = self
