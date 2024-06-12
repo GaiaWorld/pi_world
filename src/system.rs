@@ -1,6 +1,12 @@
 use std::{
-    any::{Any, TypeId}, borrow::Cow, collections::HashMap, fmt::Debug, future::Future, mem::take,
-    ops::Range, pin::Pin,
+    any::TypeId,
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    future::Future,
+    mem::take,
+    ops::Range,
+    pin::Pin,
 };
 
 use pi_share::Share;
@@ -8,7 +14,7 @@ use pi_share::Share;
 use crate::{
     archetype::{Archetype, ComponentInfo, ShareArchetype},
     column::Column,
-    world::{ComponentIndex, TickMut, World},
+    world::{ComponentIndex, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -401,25 +407,12 @@ impl SystemMeta {
         world: &'w mut World,
         info: TypeInfo,
         r: Relation<TypeId>,
-    ) -> Option<&'w Share<dyn TickMut>> {
-        self.res_related.vec.push(r.replace(info.type_id));
-        world.get_single_res_any(&info.type_id)
-    }
-    /// 加入一个资源
-    pub fn add_or_single_res<'w>(
-        &mut self,
-        world: &'w mut World,
-        info: TypeInfo,
-        r: Relation<TypeId>,
     ) -> usize {
-        self.res_related.vec.push(r.replace(info.type_id));
+        self.res_related.vec.push(r);
         world.or_register_single_res(info)
     }
     /// 加入一个资源
-    pub fn add_res<'w>(
-        &mut self,
-        r: Relation<TypeId>,
-    ) {
+    pub fn add_res<'w>(&mut self, r: Relation<TypeId>) {
         self.res_related.vec.push(r);
     }
 

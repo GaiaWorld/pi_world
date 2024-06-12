@@ -1,6 +1,6 @@
 //! 单例资源， 先system依次写，然后多system并行读
 
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::mem::{replace, transmute};
 use std::ops::{Deref, DerefMut};
 
@@ -82,31 +82,24 @@ impl<'w, T: 'static> SingleRes<'w, T> {
 }
 
 impl<T: 'static + Send + Sync> SystemParam for SingleRes<'_, T> {
-    type State = (Share<TickRes<T>>, Tick);
+    type State = (Option<Share<TickRes<T>>>, usize, Tick);
     type Item<'w> = SingleRes<'w, T>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        let s = meta
-            .add_single_res(
-                world,
-                TypeInfo::of::<T>(),
-                Relation::Read(TypeId::of::<()>()),
-            )
-            .unwrap()
-            .clone();
-        (
-            Share::downcast::<TickRes<T>>(s.into_any()).unwrap(),
-            Tick::default(),
-        )
+        init_read_state(world, meta)
     }
     fn get_param<'world>(
-        _world: &'world World,
+        world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        let last_run = replace(&mut state.1, tick);
-        SingleRes::new(&state.0, last_run)
+        if state.0.is_none() {
+            init_opt_state(world, &mut state.0, state.1);
+        }
+        let r = state.0.as_ref().unwrap();
+        let last_run = replace(&mut state.2, tick);
+        SingleRes::new(&r, last_run)
     }
 
     fn get_self<'world>(
@@ -147,28 +140,24 @@ impl<'w, T: 'static> SingleResMut<'w, T> {
     }
 }
 impl<T: 'static> SystemParam for SingleResMut<'_, T> {
-    type State = Share<TickRes<T>>;
+    type State = (Option<Share<TickRes<T>>>, usize);
     type Item<'w> = SingleResMut<'w, T>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        let s = meta
-            .add_single_res(
-                world,
-                TypeInfo::of::<T>(),
-                Relation::Read(TypeId::of::<()>()),
-            )
-            .unwrap()
-            .clone();
-        Share::downcast::<TickRes<T>>(s.into_any()).unwrap()
+        init_write_state(world, meta)
     }
 
     fn get_param<'world>(
-        _world: &'world World,
+        world: &'world World,
         _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        SingleResMut::new(unsafe { Share::get_mut_unchecked(state) }, tick)
+        if state.0.is_none() {
+            init_opt_state(world, &mut state.0, state.1);
+        }
+        let r = state.0.as_mut().unwrap();
+        SingleResMut::new(unsafe { Share::get_mut_unchecked(r) }, tick)
     }
 
     fn get_self<'world>(
@@ -195,16 +184,11 @@ impl<'w, T: Sync + Send + 'static> DerefMut for SingleResMut<'w, T> {
 }
 
 impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
-    type State = (usize, Tick);
+    type State = (Option<Share<TickRes<T>>>, usize, Tick);
     type Item<'w> = Option<SingleRes<'w, T>>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        let s = meta.add_or_single_res(
-            world,
-            TypeInfo::of::<T>(),
-            Relation::Read(TypeId::of::<()>()),
-        );
-        (s, Tick::default())
+        init_read_state(world, meta)
     }
     fn get_param<'world>(
         world: &'world World,
@@ -212,12 +196,14 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        match world.index_single_res_any(state.0) {
-            Some(r) => {
-                let last_run = replace(&mut state.1, tick);
-                Some(SingleRes::new(r.as_any().downcast_ref().unwrap(), last_run))
-            }
-            None => None,
+        if state.0.is_none() {
+            init_opt_state(world, &mut state.0, state.1);
+        }
+        if let Some(r) = &state.0 {
+            let last_run = replace(&mut state.2, tick);
+            Some(SingleRes::new(r.as_any().downcast_ref().unwrap(), last_run))
+        } else {
+            None
         }
     }
 
@@ -232,15 +218,11 @@ impl<T: 'static> SystemParam for Option<SingleRes<'_, T>> {
 }
 
 impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
-    type State = usize;
+    type State = (Option<Share<TickRes<T>>>, usize);
     type Item<'w> = Option<SingleResMut<'w, T>>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
-        meta.add_or_single_res(
-            world,
-            TypeInfo::of::<TickRes<T>>(),
-            Relation::Write(TypeId::of::<()>()),
-        )
+        init_write_state(world, meta)
     }
 
     fn get_param<'world>(
@@ -249,14 +231,16 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         state: &'world mut Self::State,
         tick: Tick,
     ) -> Self::Item<'world> {
-        match world.index_single_res_any(*state) {
-            Some(r) => {
-                let value = unsafe {
-                    &mut *(r.as_any().downcast_ref_unchecked() as *const TickRes<T> as usize as *mut TickRes<T>)
-                };
-                Some(SingleResMut::new(value, tick))
-            }
-            None => None,
+        if state.0.is_none() {
+            init_opt_state(world, &mut state.0, state.1);
+        }
+        if let Some(r) = state.0.as_mut() {
+            Some(SingleResMut::new(
+                unsafe { Share::get_mut_unchecked(r) },
+                tick,
+            ))
+        } else {
+            None
         }
     }
 
@@ -268,4 +252,45 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
+}
+
+fn init_read_state<T: 'static>(
+    world: &mut World,
+    meta: &mut SystemMeta,
+) -> (Option<Share<TickRes<T>>>, usize, Tick) {
+    let t = TypeInfo::of::<T>();
+    let r = Relation::Read(t.type_id);
+    let index = meta.add_single_res(world, t, r);
+    let s = world.index_single_res_any(index);
+    if let Some(s) = s {
+        (
+            Some(Share::downcast::<TickRes<T>>(s.clone().into_any()).unwrap()),
+            index,
+            Tick::default(),
+        )
+    } else {
+        (None, index, Tick::default())
+    }
+}
+fn init_write_state<T: 'static>(
+    world: &mut World,
+    meta: &mut SystemMeta,
+) -> (Option<Share<TickRes<T>>>, usize) {
+    let t = TypeInfo::of::<T>();
+    let r = Relation::Write(t.type_id);
+    let index = meta.add_single_res(world, t, r);
+    let s = world.index_single_res_any(index);
+    if let Some(s) = s {
+        (
+            Some(Share::downcast::<TickRes<T>>(s.clone().into_any()).unwrap()),
+            index,
+        )
+    } else {
+        (None, index)
+    }
+}
+
+fn init_opt_state<T: 'static>(world: &World, state: &mut Option<Share<TickRes<T>>>, index: usize) {
+    let s = world.index_single_res_any(index).unwrap().clone();
+    *state = Some(Share::downcast::<TickRes<T>>(s.into_any()).unwrap());
 }
