@@ -350,12 +350,12 @@ impl<'a> BlobRef<'a> {
     }
     #[inline(always)]
     pub fn get<T>(&self, row: Row, e: Entity) -> &'a T {
-        self.trace(row, e, "get", std::ptr::null_mut());
+        // self.trace(row, e, "get", std::ptr::null_mut());
         unsafe { transmute(self.get_blob(row)) }
     }
     #[inline(always)]
     pub fn get_mut<T>(&self, row: Row, e: Entity) -> &'a mut T {
-        self.trace(row, e, "get_mut", std::ptr::null_mut());
+        // self.trace(row, e, "get_mut", std::ptr::null_mut());
         unsafe { transmute(self.load_blob(row)) }
     }
     #[inline(always)]
