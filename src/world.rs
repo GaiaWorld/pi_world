@@ -375,6 +375,17 @@ impl World {
             })
     }
 
+    pub fn register_single_res<T: 'static>(&mut self) -> usize {
+        *self
+            .single_res_map
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| {
+                let index = self.single_res_arr.len();
+                self.single_res_arr.push(None);
+                index
+            })
+    }
+
     /// 注册单例资源， 如果已经注册，则忽略，返回索引
     pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize {
         let tid = TypeId::of::<T>();
