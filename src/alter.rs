@@ -565,7 +565,7 @@ impl AState {
         dst_row: Row,
         e: Entity,
     ) {
-        // println!("alter_row: {:?}", (&mapping.dst_index, ar_index, src_row, dst_row, e, tick));
+        // println!("alter_row: {:?}", (&mapping.dst_index, mapping.src.index, src_row, dst_row, e));
         if !src_row.is_null() {
             mapping.src.mark_remove(src_row);
             mapping.move_columns(src_row, dst_row, e, &self.moving);

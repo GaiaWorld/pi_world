@@ -42,6 +42,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
+        println!("add_components_by_index: {:?}", e);
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push((*item, true));
@@ -55,6 +56,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: &[ComponentIndex],
     ) -> Result<(), QueryError> {
+        println!("remove_components_by_index: {:?}", e);
         self.state().tmp.clear();
         for item in components.iter().rev() {
             self.state().tmp.push((*item, false));
@@ -91,26 +93,7 @@ impl<'w> EntityEditor<'w> {
         };
 
         let ar_index = addr.archetype_index();
-        let mut ar = &self.world.empty_archetype;
-
-        if !addr.row.is_null() {
-            // todo 似乎state.alter_row内判断了，这里可以不用判断和mark_remove
-            ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
-
-            let mut r = false;
-            for i in editor_state.tmp.iter() {
-                if !ar.contains(i.0) {
-                    r = true;
-                }
-            }
-            if !r {
-                return Ok(());
-            }
-            let ae = ar.mark_remove(addr.row);
-            if e != ae {
-                return Err(QueryError::NoMatchEntity(ae));
-            }
-        }
+        let ar = unsafe { self.world.archetype_arr.get_unchecked(ar_index.index()) };
 
         let local_index =
             if let Some(local_index) = editor_state.archetype_map.get(&(ar_index, hash)) {
@@ -138,13 +121,13 @@ impl<'w> EntityEditor<'w> {
 
         let mapping = unsafe { editor_state.vec.get_unchecked_mut(local_index.index()) };
         state.find_mapping(&self.world, mapping, true);
-
+        // println!("edit1: {:?}", (e, addr, &mapping.src.index, &mapping.dst_index));
         if mapping.dst.id() == mapping.src.id() {
             return Ok(());
         }
 
         let (_, dst_row) = mapping.dst.alloc();
-        // println!("edit: {:?}", (e, addr.row, dst_row, &mapping.dst));
+        // println!("edit2: {:?}", (e, addr.row, dst_row, &mapping.dst_index));
 
         let tick = self.world.tick();
         // println!("mapping: {}")

@@ -464,7 +464,8 @@ mod test_mod {
         {
             let mut editor = world.make_entity_editor();
             for entity in &entities {
-                editor.remove_components_by_index(*entity, &[index]);
+                let r = editor.remove_components_by_index(*entity, &[index]);
+                assert_eq!(r.is_ok(), true, "{:?}", r);
             }
         }
         for e in entities {
