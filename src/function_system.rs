@@ -99,6 +99,7 @@ where
 {
     #[inline]
     fn run(&mut self, world: &World) {
+        self.param.align(world);
         let params = self.param.get_param(world);
         self.func.run(params);
     }

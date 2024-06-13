@@ -97,6 +97,7 @@ where
 {
     #[inline]
     fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        self.param.align(world);
         let tick = world.increment_tick();
         let param_state = self.param.param_state.as_mut().unwrap();
         let params = F::Param::get_self(world, &mut self.param.system_meta, param_state, tick);

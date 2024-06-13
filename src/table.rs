@@ -55,6 +55,10 @@ impl Table {
     pub fn len(&self) -> Row {
         Row(self.entities.len() as u32)
     }
+    /// 获得内存大小
+    pub fn mem_size(&self) -> usize {
+        todo!()
+    }
     #[inline(always)]
     pub fn get(&self, row: Row) -> Entity {
         // todo 改成load_unchecked

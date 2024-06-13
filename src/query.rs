@@ -54,7 +54,7 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'w
     }
 
     pub fn contains(&self, entity: Entity) -> bool {
-        self.state.check(self.world, entity).is_ok()
+        self.state.contains(self.world, entity)
     }
 
     pub fn get<'a>(
@@ -63,15 +63,19 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'w
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get(self.world, self.tick, e, &self.cache_index, unsafe {
+            .get1(self.world, self.tick, e, &self.cache_index, unsafe {
                 transmute(&self.fetch_filter)
             })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        let r = self
-            .state
-            .get(self.world, self.tick, e, &self.cache_index, &self.fetch_filter);
+        let r = self.state.get1(
+            self.world,
+            self.tick,
+            e,
+            &self.cache_index,
+            &self.fetch_filter,
+        );
         unsafe { transmute(r) }
     }
 
@@ -126,7 +130,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
     }
 
     pub fn contains(&self, entity: Entity) -> bool {
-        self.state.check(self.world, entity).is_ok()
+        self.state.contains(self.world, entity)
     }
 
     pub fn get(
@@ -135,15 +139,19 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get(self.world, self.tick, e, &self.cache_index, unsafe {
+            .get1(self.world, self.tick, e, &self.cache_index, unsafe {
                 transmute(&self.fetch_filter) // unsafe transmute 要求所有的FetchComponents的ReadOnly和Fetch类型是相同的
             })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        let r = self
-            .state
-            .get(self.world, self.tick, e, &self.cache_index, &self.fetch_filter);
+        let r = self.state.get1(
+            self.world,
+            self.tick,
+            e,
+            &self.cache_index,
+            &self.fetch_filter,
+        );
         unsafe { transmute(r) }
     }
 
@@ -264,8 +272,54 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             qstate: QState::new(system_meta),
         }
     }
-    #[inline(always)]
+    pub fn contains(&self, world: &World, entity: Entity) -> bool {
+        self.check(world, entity).is_ok()
+    }
+    pub fn last_run(&self) -> Tick {
+        self.last_run
+    }
     pub fn get<'w>(
+        &'w self,
+        world: &'w World,
+        e: Entity,
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
+        let tick = world.tick();
+        let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
+        let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
+        self.as_readonly().get1(
+            world,
+            tick,
+            e,
+            &cache_index,
+            &fetch_filter,
+        )
+    }
+
+    pub fn get_mut(
+        &mut self,
+        world: &mut World,
+        e: Entity,
+    ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+        let tick = world.tick();
+        let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
+        let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
+        let r = self.get1(world, tick, e, &cache_index, &fetch_filter);
+        unsafe { transmute(r) }
+    }
+    pub fn iter<'w>(
+        &'w self,
+        world: &'w World,
+    ) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
+        let tick = world.tick();
+        QueryIter::new(world, self.as_readonly(), tick)
+    }
+    pub fn iter_mut<'w>(&'w mut self, world: &'w mut World) -> QueryIter<'_, Q, F> {
+        let tick = world.tick();
+        QueryIter::new(world, self, tick)
+    }
+
+    #[inline(always)]
+    pub fn get1<'w>(
         &self,
         world: &'w World,
         tick: Tick,
@@ -310,7 +364,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
 
 #[derive(Debug)]
 pub struct QState {
-    pub(crate) related: Share<Related<ComponentIndex>>,         // 组件关系表
+    pub(crate) related: Share<Related<ComponentIndex>>, // 组件关系表
     pub(crate) archetypes_len: usize, // 脏的最新的原型，如果world上有更新的，则检查是否和自己相关
     pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
     pub(crate) bit_set: FixedBitSet,  // world上的原型索引是否在本地
@@ -468,12 +522,19 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 // println!("iter_normal1: {:?}", (self.e, self.row));
                 if !self.e.is_null() {
                     // println!("iter_normal1111: {:?}", (self.e, self.row));
-                    if F::filter(unsafe { &self.fetch_filter.assume_init_mut().1 }, self.row, self.e) {
+                    if F::filter(
+                        unsafe { &self.fetch_filter.assume_init_mut().1 },
+                        self.row,
+                        self.e,
+                    ) {
                         continue;
                     }
                     // println!("iter_normal2222: {:?}", (self.e, self.row));
-                    let item =
-                        Q::fetch(unsafe { &self.fetch_filter.assume_init_mut().0 }, self.row, self.e);
+                    let item = Q::fetch(
+                        unsafe { &self.fetch_filter.assume_init_mut().0 },
+                        self.row,
+                        self.e,
+                    );
                     return Some(item);
                 }
                 continue;
@@ -501,7 +562,6 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_normal()
-        
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.size_hint_normal()

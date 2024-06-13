@@ -151,19 +151,21 @@ impl World {
         #[cfg(debug_assertions)]
         match std::env::var("ECS_DEBUG") {
             Ok(r) => {
-                let r = r.split(",").map(|r| {
-                    if r == "*" {
-                        std::usize::MAX
-                    } else {
-                        r.parse::<usize>().unwrap()
-                    }
-
-                }).collect::<Vec<usize>>();
+                let r = r
+                    .split(",")
+                    .map(|r| {
+                        if r == "*" {
+                            std::usize::MAX
+                        } else {
+                            r.parse::<usize>().unwrap()
+                        }
+                    })
+                    .collect::<Vec<usize>>();
                 if r.len() == 2 {
                     ARCHETYPE_INDEX.store(r[0], Ordering::Relaxed);
-                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed); 
+                    COMPONENT_INDEX.store(r[1], Ordering::Relaxed);
                 }
-            },
+            }
             _ => (),
         };
 
@@ -226,7 +228,10 @@ impl World {
         EntityEditor::new(self)
     }
     /// 获得实体的原型信息
-    pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeIndex)> {
+    pub fn get_entity_prototype(
+        &self,
+        entity: Entity,
+    ) -> Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.entities.get(entity).map(|e| {
             let ar_index = e.archetype_index();
             let ar = self.archetype_arr.get(ar_index.index()).unwrap();
@@ -309,6 +314,15 @@ impl World {
         ArchetypeInfo::sort(vec)
     }
     /// 创建一个查询器
+    pub fn query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
+        &mut self,
+    ) -> QueryState<Q, F> {
+        let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
+        let mut state = QueryState::create(self, &mut meta);
+        state.align(self);
+        state
+    }
+    /// 创建一个查询器
     pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
     ) -> Queryer<Q, F> {
@@ -332,7 +346,7 @@ impl World {
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
-        alter_state.align(self,  &query_state.archetypes);
+        alter_state.align(self, &query_state.archetypes);
         Alterer::new(self, query_state, alter_state)
     }
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
@@ -399,31 +413,27 @@ impl World {
     /// 用索引获得指定的只读单例资源
     #[inline]
     pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&TickRes<T>> {
-        self.single_res_arr.get(index).map_or(None, |r| {
-            match r {
-                Some(r) => r.as_any().downcast_ref(),
-                None => None,
-            }
+        self.single_res_arr.get(index).map_or(None, |r| match r {
+            Some(r) => r.as_any().downcast_ref(),
+            None => None,
         })
     }
     /// 用索引获得指定的可变单例资源
     #[inline]
-    pub fn index_single_res_mut<T: 'static>(
-        &mut self,
-        index: usize,
-    ) -> Option<&mut TickRes<T>> {
-        self.single_res_arr.get_mut(index).map_or(None, |r| {
-            match r {
+    pub fn index_single_res_mut<T: 'static>(&mut self, index: usize) -> Option<&mut TickRes<T>> {
+        self.single_res_arr
+            .get_mut(index)
+            .map_or(None, |r| match r {
                 Some(r) => unsafe { Share::get_mut_unchecked(r).as_any_mut().downcast_mut() },
                 None => None,
-            }
-        })
+            })
     }
     /// 获得指定的单例资源
     #[inline]
     pub fn get_share_single_res<T: 'static>(&self) -> Option<Share<TickRes<T>>> {
         let tid = TypeId::of::<T>();
-        self.get_single_res_any(&tid).map(|r| Share::downcast(r.clone().into_any()).unwrap())
+        self.get_single_res_any(&tid)
+            .map(|r| Share::downcast(r.clone().into_any()).unwrap())
     }
 
     /// 获得指定的单例资源
@@ -455,15 +465,22 @@ impl World {
     }
 
     /// 初始化指定类型的多例资源
-    pub fn init_multi_res(&mut self, type_id: TypeId, vec: Share<dyn Any + Send + Sync>) -> (Share<dyn Any + Send + Sync>, Share<ShareUsize>) {
-        self.multi_res_map.entry(type_id).or_insert_with(|| (vec, Share::new(ShareUsize::new(0)))).clone()
+    pub fn init_multi_res(
+        &mut self,
+        type_id: TypeId,
+        vec: Share<dyn Any + Send + Sync>,
+    ) -> (Share<dyn Any + Send + Sync>, Share<ShareUsize>) {
+        self.multi_res_map
+            .entry(type_id)
+            .or_insert_with(|| (vec, Share::new(ShareUsize::new(0))))
+            .clone()
     }
     /// 获得指定类型的多例资源
     pub fn get_multi_res<T>(&self) -> Option<(Share<ResVec<T>>, Share<ShareUsize>)> {
         let tid = TypeId::of::<T>();
-        self.multi_res_map.get(&tid).map(|(r, t)| {
-            (Share::downcast(r.clone()).unwrap(), t.clone())
-        })
+        self.multi_res_map
+            .get(&tid)
+            .map(|(r, t)| (Share::downcast(r.clone()).unwrap(), t.clone()))
     }
 
     /// 初始化事件记录
@@ -537,7 +554,7 @@ impl World {
                 let t = self.tick();
                 let value: Mut<T> = Mut::new(&ColumnTick::new(c, t, t), e, addr.row);
                 Ok(unsafe { transmute(value) })
-            },
+            }
             None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
         }
     }
@@ -646,6 +663,10 @@ impl World {
         let addr = unsafe { self.entities.load_unchecked(e) };
         addr.row = row;
     }
+    /// 获得内存大小
+    pub fn mem_size(&self) -> usize {
+        todo!()
+    }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn settle(&mut self) {
         self.settle_by(&mut Vec::new(), &mut FixedBitSet::new())
@@ -734,7 +755,6 @@ impl<T: FromWorld> SetFromWorld for T {
     }
 }
 
-
 #[derive(Debug, Default, Clone, Copy)]
 pub struct EntityAddr {
     index: ArchetypeIndex,
@@ -746,10 +766,7 @@ unsafe impl Send for EntityAddr {}
 impl EntityAddr {
     #[inline(always)]
     pub(crate) fn new(index: ArchetypeIndex, row: Row) -> Self {
-        EntityAddr {
-            index,
-            row,
-        }
+        EntityAddr { index, row }
     }
     #[inline(always)]
     pub(crate) fn is_mark(&self) -> bool {
