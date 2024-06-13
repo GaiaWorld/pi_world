@@ -307,13 +307,15 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         unsafe { transmute(r) }
     }
     pub fn iter<'w>(
-        &'w self,
+        &'w mut self,
         world: &'w World,
     ) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
+        self.align(world);
         let tick = world.tick();
         QueryIter::new(world, self.as_readonly(), tick)
     }
     pub fn iter_mut<'w>(&'w mut self, world: &'w mut World) -> QueryIter<'_, Q, F> {
+        self.align(world);
         let tick = world.tick();
         QueryIter::new(world, self, tick)
     }

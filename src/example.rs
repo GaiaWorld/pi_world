@@ -519,12 +519,12 @@ mod test_mod {
             )
         }));
         world.settle();
-        let query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
-        println!("query, {:?}", query.iter().size_hint());
+        let mut query = world.query::<(&mut Position, &mut Mat), ()>();
+        println!("query, {:?}", query.iter(&world).size_hint());
         b.iter( || {
-            let mut query = world.make_queryer::<(&mut Position, &mut Mat), ()>();
+            let mut query = world.query::<(&mut Position, &mut Mat), ()>();
 
-            query.iter_mut().for_each(|(mut pos, mut mat)| {
+            query.iter_mut(&mut world).for_each(|(mut pos, mut mat)| {
                 //let mat = &mut *mat;
                 for _ in 0..100 {
                     *mat = Mat(mat.0.invert().unwrap());
@@ -601,8 +601,8 @@ mod test_mod {
         let e1 = i.insert((Age1(1), Age0(0)));
         let e2 = i.insert((Age1(1), Age0(0)));
         world.settle();
-        let mut q = world.make_queryer::<(&Age1, &mut Age0), ()>();
-        for (a, mut b) in q.iter_mut() {
+        let mut q = world.query::<(&Age1, &mut Age0), ()>();
+        for (a, mut b) in q.iter_mut(&mut world) {
             b.0 += a.0;
         }
 
