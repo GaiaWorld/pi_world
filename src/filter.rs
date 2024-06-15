@@ -163,6 +163,10 @@ macro_rules! impl_tuple_filter {
             }
 
         }
+
+        #[allow(non_snake_case)]
+        #[allow(clippy::unused_unit)]
+
         impl<$($name: FilterComponents),*> FilterComponents for Or<($($name,)*)> {
             type Filter<'w> = ($($name::Filter<'w>,)*);
             type State = ($($name::State,)*);

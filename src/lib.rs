@@ -18,7 +18,6 @@ pub mod prelude {
         app::App,
         query::{Query, QueryError},
         insert::{Insert, Bundle, Component},
-        insert_batch::InsertBatchIter,
         alter::Alter,
         editor::EntityEditor,
         event:: {Event, EventSender, ComponentChanged, ComponentAdded, ComponentRemoved},
@@ -37,7 +36,6 @@ pub mod prelude {
         schedule_config::{ScheduleLabel, StageLabel, SystemSet, IntoSystemSetConfigs, IntoSystemConfigs},
         exec_graph::ExecGraph,
         dot::{Dot, Config},
-        safe_vec::SafeVec,
         commands::{Command, CommandQueue},
     };
 }
@@ -60,9 +58,8 @@ pub mod system_params;
 pub mod function_system;
 pub mod async_function_system;
 pub mod insert;
-pub mod insert_batch;
 pub mod alter;
-pub mod safe_vec;
+// pub mod safe_vec;
 pub mod exec_graph;
 pub mod dot;
 pub mod schedule;

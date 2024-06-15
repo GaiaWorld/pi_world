@@ -6,7 +6,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{AState, ArchetypeMapping}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::Bundle, prelude::{Entity, Mut, QueryError, Tick, World}, query::{LocalIndex, Queryer}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
+    alter::{AState, ArchetypeMapping, QueryAlterState}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::{Bundle, InsertState}, prelude::{Entity, Mut, QueryError, Tick, World}, query::{LocalIndex, QueryState}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
 };
 
 impl AState {
@@ -149,7 +149,7 @@ impl<'w> EntityEditor<'w> {
         // todo 将Archetype的id改为[ComponentIndex]的hash值，这样尝试获取原型
         let ar = self.world.find_archtype(info);
         let (r, row) = ar.alloc();
-        let e = self.world.insert(ar.index(), row.into());
+        let e = self.world.insert_addr(ar.index(), row.into());
         let tick = self.world.tick();
         // println!("mapping: {}")
         ar.init_row(self.world, row.into(), e, tick);
@@ -177,7 +177,7 @@ impl<'w> EntityEditor<'w> {
     }
 
     pub fn alloc_entity(&self) -> Entity {
-        self.world.alloc_entity()
+        self.world.spawn_empty()
     }
 
     /// 获取组件只读引用
@@ -251,8 +251,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        // B::add_components(self, e, components)
-        self.world.make_alterer::<(), (), B, ()>().alter(e, components)?;
+        self.world.make_alter::<(), (), B, ()>().alter(self.world).alter(e, components)?;
         Ok(())
     }
 
@@ -261,16 +260,34 @@ impl<'w> EntityEditor<'w> {
         &mut self,
         components: B,
     ) -> Entity {
-        self.world.make_inserter().insert(components)
-        // B::insert_components(self,  components)
+        self.world.make_insert().insert(self.world, components)
+    }
+
+    /// 创建一个插入器
+    pub fn make_insert<B: Bundle + 'static>(
+        &mut self,
+    ) -> InsertState<B> {
+        self.world.make_insert::<B>()
     }
 
      /// 创建一个查询器
-    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
+    pub fn make_query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
-    )-> Queryer<Q, F> {
-         self.world.make_queryer::<Q, F>()
+    )-> QueryState<Q, F> {
+         self.world.make_query::<Q, F>()
     }
+    /// 创建一个改变器
+    pub fn make_alter<
+        Q: FetchComponents + 'static,
+        F: FilterComponents + 'static,
+        A: Bundle + 'static,
+        D: Bundle + 'static,
+    >(
+        &mut self,
+    ) -> QueryAlterState<Q, F, A, D> {
+        self.world.make_alter::<Q, F, A, D>()
+    }    
+
 }
 
 #[derive(Default)]

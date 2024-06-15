@@ -7,13 +7,12 @@ use std::mem::transmute;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 
+use pi_append_vec::{SafeVec, SafeVecIter};
 use pi_share::{Share, ShareUsize};
 
 use crate::archetype::{ComponentInfo, COMPONENT_TICK};
 
 use crate::column::{Column, ColumnInfo};
-// use downcast_rs::{Downcast, DowncastSync};
-use crate::safe_vec::{SafeVec, SafeVecIter};
 use crate::system::{SystemMeta, TypeInfo};
 use crate::system_params::SystemParam;
 use crate::world::*;
@@ -378,7 +377,7 @@ fn init_changed_state(world: &mut World, info: ComponentInfo) -> (Share<Componen
     // 首次创建监听器，将所有相关原型的实体都放入到事件列表中
     if r.1 == 0 {
         c.update(&world.archetype_arr, |_, row, ar| {
-            r.0.record(ar.get(row));
+            r.0.record(ar.get_unchecked(row));
         })
     }
     r

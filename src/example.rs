@@ -385,11 +385,11 @@ mod test_mod {
     fn test() { 
         let mut app = crate::prelude::App::new();
         dbg!("data0");
-        let i = app.world.make_inserter::<(Age1, Age0)>();
+        let i = app.world.make_insert::<(Age1, Age0)>();
         println!("data1");
-        let e1 = i.insert((Age1(1), Age0(0)));
+        let e1 = i.insert(&app.world, (Age1(1), Age0(0)));
         println!("data2");
-        let e2 = i.insert((Age1(1), Age0(0)));
+        let e2 = i.insert(&app.world, (Age1(1), Age0(0)));
         println!("data3");
         app.add_system(Update, print_changed_entities);
         println!("data");
@@ -446,8 +446,8 @@ mod test_mod {
     #[test]
     fn test_add_remove() {
         let mut world = World::new();
-        let i = world.make_inserter::<(A,)>();
-        let entities = (0..10).map(|_| i.insert((A(0),))).collect::<Vec<_>>();
+        let i = world.make_insert::<(A,)>();
+        let entities = (0..10).map(|_| i.insert(&world, (A(0),))).collect::<Vec<_>>();
         world.settle();
         let index= world.init_component::<B>();
         {
@@ -509,20 +509,20 @@ mod test_mod {
         #[derive(Copy, Clone, Component)]
         struct Velocity(Vector3<f32>);
         let mut world = World::new();
-        let i = world.make_inserter::<(Mat, Position, Rotation, Velocity)>();
-        i.batch((0..1000).map(|_| {
+        let i = world.make_insert::<(Mat, Position, Rotation, Velocity)>();
+        i.batch(&world, (0..1000).map(|_| {
             (
                 Mat(Matrix4::from_scale(1.0)),
                 Position(Vector3::unit_x()),
                 Rotation(Vector3::unit_x()),
                 Velocity(Vector3::unit_x()),
             )
-        }));
+        }), );
         world.settle();
-        let mut query = world.query::<(&mut Position, &mut Mat), ()>();
+        let mut query = world.make_query::<(&mut Position, &mut Mat), ()>();
         println!("query, {:?}", query.iter(&world).size_hint());
         b.iter( || {
-            let mut query = world.query::<(&mut Position, &mut Mat), ()>();
+            let mut query = world.make_query::<(&mut Position, &mut Mat), ()>();
 
             query.iter_mut(&mut world).for_each(|(mut pos, mut mat)| {
                 //let mat = &mut *mat;
@@ -546,11 +546,11 @@ mod test_mod {
                     Velocity([a as f32; 3]),
                 )
             });
-            let i = world.make_inserter::<(Transform, Position, Rotation, Velocity)>();
-            i.batch(iter);
-            let i = world.make_inserter::<(Transform,Position,Rotation, Velocity)>();
+            let i = world.make_insert::<(Transform, Position, Rotation, Velocity)>();
+            i.batch(&world, iter).collect::<Vec<Entity>>();
+            let i = world.make_insert::<(Transform,Position,Rotation, Velocity)>();
             for a in 0..9990 {
-                i.insert((
+                i.insert(&world, (
                     Transform([a as f32; 16]),
                     Position([a as f32; 3]),
                     Rotation([a as f32; 3]),
@@ -563,10 +563,10 @@ mod test_mod {
     pub fn simple_insert() {
         for _ in 0..1 {
             let mut world = World::new();
-            let i = world.make_inserter::<(Transform, Position, Rotation, Velocity)>();
+            let i = world.make_insert::<(Transform, Position, Rotation, Velocity)>();
             let mut e = Entity::null();
             for a in 0..10_000 {
-                e = i.insert((
+                e = i.insert(&world, (
                     Transform([a as f32; 16]),
                     Position([a as f32; 3]),
                     Rotation([a as f32; 3]),
@@ -596,12 +596,12 @@ mod test_mod {
         let mut world = World::new();
         let mut w = world.unsafe_world();
         let mut w1 = world.unsafe_world();
-        let i = w.make_inserter::<(Age1, Age0)>();
-        let _i1 = w1.make_inserter::<(Age2, Age3)>();
-        let e1 = i.insert((Age1(1), Age0(0)));
-        let e2 = i.insert((Age1(1), Age0(0)));
+        let i = w.make_insert::<(Age1, Age0)>();
+        let _i1 = w1.make_insert::<(Age2, Age3)>();
+        let e1 = i.insert(&world, (Age1(1), Age0(0)));
+        let e2 = i.insert(&world, (Age1(1), Age0(0)));
         world.settle();
-        let mut q = world.query::<(&Age1, &mut Age0), ()>();
+        let mut q = world.make_query::<(&Age1, &mut Age0), ()>();
         for (a, mut b) in q.iter_mut(&mut world) {
             b.0 += a.0;
         }
@@ -671,9 +671,9 @@ mod test_mod {
     #[test]
     fn test_alter1() {
         let mut world = World::new();
-        let i = world.make_inserter::<(Age1, Age0)>();
-        let e1 = i.insert((Age1(2), Age0(1)));
-        let e2 = i.insert((Age1(4), Age0(2)));
+        let i = world.make_insert::<(Age1, Age0)>();
+        let e1 = i.insert(&world, (Age1(2), Age0(1)));
+        let e2 = i.insert(&world, (Age1(4), Age0(2)));
         world.settle();
         {
             let mut editor = world.make_entity_editor();
@@ -717,9 +717,9 @@ mod test_mod {
     fn test_alter2() {
         println!("0");
         let mut world = World::new();
-        let i = world.make_inserter::<(Age0,)>();
+        let i = world.make_insert::<(Age0,)>();
         let _entities = (0..1)
-            .map(|_| i.insert((Age0(0),)))
+            .map(|_| i.insert(&world, (Age0(0),)))
             .collect::<Vec<Entity>>();
         world.settle();
         let mut editor = world.make_entity_editor();
@@ -911,21 +911,21 @@ mod test_mod {
             }
         }
         let mut app = crate::prelude::App::new();
-        let i = app.world.make_inserter::<(A, B)>();
+        let i = app.world.make_insert::<(A, B)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
-        i.batch(it);
+        i.batch(&app.world, it).collect::<Vec<Entity>>();
 
-        let i = app.world.make_inserter::<(A, B, C)>();
+        let i = app.world.make_insert::<(A, B, C)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
-        i.batch(it);
+        i.batch(&app.world, it).collect::<Vec<Entity>>();
 
-        let i = app.world.make_inserter::<(A, B, C, D)>();
+        let i = app.world.make_insert::<(A, B, C, D)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
-        i.batch(it);
+        i.batch(&app.world, it).collect::<Vec<Entity>>();
 
-        let i = app.world.make_inserter::<(A, B, C, E)>();
+        let i = app.world.make_insert::<(A, B, C, E)>();
         let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
-        i.batch(it);
+        i.batch(&app.world, it).collect::<Vec<Entity>>();
 
         app.world.settle();
         app.add_system(Update, ab);
@@ -1787,8 +1787,8 @@ mod test_mod {
         pub struct EntityRes(Entity);
 
         let mut app = crate::prelude::App::new();
-        let i = app.world.make_inserter::<(Age0, Age1, Age2)>();
-        let e = i.insert((Age0(0), Age1(1), Age2(2)));
+        let i = app.world.make_insert::<(Age0, Age1, Age2)>();
+        let e = i.insert(&app.world, (Age0(0), Age1(1), Age2(2)));
         println!("========== e: {:?}", e);
         app.world.insert_single_res(EntityRes(e));
 

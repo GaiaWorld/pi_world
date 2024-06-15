@@ -12,8 +12,12 @@
 
 ## 优化原型名字的表达，类似use 模块。
 ## 可查看出整个world的原型内存状态。
+
 ## 测试get性能 去掉Queryer和Alteror Inserter， 去掉SafeVec， 提出pi_listener(将settle trait 放入pi_append_vec)
 ## ecs world 上提供mem_size
+## 检查 world settle ，否则没法解释为啥get 和 iter慢
+## 单例和多例需要提供mem_size？
+
 
 # v0.1.11 
 ## 已经支持异步system

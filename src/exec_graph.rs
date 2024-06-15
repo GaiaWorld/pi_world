@@ -25,7 +25,7 @@ use async_channel::{bounded, Receiver, RecvError, Sender};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
-use pi_append_vec::AppendVec;
+use pi_append_vec::{AppendVec, SafeVec};
 use pi_arr::Iter;
 use pi_async_rt::prelude::AsyncRuntime;
 use pi_map::vecmap::VecMap;
@@ -39,7 +39,6 @@ use crate::column::ARCHETYPE_INDEX;
 use crate::column::COMPONENT_INDEX;
 use crate::dot::{Config, Dot};
 use crate::listener::Listener;
-use crate::safe_vec::SafeVec;
 use crate::system::BoxedSystem;
 use crate::world::{ArchetypeInit, ComponentIndex, World};
 

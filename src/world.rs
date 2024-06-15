@@ -11,7 +11,7 @@
 /// 如果sys通过是MultiRes实现的CmdQueue来延迟动态增删组件，则sys就不会因此产生依赖，动态增删的结果就只能在可能在下一帧才会看到。
 ///
 ///
-use crate::alter::{AlterState, Alterer};
+use crate::alter::{AlterState, QueryAlterState};
 use crate::archetype::{
     Archetype, ArchetypeIndex, ArchetypeInfo, ComponentInfo, Row, ShareArchetype,
 };
@@ -21,25 +21,25 @@ use crate::column::{ARCHETYPE_INDEX, COMPONENT_INDEX};
 use crate::editor::{EditorState, EntityEditor};
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
-use crate::insert::{Bundle, Inserter};
-use crate::insert_batch::InsertBatchIter;
+use crate::insert::{Bundle, InsertState};
 use crate::listener::{EventListKey, ListenerMgr};
 use crate::multi_res::ResVec;
 use crate::prelude::Mut;
-use crate::query::{QueryError, QueryState, Queryer};
-use crate::safe_vec::{SafeVec, SafeVecIter};
+use crate::query::{QueryError, QueryState};
 use crate::single_res::TickRes;
 use crate::system::{SystemMeta, TypeInfo};
 use core::fmt::*;
 use core::result::Result;
+use std::marker::PhantomData;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use fixedbitset::FixedBitSet;
+use pi_append_vec::{SafeVec, SafeVecIter};
 use pi_key_alloter::new_key_type;
 use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::collections::{hash_map::Entry as StdEntry, HashMap};
-use std::mem::{self, transmute, ManuallyDrop};
+use std::mem::{self, size_of, transmute, ManuallyDrop};
 use std::ops::Deref;
 use std::ptr;
 use std::sync::atomic::Ordering;
@@ -205,26 +205,21 @@ impl World {
     pub fn increment_tick(&self) -> Tick {
         self.tick.fetch_add(1, Ordering::Relaxed).into()
     }
-    /// 批量插入
-    pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
-    where
-        I: Iterator<Item = Ins>,
-        Ins: Bundle,
-    {
-        InsertBatchIter::new(self, iter.into_iter())
-    }
-    /// 创建一个插入器
-    pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
-        let components = I::components(Vec::new());
-        let ar = self.find_ar(components);
-        let s = I::init_item(self, &ar);
-        Inserter::new(self, (ar, s), self.tick())
-    }
-
-    /// 创建一个实体编辑器
-    pub fn make_entity_editor(&mut self) -> EntityEditor {
-        EntityEditor::new(self)
-    }
+    // /// 批量插入
+    // pub fn batch_insert<'w, I, Ins>(&'w mut self, iter: I) -> InsertBatchIter<'w, I, Ins>
+    // where
+    //     I: Iterator<Item = Ins>,
+    //     Ins: Bundle,
+    // {
+    //     InsertBatchIter::new(self, iter.into_iter())
+    // }
+    // /// 创建一个插入器 todo 移除
+    // pub fn make_inserter<I: Bundle>(&mut self) -> Inserter<I> {
+    //     let components = I::components(Vec::new());
+    //     let ar = self.find_ar(components);
+    //     let s = I::init_item(self, &ar);
+    //     Inserter::new(self, InsertState::new(ar, s), self.tick())
+    // }
     /// 获得实体的原型信息
     pub fn get_entity_prototype(&self, entity: Entity) ->  Option<(&Cow<'static, str>, ArchetypeIndex)> {
         self.entities.get(entity).map(|e| {
@@ -308,42 +303,45 @@ impl World {
             .collect();
         ArchetypeInfo::sort(vec)
     }
+    /// 创建一个插入器
+    pub fn make_insert<B: Bundle>(&mut self) -> InsertState<B> {
+        let components = B::components(Vec::new());
+        let ar = self.find_ar(components);
+        let s = B::init_item(self, &ar);
+        InsertState::new(ar, s)
+    }
     /// 创建一个查询器
-    pub fn query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
+    pub fn make_query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
     ) -> QueryState<Q, F> {
-        let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
+        let mut meta = SystemMeta::new(TypeInfo::of::<QueryState<Q, F>>());
         let mut state = QueryState::create(self, &mut meta);
         state.align(self);
         state
     }
-    /// 创建一个查询器
-    pub fn make_queryer<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
-        &mut self,
-    ) -> Queryer<Q, F> {
-        let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
-        let mut state = QueryState::create(self, &mut meta);
-        state.align(self);
-        Queryer::new(self, state)
-    }
     /// 创建一个改变器
-    pub fn make_alterer<
+    pub fn make_alter<
         Q: FetchComponents + 'static,
         F: FilterComponents + 'static,
         A: Bundle + 'static,
         D: Bundle + 'static,
     >(
         &mut self,
-    ) -> Alterer<Q, F, A, D> {
-        let mut meta = SystemMeta::new(TypeInfo::of::<Queryer<Q, F>>());
+    ) -> QueryAlterState<Q, F, A, D> {
+        let mut meta = SystemMeta::new(TypeInfo::of::<QueryAlterState<Q, F, A, D>>());
         let mut query_state = QueryState::create(self, &mut meta);
         let mut alter_state =
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
         alter_state.align(self,  &query_state.archetypes);
-        Alterer::new(self, query_state, alter_state)
+        QueryAlterState(query_state, alter_state, PhantomData)
     }
+    /// 创建一个实体编辑器
+    pub fn make_entity_editor(&mut self) -> EntityEditor {
+        EntityEditor::new(self)
+    }
+
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
         unsafe { transmute(self) }
     }
@@ -607,9 +605,9 @@ impl World {
         entry.insert(ar.clone()); // entry销毁后， 其他线程通过archetype_arr就可以看见该原型
         index.into()
     }
-    /// 插入一个新的Entity
+    /// 插入一个新的EntityAddr
     #[inline(always)]
-    pub(crate) fn insert(&self, ar_index: ArchetypeIndex, row: Row) -> Entity {
+    pub(crate) fn insert_addr(&self, ar_index: ArchetypeIndex, row: Row) -> Entity {
         self.entities.insert(EntityAddr::new(ar_index, row))
     }
     /// 替换Entity的原型及行
@@ -644,8 +642,8 @@ impl World {
         Ok(())
     }
 
-    /// 创建一个新的实体
-    pub(crate) fn alloc_entity(&self) -> Entity {
+    /// 创建一个新的空实体
+    pub fn spawn_empty(&self) -> Entity {
         self.entities
             .insert(EntityAddr::new(0usize.into(), Row::null()))
     }
@@ -657,7 +655,13 @@ impl World {
     }
     /// 获得内存大小
     pub fn mem_size(&self) -> usize {
-        todo!()
+        let mut size = self.entities.mem_size();
+        size += self.component_arr.capacity() * size_of::<Column>();
+        size += self.archetype_arr.capacity() * size_of::<Archetype>();
+        for ar in self.archetype_arr.iter() {
+            size += ar.mem_size();
+        }
+        size
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world
     pub fn settle(&mut self) {
