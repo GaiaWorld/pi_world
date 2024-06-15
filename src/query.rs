@@ -277,7 +277,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn last_run(&self) -> Tick {
         self.last_run
     }
-    pub fn query<'w>(&'w mut self, world: &'w World) -> Query<Q, F> {
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Query<Q, F> {
         Query::new(world, self, world.tick())
     }
     pub fn get<'w>(

@@ -251,7 +251,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        self.world.make_alter::<(), (), B, ()>().alter(self.world).alter(e, components)?;
+        self.world.make_alter::<(), (), B, ()>().get_param(self.world).alter(e, components)?;
         Ok(())
     }
 

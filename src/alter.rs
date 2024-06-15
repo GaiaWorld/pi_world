@@ -313,7 +313,7 @@ unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bund
 impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
     QueryAlterState<Q, F, A, D>
 {
-    pub fn alter<'w>(&'w mut self, world: &'w World) -> Alter<'_, Q, F, A, D> {
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Alter<'_, Q, F, A, D> {
         Alter::new(Query::new(world, &mut self.0, world.tick()), &mut self.1)
     }
 }
