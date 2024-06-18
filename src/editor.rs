@@ -18,7 +18,10 @@ impl AState {
             let dst_data: *mut u8 = dst_column.load(dst_row, e);
             match c.info().set_fn {
                 Some(fun) => fun(world, dst_data),
-                None => panic!("{:?} is not set_fn!!!", (c, dst_column)),
+                None => {
+                    log::error!("{:?} is not set_fn!!!", (c, &dst_column));
+                    panic!("{:?} is not set_fn!!!", (c, dst_column))
+                },
             };
             dst_column.added_tick(e, dst_row, tick)
         }
