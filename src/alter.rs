@@ -570,9 +570,9 @@ impl AState {
             mapping.src.mark_remove(src_row);
             mapping.move_columns(src_row, dst_row, e, &self.moving);
             mapping.remove_columns(src_row, e, &self.removing);
-            // 写目标行的Entity
-            mapping.dst.set(dst_row, e);
         }
+        // 写目标行的Entity
+        mapping.dst.set(dst_row, e);
         // 更改entity上存的EntityAddr
         world.replace(e, mapping.dst_index, dst_row);
     }
