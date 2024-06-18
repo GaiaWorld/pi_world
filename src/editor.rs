@@ -16,7 +16,10 @@ impl AState {
             let dst_column = c.blob_ref_unchecked(am.dst.index());
             // println!("dst_column: {:?}", dst_column.info());
             let dst_data: *mut u8 = dst_column.load(dst_row, e);
-            c.info().set_fn.unwrap()(world, dst_data);
+            match c.info().set_fn {
+                Some(fun) => fun(world, dst_data),
+                None => panic!("{:?} is not set_fn!!!", (c, dst_column)),
+            };
             dst_column.added_tick(e, dst_row, tick)
         }
     }
