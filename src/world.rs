@@ -310,6 +310,12 @@ impl World {
         let s = B::init_item(self, &ar);
         InsertState::new(ar, s)
     }
+    /// 兼容bevy的接口，提供query
+    pub fn query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
+        &mut self,
+    ) -> QueryState<Q, F> {
+        self.make_query()
+    }
     /// 创建一个查询器
     pub fn make_query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,

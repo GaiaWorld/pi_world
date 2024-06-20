@@ -210,7 +210,7 @@ struct Velocity([f32; 3]);
  
 #[cfg(test)]
 mod test_mod {
-  
+
     use std::{any::TypeId, ops::Deref};
  
     use super::*;

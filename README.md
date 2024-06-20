@@ -15,7 +15,7 @@
 
 ## 测试get性能 去掉Queryer和Alteror Inserter， 去掉SafeVec， 提出pi_listener(将settle trait 放入pi_append_vec)
 ## ecs world 上提供mem_size
-## 检查 world settle ，否则没法解释为啥get 和 iter慢
+## 检查 world settle ，否则没法解释为啥get 和 iter慢, 也有可能是Mut慢？
 ## 单例和多例需要提供mem_size？
 
 

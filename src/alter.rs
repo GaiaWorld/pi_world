@@ -223,16 +223,15 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
-        let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
+        let (addr, local_index) = self.state.check(&self.query.world, e)?;
         self.state.alter(
             &self.query.world,
             local_index,
             e,
-            addr.row,
+            addr,
             components,
             self.query.tick,
-        );
-        Ok(true)
+        )
     }
 }
 
@@ -371,13 +370,13 @@ impl<A: Bundle> AlterState<A> {
         world: &'w World,
         ar_index: LocalIndex,
         e: Entity,
-        src_row: Row,
+        addr: &mut EntityAddr,
         components: A,
         tick: Tick,
-    ) -> Option<(&ShareArchetype, ArchetypeIndex)> {
+    ) -> Result<bool, QueryError> {
         let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
-        let (is_new, new_ar) = self.state.find_mapping(world, mapping, false);
+        let (is_new, _new_ar) = self.state.find_mapping(world, mapping, false);
         if is_new {
             // 首次映射
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
@@ -391,8 +390,15 @@ impl<A: Bundle> AlterState<A> {
                     .assume_init_ref()
             };
             // 目标原型和源原型相同，直接写入
-            A::insert(item, components, e, src_row, tick);
-            return None;
+            A::insert(item, components, e, addr.row, tick);
+            return Ok(false);
+        }
+        // 判断地址是否已经标记移动了，不允许一个system内修改一个entity原型2次
+        // mark标记在Alter Drop时，被clear方法replace entity的地址时被清除
+        if addr.is_mark() {
+            return Err(QueryError::RepeatAlter);
+        } else {
+            addr.mark();
         }
         let (_, dst_row) = mapping.dst.alloc();
         // println!("alter: {:?}", (e, src_row, dst_row, &mapping.dst));
@@ -404,17 +410,18 @@ impl<A: Bundle> AlterState<A> {
         A::insert(item, components, e, dst_row.into(), tick);
         // 记录移除行
         mapping.push(
-            src_row,
+            addr.row,
             dst_row.into(),
             e,
             ar_index,
             &mut self.mapping_dirtys,
         );
-        if new_ar {
-            Some((&mapping.dst, mapping.dst_index))
-        } else {
-            None
-        }
+        // if new_ar {
+        //     Some((&mapping.dst, mapping.dst_index))
+        // } else {
+        //     None
+        // }
+        Ok(true)
     }
 }
 
@@ -630,20 +637,20 @@ impl AState {
         world.entities.remove(e).unwrap();
         Ok(true)
     }
-    // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
-    pub(crate) fn check_mark<'w>(
-        &self,
-        world: &'w World,
-        entity: Entity,
-    ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
-        let (addr, local_index) = self.check(world, entity)?;
-        if addr.is_mark() {
-            return Err(QueryError::RepeatAlter);
-        } else {
-            addr.mark();
-        }
-        Ok((addr, local_index))
-    }
+    // // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
+    // pub(crate) fn check_mark<'w>(
+    //     &self,
+    //     world: &'w World,
+    //     entity: Entity,
+    // ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
+    //     let (addr, local_index) = self.check(world, entity)?;
+    //     if addr.is_mark() {
+    //         return Err(QueryError::RepeatAlter);
+    //     } else {
+    //         addr.mark();
+    //     }
+    //     Ok((addr, local_index))
+    // }
     // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
     pub(crate) fn check<'w>(
         &self,
@@ -769,16 +776,16 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
         AState::destroy_row(&self.it.world, &self.it.ar, self.it.row)
     }
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {
-        self.state.check_mark(&self.it.world, self.it.e)?;
+        let addr = self.it.world.entities.load(self.it.e).unwrap();
+        // let (addr, _) =self.state.check(&self.it.world, self.it.e)?;
         self.state.alter(
             &self.it.world,
             self.it.ar_index,
             self.it.e,
-            self.it.row,
+            addr,
             components,
             self.it.tick,
-        );
-        Ok(true)
+        )
     }
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> Iterator for AlterIter<'w, Q, F, A> {

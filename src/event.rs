@@ -121,6 +121,8 @@ impl<E: 'static> Downcast for EventVec<E> {
     }
 }
 
+pub type EventReader<'w, E> = Event<'w, E>;
+
 pub struct Event<'w, E: 'static> {
     pub(crate) record: &'w Share<EventVec<E>>,
     pub(crate) listener_index: usize,
@@ -173,6 +175,8 @@ impl<E: 'static> SystemParam for Event<'_, E> {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
 }
+
+pub type EventWriter<'w, E> = EventSender<'w, E>;
 
 pub struct EventSender<'w, E: 'static>(&'w Share<EventVec<E>>);
 unsafe impl<E> Send for EventSender<'_, E> {}

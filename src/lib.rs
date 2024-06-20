@@ -20,7 +20,7 @@ pub mod prelude {
         insert::{Insert, Bundle, Component},
         alter::Alter,
         editor::EntityEditor,
-        event:: {Event, EventSender, ComponentChanged, ComponentAdded, ComponentRemoved},
+        event:: {Event, EventReader, EventSender, EventWriter, ComponentChanged, ComponentAdded, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
         single_res::{SingleRes, SingleResMut},
         multi_res::{MultiRes, MultiResMut},
