@@ -6,6 +6,7 @@ use std::{
     sync::atomic::AtomicUsize,
 };
 
+use pi_append_vec::SafeVec;
 use pi_arr::Arr;
 use pi_null::Null;
 use pi_share::Share;
@@ -13,7 +14,6 @@ use pi_share::Share;
 use crate::{
     archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, ShareArchetype},
     event::ComponentEventVec,
-    safe_vec::SafeVec,
     world::{Entity, Tick},
 };
 

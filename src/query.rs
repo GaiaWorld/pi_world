@@ -27,73 +27,73 @@ pub enum QueryError {
     NoSuchRes,
     RepeatAlter,
 }
+// // todo 移除
+// pub struct Queryer<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
+//     pub(crate) world: &'w World,
+//     pub(crate) state: QueryState<Q, F>,
+//     pub(crate) tick: Tick,
+//     // 缓存上次的索引映射关系
+//     cache_index: SyncUnsafeCell<ArchetypeIndex>,
+//     fetch_filter: SyncUnsafeCell<
+//         MaybeUninit<(
+//             <Q as FetchComponents>::Fetch<'w>,
+//             <F as FilterComponents>::Filter<'w>,
+//         )>,
+//     >,
+// }
+// impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'w, Q, F> {
+//     pub(crate) fn new(world: &'w World, state: QueryState<Q, F>) -> Self {
+//         let tick = world.increment_tick();
+//         Self {
+//             world,
+//             state,
+//             tick,
+//             cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
+//             fetch_filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
+//         }
+//     }
 
-pub struct Queryer<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
-    pub(crate) world: &'w World,
-    pub(crate) state: QueryState<Q, F>,
-    pub(crate) tick: Tick,
-    // 缓存上次的索引映射关系
-    cache_index: SyncUnsafeCell<ArchetypeIndex>,
-    fetch_filter: SyncUnsafeCell<
-        MaybeUninit<(
-            <Q as FetchComponents>::Fetch<'w>,
-            <F as FilterComponents>::Filter<'w>,
-        )>,
-    >,
-}
-impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> Queryer<'w, Q, F> {
-    pub(crate) fn new(world: &'w World, state: QueryState<Q, F>) -> Self {
-        let tick = world.increment_tick();
-        Self {
-            world,
-            state,
-            tick,
-            cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
-            fetch_filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
-        }
-    }
+//     pub fn contains(&self, entity: Entity) -> bool {
+//         self.state.contains(self.world, entity)
+//     }
 
-    pub fn contains(&self, entity: Entity) -> bool {
-        self.state.contains(self.world, entity)
-    }
+//     pub fn get<'a>(
+//         &'a self,
+//         e: Entity,
+//     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
+//         self.state
+//             .as_readonly()
+//             .get_by_tick(self.world, self.tick, e, &self.cache_index, unsafe {
+//                 transmute(&self.fetch_filter)
+//             })
+//     }
 
-    pub fn get<'a>(
-        &'a self,
-        e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
-        self.state
-            .as_readonly()
-            .get1(self.world, self.tick, e, &self.cache_index, unsafe {
-                transmute(&self.fetch_filter)
-            })
-    }
+//     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+//         let r = self.state.get_by_tick(
+//             self.world,
+//             self.tick,
+//             e,
+//             &self.cache_index,
+//             &self.fetch_filter,
+//         );
+//         unsafe { transmute(r) }
+//     }
 
-    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        let r = self.state.get1(
-            self.world,
-            self.tick,
-            e,
-            &self.cache_index,
-            &self.fetch_filter,
-        );
-        unsafe { transmute(r) }
-    }
+//     pub fn is_empty(&self) -> bool {
+//         self.state.is_empty()
+//     }
 
-    pub fn is_empty(&self) -> bool {
-        self.state.is_empty()
-    }
+//     pub fn len(&self) -> usize {
+//         self.state.len()
+//     }
 
-    pub fn len(&self) -> usize {
-        self.state.len()
-    }
-
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
-        QueryIter::new(self.world, self.state.as_readonly(), self.tick)
-    }
-    pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F> {
-        QueryIter::new(self.world, &self.state, self.tick)
-    }
-}
+//     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
+//         QueryIter::new(self.world, self.state.as_readonly(), self.tick)
+//     }
+//     pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F> {
+//         QueryIter::new(self.world, &self.state, self.tick)
+//     }
+// }
 
 pub struct Query<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) world: &'w World,
@@ -139,13 +139,13 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get1(self.world, self.tick, e, &self.cache_index, unsafe {
+            .get_by_tick(self.world, self.tick, e, &self.cache_index, unsafe {
                 transmute(&self.fetch_filter) // unsafe transmute 要求所有的FetchComponents的ReadOnly和Fetch类型是相同的
             })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        let r = self.state.get1(
+        let r = self.state.get_by_tick(
             self.world,
             self.tick,
             e,
@@ -263,7 +263,6 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
     pub fn create(world: &mut World, system_meta: &mut SystemMeta) -> Self {
-        // let id = world.increment_tick();
         let fetch_state = Q::init_state(world, system_meta);
         let filter_state = F::init_state(world, system_meta);
         Self {
@@ -278,6 +277,9 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     pub fn last_run(&self) -> Tick {
         self.last_run
     }
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Query<Q, F> {
+        Query::new(world, self, world.tick())
+    }
     pub fn get<'w>(
         &'w self,
         world: &'w World,
@@ -286,13 +288,8 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let tick = world.tick();
         let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
         let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
-        self.as_readonly().get1(
-            world,
-            tick,
-            e,
-            &cache_index,
-            &fetch_filter,
-        )
+        self.as_readonly()
+            .get_by_tick(world, tick, e, &cache_index, &fetch_filter)
     }
 
     pub fn get_mut(
@@ -303,7 +300,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         let tick = world.tick();
         let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
         let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
-        let r = self.get1(world, tick, e, &cache_index, &fetch_filter);
+        let r = self.get_by_tick(world, tick, e, &cache_index, &fetch_filter);
         unsafe { transmute(r) }
     }
     pub fn iter<'w>(
@@ -321,7 +318,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     }
 
     #[inline(always)]
-    pub fn get1<'w>(
+    pub fn get_by_tick<'w>(
         &self,
         world: &'w World,
         tick: Tick,
@@ -519,24 +516,17 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             // println!("iter_normal: {:?}", (self.e, self.row, self.ar.index(), self.ar.name()));
             if self.row.0 > 0 {
                 self.row.0 -= 1;
-                self.e = self.ar.get(self.row);
+                self.e = self.ar.get_unchecked(self.row);
                 // 要求条目不为空
                 // println!("iter_normal1: {:?}", (self.e, self.row));
                 if !self.e.is_null() {
+                    let (fetch, filter) = unsafe { self.fetch_filter.assume_init_ref() };
                     // println!("iter_normal1111: {:?}", (self.e, self.row));
-                    if F::filter(
-                        unsafe { &self.fetch_filter.assume_init_mut().1 },
-                        self.row,
-                        self.e,
-                    ) {
+                    if F::filter(filter, self.row, self.e) {
                         continue;
                     }
                     // println!("iter_normal2222: {:?}", (self.e, self.row));
-                    let item = Q::fetch(
-                        unsafe { &self.fetch_filter.assume_init_mut().0 },
-                        self.row,
-                        self.e,
-                    );
+                    let item = Q::fetch(fetch, self.row, self.e);
                     return Some(item);
                 }
                 continue;

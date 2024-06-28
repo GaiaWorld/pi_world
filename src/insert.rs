@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::transmute;
 
@@ -14,52 +15,15 @@ use crate::world::*;
 pub use pi_world_macros::Bundle;
 pub use pi_world_macros::Component;
 
-// 插入器， 一般是给外部的应用通过world上的make_inserter来创建和使用
-pub struct Inserter<'world, I: Bundle> {
-    world: &'world World,
-    state: (ShareArchetype, I::Item),
-    tick: Tick,
-}
-
-impl<'world, I: Bundle> Inserter<'world, I> {
-    #[inline(always)]
-    pub fn new(world: &'world World, state: (ShareArchetype, I::Item), tick: Tick) -> Self {
-        Self { world, state, tick }
-    }
-    #[inline(always)]
-    pub fn insert(&self, components: I) -> Entity {
-        Insert::<I>::new(self.world, &self.state, self.tick).insert(components)
-    }
-    #[inline(always)]
-    pub fn batch(&self, iter: impl IntoIterator<Item = I>) {
-        let iter = iter.into_iter();
-        let (lower, upper) = iter.size_hint();
-        let length = upper.unwrap_or(lower);
-        let ptr: *mut SlotMap<Entity, EntityAddr> = unsafe { transmute(&self.world.entities) };
-        unsafe { &mut *ptr }.settle(length);
-        // 强行将原型转为可写
-        let ptr = ShareArchetype::as_ptr(&self.state.0);
-        let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
-        ar_mut.reserve(length);
-        for item in iter {
-            self.insert(item);
-        }
-    }
-}
-
-pub struct Insert<'world, I: Bundle> {
+pub struct Insert<'world, B: Bundle> {
     pub(crate) world: &'world World,
-    state: &'world (ShareArchetype, I::Item),
+    state: &'world InsertState<B>,
     tick: Tick,
 }
 
-impl<'world, I: Bundle> Insert<'world, I> {
+impl<'world, B: Bundle> Insert<'world, B> {
     #[inline(always)]
-    pub(crate) fn new(
-        world: &'world World,
-        state: &'world (ShareArchetype, I::Item),
-        tick: Tick,
-    ) -> Self {
+    pub(crate) fn new(world: &'world World, state: &'world InsertState<B>, tick: Tick) -> Self {
         Insert { world, state, tick }
     }
     #[inline]
@@ -67,25 +31,29 @@ impl<'world, I: Bundle> Insert<'world, I> {
         self.tick
     }
     #[inline]
-    pub fn insert(&self, components: I) -> Entity {
-        let (r, row) = self.state.0.alloc();
-        let e = self.world.insert(self.state.0.index(), row.into());
-        I::insert(&self.state.1, components, e, row.into(), self.tick);
-        *r = e;
-        e
+    pub fn insert(&self, components: B) -> Entity {
+        self.state
+            .insert_with_tick(&self.world, components, self.tick)
+    }
+    #[inline(always)]
+    pub fn batch<'w, I: IntoIterator<Item = B>>(
+        &'w self,
+        iter: I,
+    ) -> InsertBatchIter<'_, <I as IntoIterator>::IntoIter, B> {
+        InsertBatchIter::new(self.world, self.state, self.tick, iter.into_iter())
     }
 }
 
-impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
-    type State = (ShareArchetype, I::Item);
-    type Item<'w> = Insert<'w, I>;
+impl<B: Bundle + 'static> SystemParam for Insert<'_, B> {
+    type State = InsertState<B>;
+    type Item<'w> = Insert<'w, B>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         // 加meta 如果world上没有找到对应的原型，则创建并放入world中
-        let components = I::components(Vec::new());
+        let components = B::components(Vec::new());
         let ar = meta.insert(world, components);
-        let s = I::init_item(world, &ar);
-        (ar, s)
+        let s = B::init_item(world, &ar);
+        InsertState::new(ar, s)
     }
     #[inline]
     fn get_param<'world>(
@@ -105,6 +73,113 @@ impl<I: Bundle + 'static> SystemParam for Insert<'_, I> {
     ) -> Self {
         unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
     }
+}
+
+pub struct InsertState<B: Bundle> {
+    pub(crate) archetype: ShareArchetype,
+    pub(crate) item: B::Item,
+}
+
+impl<B: Bundle> InsertState<B> {
+    #[inline(always)]
+    pub fn new(archetype: ShareArchetype, item: B::Item) -> Self {
+        Self { archetype, item }
+    }
+    #[inline(always)]
+    pub fn insert(&self, world: &World, components: B) -> Entity {
+        self.insert_with_tick(world, components, world.tick())
+    }
+    #[inline(always)]
+    pub fn insert_with_tick(&self, world: &World, components: B, tick: Tick) -> Entity {
+        let (r, row) = self.archetype.alloc();
+        let e = world.insert_addr(self.archetype.index(), row.into());
+        B::insert(&self.item, components, e, row.into(), tick);
+        *r = e;
+        e
+    }
+    #[inline(always)]
+    pub fn batch<'w, I: IntoIterator<Item = B>>(
+        &'w self,
+        world: &'w World,
+        iter: I,
+    ) -> InsertBatchIter<'_, <I as IntoIterator>::IntoIter, B> {
+        InsertBatchIter::new(world, self, world.tick(), iter.into_iter())
+    }
+    #[inline]
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Insert<'w, B> {
+        Insert::new(world, self, world.tick())
+    }
+}
+pub struct InsertBatchIter<'w, I, B>
+where
+    I: Iterator<Item = B>,
+    B: Bundle,
+{
+    world: &'w World,
+    state: &'w InsertState<B>,
+    tick: Tick,
+    iter: I,
+}
+impl<'w, I: Iterator<Item = B>, B: Bundle> InsertBatchIter<'w, I, B> {
+    pub fn new(world: &'w World, state: &'w InsertState<B>, tick: Tick, iter: I) -> Self {
+        let (lower, upper) = iter.size_hint();
+        let length = upper.unwrap_or(lower);
+        let ptr: *mut SlotMap<Entity, EntityAddr> = unsafe { transmute(&world.entities) };
+        unsafe { &mut *ptr }.settle(length);
+        // 强行将原型转为可写
+        let ptr = ShareArchetype::as_ptr(&state.archetype);
+        let ar_mut: &mut Archetype = unsafe { transmute(ptr) };
+        ar_mut.reserve(length);
+        Self {
+            world,
+            state,
+            tick,
+            iter,
+        }
+    }
+}
+
+impl<I, B> Drop for InsertBatchIter<'_, I, B>
+where
+    I: Iterator<Item = B>,
+    B: Bundle,
+{
+    fn drop(&mut self) {
+        for _ in self {}
+    }
+}
+impl<I, B> Iterator for InsertBatchIter<'_, I, B>
+where
+    I: Iterator<Item = B>,
+    B: Bundle,
+{
+    type Item = Entity;
+
+    fn next(&mut self) -> Option<Entity> {
+        let item = self.iter.next()?;
+        let i = Insert::<B>::new(&self.world, &mut self.state, self.tick);
+        Some(i.insert(item))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+impl<I, B> ExactSizeIterator for InsertBatchIter<'_, I, B>
+where
+    I: ExactSizeIterator<Item = B>,
+    B: Bundle,
+{
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<I, B> FusedIterator for InsertBatchIter<'_, I, B>
+where
+    I: FusedIterator<Item = B>,
+    B: Bundle,
+{
 }
 
 pub trait Bundle {

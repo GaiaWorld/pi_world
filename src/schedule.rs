@@ -5,7 +5,6 @@ use std::{any::TypeId, borrow::Cow, collections::HashMap};
 use crate::{
     archetype::Row,
     exec_graph::{ExecGraph, NodeIndex},
-    safe_vec::SafeVec,
     schedule_config::{
         BaseConfig, NodeType, ScheduleLabel, SetConfig, StageLabel, SystemConfig, SystemSet,
     },
@@ -14,6 +13,7 @@ use crate::{
 };
 use bevy_utils::intern::Interned;
 use fixedbitset::FixedBitSet;
+use pi_append_vec::SafeVec;
 use pi_async_rt::prelude::{AsyncRuntime, AsyncRuntimeExt};
 use pi_share::Share;
 

@@ -20,7 +20,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering;
 
 use bitflags::bitflags;
-use fixedbitset::FixedBitSet;
 use pi_null::Null;
 use pi_share::{Share, ShareBool};
 
@@ -240,7 +239,7 @@ impl Archetype {
         self.ready.load(Ordering::Relaxed)
     }
     // 从本原型上计算改变后了原型信息， 在该原型下添加一些组件，删除一些组件，得到新原型信息，及移动的组件
-    pub(crate) fn alter1(
+    pub(crate) fn alter(
         &self,
         world: &World,
         sorted_add_removes: &[(ComponentIndex, bool)], // 升序

@@ -27,133 +27,135 @@ use crate::column::{BlobRef, Column};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::Bundle;
-use crate::query::{LocalIndex, Query, QueryError, QueryIter, QueryState, Queryer};
+use crate::query::{LocalIndex, Query, QueryError, QueryIter, QueryState};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
 
-pub struct Alterer<
-    'w,
-    Q: FetchComponents + 'static,
-    F: FilterComponents + 'static = (),
-    A: Bundle + 'static = (),
-    D: Bundle + 'static = (),
-> {
-    query: Queryer<'w, Q, F>,
-    state: AlterState<A>,
-    is_delay: bool,
-    _k: PhantomData<D>,
-}
-impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alterer<'w, Q, F, A, D>
-{
-    pub(crate) fn new(
-        world: &'w World,
-        query_state: QueryState<Q, F>,
-        state: AlterState<A>,
-    ) -> Self {
-        Self {
-            query: Queryer::new(world, query_state),
-            state,
-            is_delay: false,
-            _k: PhantomData,
-        }
-    }
+// // todo 移除
+// pub struct Alterer<
+//     'w,
+//     Q: FetchComponents + 'static,
+//     F: FilterComponents + 'static = (),
+//     A: Bundle + 'static = (),
+//     D: Bundle + 'static = (),
+// > {
+//     query: Queryer<'w, Q, F>,
+//     state: AlterState<A>,
+//     is_delay: bool,
+//     _k: PhantomData<D>,
+// }
+// impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+//     Alterer<'w, Q, F, A, D>
+// {
+//     pub(crate) fn new(
+//         world: &'w World,
+//         query_state: QueryState<Q, F>,
+//         state: AlterState<A>,
+//     ) -> Self {
+//         Self {
+//             query: Queryer::new(world, query_state),
+//             state,
+//             is_delay: false,
+//             _k: PhantomData,
+//         }
+//     }
 
-    pub fn contains(&self, entity: Entity) -> bool {
-        self.query.contains(entity)
-    }
+//     pub fn contains(&self, entity: Entity) -> bool {
+//         self.query.contains(entity)
+//     }
 
-    pub fn get(
-        &'w self,
-        e: Entity,
-    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'w>, QueryError> {
-        self.query.get(e)
-    }
+//     pub fn get(
+//         &'w self,
+//         e: Entity,
+//     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'w>, QueryError> {
+//         self.query.get(e)
+//     }
 
-    pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        self.query.get_mut(e)
-    }
+//     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+//         self.query.get_mut(e)
+//     }
 
-    pub fn is_empty(&self) -> bool {
-        self.query.is_empty()
-    }
+//     pub fn is_empty(&self) -> bool {
+//         self.query.is_empty()
+//     }
 
-    pub fn len(&self) -> usize {
-        self.query.len()
-    }
+//     pub fn len(&self) -> usize {
+//         self.query.len()
+//     }
 
-    pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
-        self.query.iter()
-    }
+//     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
+//         self.query.iter()
+//     }
 
-    pub fn iter_mut(&mut self) -> AlterIter<'_, Q, F, A> {
-        AlterIter {
-            it: self.query.iter_mut(),
-            state: &mut self.state,
-        }
-    }
-    /// 标记销毁实体
+//     pub fn iter_mut(&mut self) -> AlterIter<'_, Q, F, A> {
+//         AlterIter {
+//             it: self.query.iter_mut(),
+//             state: &mut self.state,
+//         }
+//     }
+//     /// 标记销毁实体
 
-    pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
-        // self.state
-        self.state.destroy(&self.query.world, e)
-    }
+//     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
+//         // self.state
+//         self.state.destroy(&self.query.world, e)
+//     }
 
-    pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
-        let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
-        self.state.alter(
-            &self.query.world,
-            local_index,
-            e,
-            addr.row,
-            components,
-            self.query.tick,
-        );
-        self.is_delay = false;
-        self.state.state.clear(
-            self.query.world,
-            &mut self.state.vec,
-            &mut self.state.mapping_dirtys,
-        );
-        Ok(true)
-    }
+//     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
+//         let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
+//         self.state.alter(
+//             &self.query.world,
+//             local_index,
+//             e,
+//             addr.row,
+//             components,
+//             self.query.tick,
+//         );
+//         self.is_delay = false;
+//         self.state.state.clear(
+//             self.query.world,
+//             &mut self.state.vec,
+//             &mut self.state.mapping_dirtys,
+//         );
+//         Ok(true)
+//     }
 
-    pub fn delay_alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
-        let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
-        self.state.alter(
-            &self.query.world,
-            local_index,
-            e,
-            addr.row,
-            components,
-            self.query.tick,
-        );
-        self.is_delay = true;
-        Ok(true)
-    }
-}
+//     pub fn delay_alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
+//         let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
+//         self.state.alter(
+//             &self.query.world,
+//             local_index,
+//             e,
+//             addr.row,
+//             components,
+//             self.query.tick,
+//         );
+//         self.is_delay = true;
+//         Ok(true)
+//     }
+// }
 
-impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
-    for Alterer<'w, Q, F, A, D>
-{
-    fn drop(&mut self) {
-        if self.is_delay {
-            self.state.state.clear(
-                self.query.world,
-                &mut self.state.vec,
-                &mut self.state.mapping_dirtys,
-            );
-        }
-    }
-}
+// impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
+//     for Alterer<'w, Q, F, A, D>
+// {
+//     fn drop(&mut self) {
+//         if self.is_delay {
+//             self.state.state.clear(
+//                 self.query.world,
+//                 &mut self.state.vec,
+//                 &mut self.state.mapping_dirtys,
+//             );
+//         }
+//     }
+// }
+
 pub struct Alter<
     'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
-    A: Bundle + 'static = (),
-    D: Bundle + 'static = (),
+    A: Bundle = (),
+    D: Bundle = (),
 > {
     query: Query<'w, Q, F>,
     state: &'w mut AlterState<A>,
@@ -221,16 +223,15 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
-        let (addr, local_index) = self.state.check_mark(&self.query.world, e)?;
+        let (addr, local_index) = self.state.check(&self.query.world, e)?;
         self.state.alter(
             &self.query.world,
             local_index,
             e,
-            addr.row,
+            addr,
             components,
             self.query.tick,
-        );
-        Ok(true)
+        )
     }
 }
 
@@ -241,14 +242,15 @@ impl<
         D: Bundle + Send + 'static,
     > SystemParam for Alter<'_, Q, F, A, D>
 {
-    type State = (QueryState<Q, F>, AlterState<A>);
+    type State = QueryAlterState<Q, F, A, D>;
     type Item<'w> = Alter<'w, Q, F, A, D>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         let q = Query::init_state(world, system_meta);
-        (
+        QueryAlterState(
             q,
             AlterState::make(world, A::components(Vec::new()), D::components(Vec::new())),
+            PhantomData,
         )
     }
     fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
@@ -276,13 +278,8 @@ impl<
     }
 }
 
-impl<
-        'w,
-        Q: FetchComponents + 'static,
-        F: FilterComponents + 'static,
-        A: Bundle + 'static,
-        D: Bundle + 'static,
-    > Drop for Alter<'w, Q, F, A, D>
+impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
+    for Alter<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         self.state.state.clear(
@@ -293,10 +290,37 @@ impl<
     }
 }
 
+pub struct QueryAlterState<
+    Q: FetchComponents + 'static,
+    F: FilterComponents + 'static,
+    A: Bundle,
+    D: Bundle,
+>(
+    pub(crate) QueryState<Q, F>,
+    pub(crate) AlterState<A>,
+    pub(crate) PhantomData<D>,
+);
+unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Send
+    for QueryAlterState<Q, F, A, D>
+{
+}
+unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Sync
+    for QueryAlterState<Q, F, A, D>
+{
+}
+
+impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
+    QueryAlterState<Q, F, A, D>
+{
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Alter<'_, Q, F, A, D> {
+        Alter::new(Query::new(world, &mut self.0, world.tick()), &mut self.1)
+    }
+}
+
 pub struct AlterState<A: Bundle> {
     bundle_vec: Vec<MaybeUninit<A::Item>>, // 记录所有的原型状态，本变更新增组件在目标原型的状态（新增组件的偏移）
     pub(crate) vec: Vec<ArchetypeMapping>, // 记录所有的原型映射
-    mapping_dirtys: Vec<LocalIndex>, // 本次变更的原型映射在vec上的索引
+    mapping_dirtys: Vec<LocalIndex>,       // 本次变更的原型映射在vec上的索引
     state: AState,
 }
 impl<A: Bundle> Deref for AlterState<A> {
@@ -346,13 +370,13 @@ impl<A: Bundle> AlterState<A> {
         world: &'w World,
         ar_index: LocalIndex,
         e: Entity,
-        src_row: Row,
+        addr: &mut EntityAddr,
         components: A,
         tick: Tick,
-    ) -> Option<(&ShareArchetype, ArchetypeIndex)> {
+    ) -> Result<bool, QueryError> {
         let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
-        let (is_new, new_ar) = self.state.find_mapping(world, mapping, false);
+        let (is_new, _new_ar) = self.state.find_mapping(world, mapping, false);
         if is_new {
             // 首次映射
             // 因为Bundle的state都是不需要释放的，所以mut替换时，是安全的
@@ -366,8 +390,15 @@ impl<A: Bundle> AlterState<A> {
                     .assume_init_ref()
             };
             // 目标原型和源原型相同，直接写入
-            A::insert(item, components, e, src_row, tick);
-            return None;
+            A::insert(item, components, e, addr.row, tick);
+            return Ok(false);
+        }
+        // 判断地址是否已经标记移动了，不允许一个system内修改一个entity原型2次
+        // mark标记在Alter Drop时，被clear方法replace entity的地址时被清除
+        if addr.is_mark() {
+            return Err(QueryError::RepeatAlter);
+        } else {
+            addr.mark();
         }
         let (_, dst_row) = mapping.dst.alloc();
         // println!("alter: {:?}", (e, src_row, dst_row, &mapping.dst));
@@ -379,18 +410,18 @@ impl<A: Bundle> AlterState<A> {
         A::insert(item, components, e, dst_row.into(), tick);
         // 记录移除行
         mapping.push(
-            src_row,
+            addr.row,
             dst_row.into(),
             e,
             ar_index,
             &mut self.mapping_dirtys,
         );
-        // self.state.alter_row(world, mapping, src_row, dst_row, e, tick);
-        if new_ar {
-            Some((&mapping.dst, mapping.dst_index))
-        } else {
-            None
-        }
+        // if new_ar {
+        //     Some((&mapping.dst, mapping.dst_index))
+        // } else {
+        //     None
+        // }
+        Ok(true)
     }
 }
 
@@ -400,8 +431,8 @@ pub struct AState {
     map_start: usize,
     sorted_add_removes: Vec<(ComponentIndex, bool)>,
     pub(crate) adding: Vec<Share<Column>>, // 所有映射添加的列
-    moving: Vec<Share<Column>>, // 所有映射移动的列
-    removing: Vec<Share<Column>>, // 所有映射移除的列
+    moving: Vec<Share<Column>>,            // 所有映射移动的列
+    removing: Vec<Share<Column>>,          // 所有映射移除的列
 }
 impl AState {
     pub(crate) fn make(
@@ -448,7 +479,7 @@ impl AState {
             let am = unsafe { vec.get_unchecked_mut(ar_index.index()) };
             // 检查是否有destroy
             for i in (0..am.moves.len()).rev() {
-                let (src_row, dst_row, _e) = unsafe { am.moves.get_unchecked(i) };
+                let (src_row, dst_row, e) = unsafe { am.moves.get_unchecked(i) };
                 if src_row.is_null() {
                     continue;
                 }
@@ -456,7 +487,7 @@ impl AState {
                 if old.is_null() {
                     // 已经被destroy
                     // 目标原型上移除该行
-                    am.dst.removes.insert(*dst_row);
+                    self.destroy_add_columns(am, *dst_row, *e);
                     // 删除move条目
                     am.moves.swap_remove(i);
                 }
@@ -470,6 +501,17 @@ impl AState {
             }
             am.moves.clear();
         }
+    }
+    /// 目标原型上移除该行， 并且销毁add的列
+    pub(crate) fn destroy_add_columns(&self, am: &ArchetypeMapping, dst_row: Row, e: Entity) {
+        for index in am.add_indexs.clone() {
+            let c = unsafe { self.adding.get_unchecked(index) };
+            if c.info().drop_fn.is_some() {
+                let column = c.blob_ref_unchecked(am.dst_index);
+                column.drop_row_unchecked(dst_row, e);
+            }
+        }
+        am.dst.removes.insert(dst_row);
     }
 
     // 将需要移动的全部源组件移动到新位置上
@@ -534,7 +576,7 @@ impl AState {
         let move_start = self.moving.len();
         let removing_start = self.removing.len();
         // 如果本地没有找到，则创建components，去world上查找或创建
-        let info = mapping.src.alter1(
+        let info = mapping.src.alter(
             world,
             &mut self.sorted_add_removes,
             &mut self.adding,
@@ -576,7 +618,6 @@ impl AState {
         // 更改entity上存的EntityAddr
         world.replace(e, mapping.dst_index, dst_row);
     }
-
     /// 销毁实体
     fn destroy(&self, world: &World, e: Entity) -> Result<bool, QueryError> {
         let (addr, _local_index) = self.check(world, e)?;
@@ -596,21 +637,20 @@ impl AState {
         world.entities.remove(e).unwrap();
         Ok(true)
     }
-    // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
-    pub(crate) fn check_mark<'w>(
-        &self,
-        world: &'w World,
-        entity: Entity,
-    ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
-        let (addr, local_index) = self.check(world, entity)?;
-        // if addr.is_mark() {
-        //     println!("addr===={:?}", entity);
-        //     return Err(QueryError::RepeatAlter);
-        // } else {
-        //     addr.mark();
-        // }
-        Ok((addr, local_index))
-    }
+    // // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
+    // pub(crate) fn check_mark<'w>(
+    //     &self,
+    //     world: &'w World,
+    //     entity: Entity,
+    // ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
+    //     let (addr, local_index) = self.check(world, entity)?;
+    //     if addr.is_mark() {
+    //         return Err(QueryError::RepeatAlter);
+    //     } else {
+    //         addr.mark();
+    //     }
+    //     Ok((addr, local_index))
+    // }
     // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
     pub(crate) fn check<'w>(
         &self,
@@ -633,12 +673,12 @@ impl AState {
 
 #[derive(Debug)]
 pub struct ArchetypeMapping {
-    pub(crate) src: ShareArchetype,          // 源原型
-    pub(crate) dst: ShareArchetype,          // 映射到的目标原型
-    pub(crate) dst_index: ArchetypeIndex,    // 目标原型在World原型数组中的位置
-    pub(crate) add_indexs: Range<usize>,     // 目标原型上新增的组件的起始和结束位置
-    pub(crate) move_indexs: Range<usize>,    // 源原型和目标原型的组件映射的起始和结束位置
-    pub(crate) removed_indexs: Range<usize>, // 源原型上被移除的组件的起始和结束位置
+    pub(crate) src: ShareArchetype,            // 源原型
+    pub(crate) dst: ShareArchetype,            // 映射到的目标原型
+    pub(crate) dst_index: ArchetypeIndex,      // 目标原型在World原型数组中的位置
+    pub(crate) add_indexs: Range<usize>,       // 目标原型上新增的组件的起始和结束位置
+    pub(crate) move_indexs: Range<usize>,      // 源原型和目标原型的组件映射的起始和结束位置
+    pub(crate) removed_indexs: Range<usize>,   // 源原型上被移除的组件的起始和结束位置
     pub(crate) moves: Vec<(Row, Row, Entity)>, // 本次标记移动的条目
 }
 
@@ -708,12 +748,7 @@ impl ArchetypeMapping {
             dst_column.set_tick_unchecked(dst_row, tick);
         }
     }
-    pub(crate) fn remove_columns(
-        &self,
-        src_row: Row,
-        e: Entity,
-        removing: &Vec<Share<Column>>,
-    ) {
+    pub(crate) fn remove_columns(&self, src_row: Row, e: Entity, removing: &Vec<Share<Column>>) {
         for i in self.removed_indexs.clone().into_iter() {
             let c = unsafe { removing.get_unchecked(i) };
             if c.info().drop_fn.is_some() {
@@ -741,16 +776,16 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
         AState::destroy_row(&self.it.world, &self.it.ar, self.it.row)
     }
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {
-        self.state.check_mark(&self.it.world, self.it.e)?;
+        let addr = self.it.world.entities.load(self.it.e).unwrap();
+        // let (addr, _) =self.state.check(&self.it.world, self.it.e)?;
         self.state.alter(
             &self.it.world,
             self.it.ar_index,
             self.it.e,
-            self.it.row,
+            addr,
             components,
             self.it.tick,
-        );
-        Ok(true)
+        )
     }
 }
 impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> Iterator for AlterIter<'w, Q, F, A> {

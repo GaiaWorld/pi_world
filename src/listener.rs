@@ -8,10 +8,9 @@ use std::{
 };
 
 use dashmap::{mapref::entry::Entry, DashMap};
+use pi_append_vec::SafeVec;
 use pi_null::Null;
 use pi_share::Share;
-
-use crate::safe_vec::SafeVec;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ListenerListKey(usize);

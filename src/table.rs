@@ -5,6 +5,7 @@
 /// Alter所操作的源table， 在执行图中，会被严格保证不会同时有其他system进行操作。
 use core::fmt::*;
 use std::mem::replace;
+use std::mem::size_of;
 
 use fixedbitset::FixedBitSet;
 use pi_append_vec::AppendVec;
@@ -20,6 +21,7 @@ pub struct Table {
     entities: AppendVec<Entity>, // 记录entity
     pub(crate) index: ArchetypeIndex,
     sorted_columns: Vec<Share<Column>>, // 每个组件
+    per_entity_mem_size: usize,         // 每实体的内存大小
     bit_set: FixedBitSet,               // 记录组件是否在table中
     pub(crate) removes: AppendVec<Row>, // 整理前被移除的实例
 }
@@ -31,22 +33,18 @@ impl Table {
         } else {
             0
         };
-        // let mut column_map = Vec::with_capacity(max);
-        // column_map.resize(max, ColumnIndex::null());
-        // let mut sorted_columns = Vec::with_capacity(len);
+        let mut per_entity_mem_size = size_of::<Entity>();
         let mut bit_set = FixedBitSet::with_capacity(max);
         for c in sorted_columns.iter() {
+            per_entity_mem_size += c.info().mem_size as usize;
             unsafe { bit_set.set_unchecked(c.info().index.index(), true) };
         }
         Self {
             entities: AppendVec::default(),
             index: ArchetypeIndex::null(),
             sorted_columns,
+            per_entity_mem_size,
             bit_set,
-            // column_map: column_map,
-            // remove_columns: Default::default(),
-            // lock: SpinLock::new(()),
-            // destroys: SyncUnsafeCell::new(Dirty::default()),
             removes: AppendVec::default(),
         }
     }
@@ -57,12 +55,15 @@ impl Table {
     }
     /// 获得内存大小
     pub fn mem_size(&self) -> usize {
-        todo!()
+        let c = self.entities.capacity() * self.per_entity_mem_size;
+        c + self.sorted_columns.capacity() * size_of::<Share<Column>>()
+            + self.removes.capacity() * size_of::<Row>() + size_of::<Self>()
     }
     #[inline(always)]
-    pub fn get(&self, row: Row) -> Entity {
+    pub fn get_unchecked(&self, row: Row) -> Entity {
         // todo 改成load_unchecked
         *self.entities.load(row.index()).unwrap()
+        // *unsafe { self.entities.load_unchecked(row.index()) }
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
@@ -299,13 +300,3 @@ impl Debug for Table {
             .finish()
     }
 }
-
-// /// 整理合并空位
-// pub(crate) fn settle_ticks(ticks: &mut Arr<Tick>, entity_len: usize, action: &Vec<(Row, Row)>) {
-//     for (src, dst) in action.iter() {
-//         if let Some(tick) = ticks.get(src.index()) {
-//             *ticks.load(dst.index()).unwrap() = *tick;
-//         }
-//     }
-//     ticks.settle(entity_len, 0, 1);
-// }

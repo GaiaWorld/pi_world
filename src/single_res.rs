@@ -236,13 +236,11 @@ impl<T: 'static> SystemParam for Option<SingleResMut<'_, T>> {
         tick: Tick,
     ) -> Self::Item<'world> {
         if state.0.is_none() {
-            if state.0.is_none() {
-                let s = match world.index_single_res_any(state.1) {
-                    Some(r) => r.clone(),
-                    None => return None
-                };
-                state.0 = Some(Share::downcast::<TickRes<T>>(s.into_any()).unwrap());
-            }
+            let s = match world.index_single_res_any(state.1) {
+                Some(r) => r.clone(),
+                None => return None
+            };
+            state.0 = Some(Share::downcast::<TickRes<T>>(s.into_any()).unwrap());
         }
         if let Some(r) = state.0.as_mut() {
             Some(SingleResMut::new(
