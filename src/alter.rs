@@ -603,11 +603,12 @@ impl AState {
         entity: Entity,
     ) -> Result<(&'w mut EntityAddr, LocalIndex), QueryError> {
         let (addr, local_index) = self.check(world, entity)?;
-        if addr.is_mark() {
-            return Err(QueryError::RepeatAlter);
-        } else {
-            addr.mark();
-        }
+        // if addr.is_mark() {
+        //     println!("addr===={:?}", entity);
+        //     return Err(QueryError::RepeatAlter);
+        // } else {
+        //     addr.mark();
+        // }
         Ok((addr, local_index))
     }
     // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
