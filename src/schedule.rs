@@ -19,7 +19,7 @@ use pi_share::Share;
 
 pub struct Schedule {
     system_configs: Vec<(Interned<dyn StageLabel>, SystemConfig)>,
-    systems: Share<SafeVec<BoxedSystem>>,
+    systems: Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
     // graph: ExecGraph,
     schedule_graph:
         HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
@@ -161,13 +161,13 @@ impl Schedule {
         world: &mut World,
         rt: &A,
         g: &mut ExecGraph,
-        systems: &Share<SafeVec<BoxedSystem>>,
+        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
     ) {
         #[cfg(feature = "trace")]
         let run_span = tracing::warn_span!("run {:?}", name = &g.1).entered();
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
-        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(systems) };
+        let s: &'static Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>> = unsafe { std::mem::transmute(systems) };
         let rt1 = rt.clone();
         let _ = rt.block_on(async move {
             let rt2 = rt1;
@@ -212,10 +212,10 @@ impl Schedule {
         world: &mut World,
         rt: &A,
         g: &mut ExecGraph,
-        systems: &Share<SafeVec<BoxedSystem>>,
+        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
     ) {
         let w: &'static World = unsafe { std::mem::transmute(world) };
-        let s: &'static Share<SafeVec<BoxedSystem>> = unsafe { std::mem::transmute(&systems) };
+        let s: &'static Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>> = unsafe { std::mem::transmute(&systems) };
         g.run(s, rt, w).await.unwrap();
 
         g.settle();
@@ -289,9 +289,10 @@ impl Schedule {
         temp_map2: &mut HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
     ) -> (BaseConfig, TypeId) {
         let sys = system_config.system;
+        let conditions = system_config.conditions;
         let name = sys.name().clone();
         let id = sys.id();
-        let index = self.systems.insert(sys);
+        let index = self.systems.insert((sys, conditions));
         // 根据配置，添加到对应的派发器中
         Self::add_system_config_inner(
             None,

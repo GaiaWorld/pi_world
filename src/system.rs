@@ -478,6 +478,7 @@ impl Debug for SystemMeta {
     }
 }
 pub trait System: Send + Sync + 'static {
+    type Out;
     /// Returns the system's name.
     fn name(&self) -> &Cow<'static, str>;
     /// Returns the [`TypeId`] of the underlying system type.
@@ -502,7 +503,7 @@ pub trait RunSystem: System {
     /// - The method [`Self::update_archetype_component_access`] must be called at some
     ///   point before this one, with the same exact [`World`]. If `update_archetype_component_access`
     ///   panics (or otherwise does not return for any reason), this method must not be called.
-    fn run(&mut self, world: &World);
+    fn run(&mut self, world: &World) -> Self::Out;
 }
 
 pub trait AsyncRunSystem: System {
@@ -519,16 +520,16 @@ pub trait AsyncRunSystem: System {
     ///   point before this one, with the same exact [`World`]. If `update_archetype_component_access`
     ///   panics (or otherwise does not return for any reason), this method must not be called.
     fn run(&mut self, _world: &'static World)
-        -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+        -> Pin<Box<dyn Future<Output = Self::Out> + Send + 'static>>;
 }
 
 /// A convenience type alias for a boxed [`System`] trait object.
-pub enum BoxedSystem {
-    Sync(Box<dyn RunSystem>),
-    Async(Box<dyn AsyncRunSystem>),
+pub enum BoxedSystem<Out> {
+    Sync(Box<dyn RunSystem<Out = Out>>),
+    Async(Box<dyn AsyncRunSystem<Out = Out>>),
 }
 
-impl BoxedSystem {
+impl<Out: 'static> BoxedSystem<Out> {
     pub fn name(&self) -> &Cow<'static, str> {
         match self {
             BoxedSystem::Sync(s) => s.name(),
@@ -557,23 +558,23 @@ impl BoxedSystem {
         }
     }
 
-    pub async fn run(&mut self, world: &'static World) {
+    pub async fn run(&mut self, world: &'static World) -> Out {
         match self {
             BoxedSystem::Sync(s) => s.run(world),
             BoxedSystem::Async(s) => s.run(world).await,
         }
     }
 }
-pub trait IntoSystem<Marker>: Sized {
+pub trait IntoSystem<Marker, Out>: Sized {
     /// The type of [`System`] that this instance converts into.
-    type System: RunSystem;
+    type System: RunSystem<Out = Out>;
 
     /// Turns this value into its corresponding [`System`].
     fn into_system(self) -> Self::System;
 }
-pub trait IntoAsyncSystem<Marker>: Sized {
+pub trait IntoAsyncSystem<Marker, Out>: Sized {
     /// The type of [`System`] that this instance converts into.
-    type System: AsyncRunSystem;
+    type System: AsyncRunSystem<Out = Out>;
 
     /// Turns this value into its corresponding [`System`].
     fn into_async_system(self) -> Self::System;

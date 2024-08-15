@@ -304,7 +304,7 @@ impl<'a> BlobRef<'a> {
     }
     #[inline]
     pub fn changed_tick(&self, e: Entity, row: Row, tick: Tick) {
-        // println!("changed_tick: {:?}", (e, row, tick, self.info));
+        // println!("changed_tick: {:?}", (e, row, tick, self.info.is_tick(), ));
         if !self.info.is_tick() {
             return;
         }

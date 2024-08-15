@@ -11,12 +11,12 @@ use pi_proc_macros::all_tuples;
 /// Shorthand way of accessing the associated type [`SystemParam::Item`] for a given [`SystemParam`].
 pub type SystemParamItem<'w, P> = <P as SystemParam>::Item<'w>;
 
-pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
+pub trait SystemParamFunction<Marker, Out>: Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
     type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run(&mut self, _param_value: SystemParamItem<Self::Param>) {}
+    fn run(&mut self, _param_value: SystemParamItem<Self::Param>) -> Out;
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -29,19 +29,19 @@ pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
 ///
 /// The [`Clone`] implementation for [`FunctionSystem`] returns a new instance which
 /// is NOT initialized. The cloned system must also be `.initialized` before it can be run.
-pub struct FunctionSystem<Marker: 'static, F>
+pub struct FunctionSystem<Marker: 'static, Out: 'static, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParamFunction<Marker, Out>,
 {
     func: F,
     param: ParamSystem<F::Param>,
 }
 
-impl<Marker: 'static, F> IntoSystem<Marker> for F
+impl<Marker: 'static, Out: 'static + Send + Sync, F> IntoSystem<Marker, Out> for F
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParamFunction<Marker, Out>,
 {
-    type System = FunctionSystem<Marker, F>;
+    type System = FunctionSystem<Marker, Out, F>;
     fn into_system(self) -> Self::System {
         FunctionSystem {
             func: self,
@@ -50,10 +50,11 @@ where
     }
 }
 
-impl<Marker, F> System for FunctionSystem<Marker, F>
+impl<Marker, Out: 'static + Send, F> System for FunctionSystem<Marker, Out, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParamFunction<Marker, Out>,
 {
+    type Out = Out;
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
         self.param.name()
@@ -93,15 +94,15 @@ where
         self.param.align(world)
     }
 }
-impl<Marker, F> RunSystem for FunctionSystem<Marker, F>
+impl<Marker, Out: 'static + Send + Sync, F> RunSystem for FunctionSystem<Marker, Out, F>
 where
-    F: SystemParamFunction<Marker>,
+    F: SystemParamFunction<Marker, Out>,
 {
     #[inline]
-    fn run(&mut self, world: &World) {
+    fn run(&mut self, world: &World) -> Out {
         self.param.align(world);
         let params = self.param.get_param(world);
-        self.func.run(params);
+        self.func.run(params)
     }
 }
 pub struct ParamSystem<P: SystemParam> {
@@ -181,23 +182,23 @@ impl<P: SystemParam> ParamSystem<P> {
 macro_rules! impl_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Send + Sync + 'static, $($param: SystemParam),*> SystemParamFunction<fn($($param,)*)> for Func
+        impl<Func: Send + Sync + 'static, Out, $($param: SystemParam),*> SystemParamFunction<fn($($param,)*) -> Out, Out> for Func
         where
         for <'a> &'a mut Func:
-                FnMut($($param),*) +
-                FnMut($(SystemParamItem<$param>),*),
+                FnMut($($param),*) -> Out +
+                FnMut($(SystemParamItem<$param>),*) -> Out,
         {
             type Param = ($($param,)*);
             #[inline]
-            fn run(&mut self, param_value: SystemParamItem< ($($param,)*)>) {
+            fn run(&mut self, param_value: SystemParamItem< ($($param,)*)>) -> Out {
                 // Yes, this is strange, but `rustc` fails to compile this impl
                 // without using this function. It fails to recognize that `func`
                 // is a function, potentially because of the multiple impls of `FnMut`
                 #[allow(clippy::too_many_arguments)]
-                fn call_inner<$($param,)*>(
-                    mut f: impl FnMut($($param,)*),
+                fn call_inner<Out, $($param,)*>(
+                    mut f: impl FnMut($($param,)*) -> Out,
                     $($param: $param,)*
-                ) {
+                ) -> Out {
                     f($($param,)*)
                 }
                 let ($($param,)*) = param_value;

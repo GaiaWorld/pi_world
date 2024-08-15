@@ -1,4 +1,4 @@
-use std::{any::TypeId, borrow::Cow, future::Future, mem::transmute, pin::Pin};
+use std::{any::TypeId, borrow::Cow, future::Future, marker::PhantomData, mem::transmute, pin::Pin};
 
 use crate::{
     function_system::ParamSystem,
@@ -9,12 +9,12 @@ use crate::{
 
 use pi_proc_macros::all_tuples;
 
-pub trait AsyncSystemParamFunction<Marker>: Clone + Send + Sync + 'static {
+pub trait AsyncSystemParamFunction<Marker, Out>: Clone + Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
     type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run(self, _param_value: Self::Param) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+    fn run(self, _param_value: Self::Param) -> Pin<Box<dyn Future<Output = Out> + Send + 'static>>;
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -27,31 +27,34 @@ pub trait AsyncSystemParamFunction<Marker>: Clone + Send + Sync + 'static {
 ///
 /// The [`Clone`] implementation for [`FunctionSystem`] returns a new instance which
 /// is NOT initialized. The cloned system must also be `.initialized` before it can be run.
-pub struct AsyncFunctionSystem<Marker, F>
+pub struct AsyncFunctionSystem<Marker, Out,  F>
 where
-    F: AsyncSystemParamFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker, Out>,
 {
     pub func: F,
     pub param: ParamSystem<F::Param>,
+    pub marker: PhantomData<Out>,
 }
 
-impl<Marker: 'static, F> IntoAsyncSystem<Marker> for F
+impl<Marker: 'static, F, Out: 'static + Send + Sync> IntoAsyncSystem<Marker, Out> for F
 where
-    F: AsyncSystemParamFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker, Out>,
 {
-    type System = AsyncFunctionSystem<Marker, F>;
+    type System = AsyncFunctionSystem<Marker, Out, F>;
     fn into_async_system(self) -> Self::System {
         AsyncFunctionSystem {
             func: self,
             param: ParamSystem::new(SystemMeta::new(TypeInfo::of::<F>())),
+            marker: PhantomData,
         }
     }
 }
 
-impl<Marker: 'static, F> System for AsyncFunctionSystem<Marker, F>
+impl<Marker: 'static, F, Out: 'static + Send + Sync> System for AsyncFunctionSystem<Marker, Out, F>
 where
-    F: AsyncSystemParamFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker, Out>,
 {
+    type Out = Out;
     #[inline]
     fn name(&self) -> &Cow<'static, str> {
         self.param.name()
@@ -91,12 +94,12 @@ where
         self.param.align(world)
     }
 }
-impl<Marker: 'static, F> AsyncRunSystem for AsyncFunctionSystem<Marker, F>
+impl<Marker: 'static, Out: 'static + Send + Sync, F> AsyncRunSystem for AsyncFunctionSystem<Marker, Out, F>
 where
-    F: AsyncSystemParamFunction<Marker>,
+    F: AsyncSystemParamFunction<Marker, Out>,
 {
     #[inline]
-    fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = Out> + Send + 'static>> {
         self.param.align(world);
         let tick = world.increment_tick();
         let param_state = self.param.param_state.as_mut().unwrap();
@@ -108,16 +111,16 @@ where
 macro_rules! impl_async_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Clone + Send + Sync + 'static, R, $($param: SystemParam),*> AsyncSystemParamFunction<fn($($param,)*)->R> for Func
+        impl<Func: Clone + Send + Sync + 'static, Out, R, $($param: SystemParam),*> AsyncSystemParamFunction<fn($($param,)*)->R, Out> for Func
         where Func:
                 FnMut($($param),*) -> R,
-                R: Future<Output=()>,
+                R: Future<Output=Out>,
         {
             type Param = ($($param,)*);
             #[inline]
-            fn run(mut self, param_value: ($($param,)*)) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+            fn run(mut self, param_value: ($($param,)*)) -> Pin<Box<dyn Future<Output = Out> + Send + 'static>> {
                 let ($($param,)*) = param_value;
-                let r: Pin<Box<dyn Future<Output = ()>>> = Box::pin(self($($param,)*));
+                let r: Pin<Box<dyn Future<Output = Out>>> = Box::pin(self($($param,)*));
                 unsafe {transmute(r)}
             }
         }
