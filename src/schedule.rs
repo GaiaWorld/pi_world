@@ -4,7 +4,7 @@ use std::{any::TypeId, borrow::Cow, collections::HashMap};
 ///
 use crate::{
     archetype::Row,
-    exec_graph::{ExecGraph, NodeIndex},
+    exec_graph::{ExecGraph, ExecSystem, NodeIndex},
     schedule_config::{
         BaseConfig, NodeType, ScheduleLabel, SetConfig, StageLabel, SystemConfig, SystemSet,
     },
@@ -19,7 +19,8 @@ use pi_share::Share;
 
 pub struct Schedule {
     system_configs: Vec<(Interned<dyn StageLabel>, SystemConfig)>,
-    systems: Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
+    systems: Share<SafeVec<ExecSystem>>,
+    set_conditions: Share<SafeVec<BoxedSystem<bool>>>, // set条件执行器
     // graph: ExecGraph,
     schedule_graph:
         HashMap<Interned<dyn ScheduleLabel>, HashMap<Interned<dyn StageLabel>, ExecGraph>>,
@@ -41,6 +42,7 @@ impl Schedule {
         Self {
             system_configs: Vec::new(),
             systems: Share::new(SafeVec::default()),
+            set_conditions: Share::new(SafeVec::default()),
             // graph: ExecGraph::default(),
             schedule_graph: Default::default(),
             stage_sort: vec![
@@ -60,6 +62,7 @@ impl Schedule {
                 schedules: vec![MainSchedule.intern()],
                 before: Vec::new(),
                 after: Vec::new(),
+                conditions: Vec::default(),
             },
             add_listener,
             dirty_mark: false,
@@ -147,7 +150,7 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
-                Self::run_graph(world, rt, stage, &self.systems);
+                Self::run_graph(world, rt, stage, &self.systems, &self.set_conditions);
             }
         }
 
@@ -161,17 +164,19 @@ impl Schedule {
         world: &mut World,
         rt: &A,
         g: &mut ExecGraph,
-        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
+        systems: &Share<SafeVec<ExecSystem>>,
+        set_conditions: &Share<SafeVec<BoxedSystem<bool>>>,
     ) {
         #[cfg(feature = "trace")]
         let run_span = tracing::warn_span!("run {:?}", name = &g.1).entered();
         let w: &'static World = unsafe { std::mem::transmute(world) };
         let g: &'static mut ExecGraph = unsafe { std::mem::transmute(g) };
-        let s: &'static Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>> = unsafe { std::mem::transmute(systems) };
+        let s: &'static Share<SafeVec<ExecSystem>> = unsafe { std::mem::transmute(systems) };
+        let c: &'static Share<SafeVec<BoxedSystem<bool>>> = unsafe { std::mem::transmute(set_conditions) };
         let rt1 = rt.clone();
         let _ = rt.block_on(async move {
             let rt2 = rt1;
-            g.run(s, &rt2, w).await.unwrap();
+            g.run(s, c, &rt2, w).await.unwrap();
             #[cfg(feature = "trace")]
             {
                 let _collect_span = tracing::warn_span!("settle").entered();
@@ -200,7 +205,7 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
-                Self::async_run_graph(world, rt, stage, &mut self.systems).await;
+                Self::async_run_graph(world, rt, stage, &mut self.systems, &mut self.set_conditions).await;
             }
         }
 
@@ -212,11 +217,13 @@ impl Schedule {
         world: &mut World,
         rt: &A,
         g: &mut ExecGraph,
-        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>>,
+        systems: &Share<SafeVec<ExecSystem>>,
+        set_conditions: &Share<SafeVec<BoxedSystem<bool>>>,
     ) {
         let w: &'static World = unsafe { std::mem::transmute(world) };
-        let s: &'static Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>> = unsafe { std::mem::transmute(&systems) };
-        g.run(s, rt, w).await.unwrap();
+        let s: &'static Share<SafeVec<ExecSystem>> = unsafe { std::mem::transmute(&systems) };
+        let c: &'static Share<SafeVec<BoxedSystem<bool>>> = unsafe { std::mem::transmute(&set_conditions) };
+        g.run(s, c, rt, w).await.unwrap();
 
         g.settle();
     }
@@ -227,8 +234,25 @@ impl Schedule {
         }
 
         let mut temp_map = HashMap::default();
+        // 用于关联一个集中直接连接的system的id
         let mut temp_map2 = HashMap::default();
         let mut system_configs = std::mem::take(&mut self.system_configs);
+        
+        // 条件集初始化
+        let mut temp_set_condition_index: HashMap<Interned<dyn SystemSet>, (usize/*start*/, usize/*len*/)>  = HashMap::default();
+        let set_configs = &mut self.set_configs;
+        for (set, set_config) in set_configs.iter_mut() {
+            if set_config.conditions.is_empty() {
+                continue;
+            }
+            let conditions = std::mem::take(&mut set_config.conditions);
+            let index = (self.set_conditions.len(), conditions.len());
+            for condition in conditions.into_iter() {
+                self.set_conditions.insert(condition);
+            }
+            temp_set_condition_index.insert(set.clone(), (index.0, index.0 + index.1));
+        }
+
         let rr = system_configs
             .drain(..)
             .map(|(stage_label, system_config)| {
@@ -239,14 +263,16 @@ impl Schedule {
                         system_config,
                         &mut temp_map,
                         &mut temp_map2,
+                        &temp_set_condition_index,
                     ),
                 )
             })
             .collect::<Vec<(Interned<dyn StageLabel>, (BaseConfig, TypeId))>>();
-
-        self.link_set(&mut temp_map, &mut temp_map2);
+        
+        // 连接集与其他节点的边
+        self.link_set(&mut temp_map, &mut temp_map2, &temp_set_condition_index);
         for (stage_label, (config, id)) in rr {
-            self.link_system_config(stage_label, id, config, &mut temp_map, &mut temp_map2);
+            self.link_system_config(stage_label, id, config, &mut temp_map, &mut temp_map2, &temp_set_condition_index);
         }
         // for (stage_label
         //     self.add_system_config(stage_label, system_config), system_config) in system_configs.drain(..) {
@@ -263,7 +289,7 @@ impl Schedule {
         for (_name, schedule) in self.schedule_graph.iter_mut() {
             // println!("stage:{:?} initialize", name);
             for (_, stage) in schedule.iter_mut() {
-                stage.initialize(self.systems.clone(), world, self.add_listener);
+                stage.initialize(self.systems.clone(), self.set_conditions.clone(), world, self.add_listener);
             }
         }
 
@@ -275,7 +301,7 @@ impl Schedule {
     fn add_system_config(
         &mut self,
         stage_label: Interned<dyn StageLabel>,
-        system_config: SystemConfig,
+        mut system_config: SystemConfig,
         temp_map: &mut HashMap<
             Interned<dyn ScheduleLabel>,
             HashMap<
@@ -287,12 +313,20 @@ impl Schedule {
             >,
         >,
         temp_map2: &mut HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
     ) -> (BaseConfig, TypeId) {
         let sys = system_config.system;
-        let conditions = system_config.conditions;
+        let conditions = std::mem::take(&mut system_config.config.conditions);
         let name = sys.name().clone();
         let id = sys.id();
-        let index = self.systems.insert((sys, conditions));
+        let index = self.systems.len();
+        let mut exec_system = ExecSystem {
+            system: sys, 
+            conditions,
+            set_conditions: FixedBitSet::with_capacity(self.set_conditions.len()),
+        };
+        // 为system标记所在集中的条件
+        Self::init_system_set_condition(&system_config.config, &self.set_configs, temp_set_condition_index, &mut exec_system.set_conditions);
         // 根据配置，添加到对应的派发器中
         Self::add_system_config_inner(
             None,
@@ -321,6 +355,7 @@ impl Schedule {
             temp_map2,
             &self.set_configs,
         );
+        self.systems.insert(exec_system);
         (system_config.config, id)
     }
 
@@ -429,6 +464,39 @@ impl Schedule {
         }
     }
 
+    fn init_system_set_condition(
+        config: &BaseConfig,
+        set_configs: &HashMap<Interned<dyn SystemSet>, BaseConfig>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
+        sets_codition: &mut FixedBitSet,
+    ) {
+
+        if config.sets.len() == 0 {
+            return;
+        }
+        // log::warn!("set_configs===={:?}", (set_configs, system_name, config));
+
+        for in_set in config.sets.iter() {
+            // 标记system中的set条件
+            if let Some (condition_index) = temp_set_condition_index.get(in_set) {
+                for i in condition_index.0..condition_index.1 {
+                    sets_codition.insert(i);
+                }
+            }
+             
+            let config = match set_configs.get(in_set) {
+                Some(r) => r,
+                None => continue,
+            };
+            Self::init_system_set_condition(
+                config,
+                set_configs,
+                temp_set_condition_index,
+                sets_codition,
+            )
+        }
+    }
+
     fn link_system_config(
         &mut self,
         stage_label: Interned<dyn StageLabel>,
@@ -445,6 +513,7 @@ impl Schedule {
             >,
         >,
         temp_map2: &mut HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
     ) {
         // 根据配置，添加到对应的派发器中
         Self::link_system_inner(
@@ -457,6 +526,7 @@ impl Schedule {
             temp_map,
             temp_map2,
             &self.set_configs,
+            temp_set_condition_index,
         );
         // 添加到主派发器中
 
@@ -470,6 +540,7 @@ impl Schedule {
             temp_map,
             temp_map2,
             &self.set_configs,
+            temp_set_condition_index,
         );
     }
 
@@ -479,14 +550,19 @@ impl Schedule {
         map: &mut HashMap<Interned<dyn SystemSet>, ((NodeIndex, bool), (NodeIndex, bool))>,
         map2: &HashMap<TypeId, NodeIndex>,
         map3: &HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
         graph: &mut ExecGraph,
     ) -> NodeIndex {
         // println!("get_set_node===={:?}", (set, is_before));
         let set_nodes = match map.entry(set.clone()) {
             std::collections::hash_map::Entry::Occupied(r) => r.into_mut(),
             std::collections::hash_map::Entry::Vacant(r) => {
-                let before_set_index = graph.add_set(format!("{:?}_before", set).into());
-                let after_set_index = graph.add_set(format!("{:?}_after", set).into());
+                let (start, end) = match temp_set_condition_index.get(&set) {
+                    Some(r) => *r,
+                    None => (0, 0),
+                };
+                let before_set_index = graph.add_set(start, end, format!("{:?}_before", set).into());
+                let after_set_index = graph.add_set(0, 0, format!("{:?}_after", set).into());
                 graph.add_edge(before_set_index, after_set_index);
                 r.insert(((before_set_index, false), (after_set_index, false)))
             }
@@ -543,6 +619,7 @@ impl Schedule {
         >,
         temp_map2: &mut HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
         set_configs: &HashMap<Interned<dyn SystemSet>, BaseConfig>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
     ) {
         if (before.len() > 0 || after.len() > 0) && config.schedules.len() > 0 {
             // println!("add_system_inner:{:?}", &config.schedules);
@@ -566,6 +643,7 @@ impl Schedule {
                                 &mut map.1,
                                 &map.0,
                                 temp_map2,
+                                temp_set_condition_index,
                                 stage,
                             ),
                             NodeType::System(r) => match map.0.get(r) {
@@ -586,6 +664,7 @@ impl Schedule {
                                 &mut map.1,
                                 &map.0,
                                 temp_map2,
+                                temp_set_condition_index,
                                 stage,
                             ),
                             NodeType::System(r) => match map.0.get(r) {
@@ -620,6 +699,7 @@ impl Schedule {
                 temp_map,
                 temp_map2,
                 set_configs,
+                temp_set_condition_index,
             )
         }
     }
@@ -638,6 +718,7 @@ impl Schedule {
             >,
         >,
         temp_map2: &HashMap<Interned<dyn SystemSet>, Vec<TypeId>>,
+        temp_set_condition_index: &HashMap<Interned<dyn SystemSet>, (usize, usize)>,
     ) {
         for (set, config) in self.set_configs.iter() {
             for (schedule_label, schedule) in self.schedule_graph.iter_mut() {
@@ -646,13 +727,14 @@ impl Schedule {
                     let map = map.get_mut(stage_label).unwrap();
 
                     let set_before =
-                        Self::get_set_node(set.clone(), true, &mut map.1, &map.0, temp_map2, stage);
+                        Self::get_set_node(set.clone(), true, &mut map.1, &map.0, temp_map2, temp_set_condition_index, stage);
                     let set_after = Self::get_set_node(
                         set.clone(),
                         false,
                         &mut map.1,
                         &map.0,
                         temp_map2,
+                        temp_set_condition_index,
                         stage,
                     );
 
@@ -663,6 +745,7 @@ impl Schedule {
                             &mut map.1,
                             &map.0,
                             temp_map2,
+                            temp_set_condition_index,
                             stage,
                         );
                         let in_set_after = Self::get_set_node(
@@ -671,6 +754,7 @@ impl Schedule {
                             &mut map.1,
                             &map.0,
                             temp_map2,
+                            temp_set_condition_index,
                             stage,
                         );
                         stage.add_edge(in_set_before, set_before);
@@ -686,6 +770,7 @@ impl Schedule {
                                     &mut map.1,
                                     &map.0,
                                     temp_map2,
+                                    temp_set_condition_index,
                                     stage,
                                 ),
                                 NodeType::System(r) => map.0.get(r).unwrap().clone(),
@@ -703,6 +788,7 @@ impl Schedule {
                                     &mut map.1,
                                     &map.0,
                                     temp_map2,
+                                    temp_set_condition_index,
                                     stage,
                                 ),
                                 NodeType::System(r) => match map.0.get(r) {
