@@ -58,6 +58,15 @@ impl<E> EventVec<E> {
         let read_len = unsafe { self.listeners.get_unchecked(listener_index) };
         self.vec.len() - read_len.load(std::sync::atomic::Ordering::Relaxed)
     }
+
+    /// 标记为已读
+    pub(crate) fn mark_read(&self, listener_index: usize) {
+        let len = self.vec.len();
+        if len > 0 {
+            let read_len = unsafe { self.listeners.get_unchecked(listener_index) };
+            read_len.store(len, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     /// 获得指定监听者的读取长度
     pub(crate) fn get_iter(&self, listener_index: usize) -> SafeVecIter<'_, E> {
         let end = self.vec.len();
@@ -363,6 +372,10 @@ impl<'w, T: 'static> ComponentEvent<'w, T> {
     }
     pub fn iter(&self) -> SafeVecIter<'_, Entity> {
         self.record.get_iter(self.listener_index)
+    }
+    /// 标记为已读
+    pub fn mark_read(&self) {
+        self.record.mark_read(self.listener_index);
     }
 }
 

@@ -54,6 +54,10 @@ where
     fn after<M>(self, before: impl IntoNodeType<M>) -> SetConfig {
         self.into_configs().after(before)
     }
+
+    fn run_if<M>(self, condition: impl Condition<M>) -> SetConfig {
+        self.into_configs().run_if(condition)
+    }
 }
 
 pub struct SetConfig {
@@ -85,6 +89,11 @@ impl IntoSystemSetConfigs for SetConfig {
         self.config.after.push(before.into_node_type());
         self
     }
+
+    fn run_if<M>(mut self, condition: impl Condition<M>) -> SetConfig {
+        self.config.conditions.push(BoxedSystem::Sync(Box::new(IntoSystem::<M, bool>::into_system(condition))));
+        self
+    }
 }
 
 impl<T: SystemSet> IntoNodeType<()> for T {
@@ -102,6 +111,7 @@ impl<T: SystemSet> IntoSystemSetConfigs for T {
                 schedules: Vec::new(),
                 before: Vec::new(),
                 after: Vec::new(),
+                conditions: Vec::new(),
             },
         }
         
@@ -133,10 +143,22 @@ where
     fn after<M>(self, before: impl IntoNodeType<M>) -> SystemConfig {
         self.into_configs().after(before)
     }
+
+    fn run_if<M>(self, condition: impl Condition<M>) -> SystemConfig {
+        self.into_configs().run_if(condition)
+    }
 }
 
+pub trait Condition<Marker>: IntoSystem<Marker, bool>
+where
+    Self: Sized,
+{
+
+}
+
+
 pub struct SystemConfig {
-    pub(crate) system: BoxedSystem,
+    pub(crate) system: BoxedSystem<()>,
     pub(crate) config: BaseConfig,
 }
 
@@ -165,9 +187,14 @@ impl IntoSystemConfigs<()> for SystemConfig {
         self.config.after.push(before.into_node_type());
         self
     }
+
+    fn run_if<M>(mut self, condition: impl Condition<M>) -> SystemConfig {
+        self.config.conditions.push(BoxedSystem::Sync(Box::new(IntoSystem::<M, bool>::into_system(condition))));
+        self
+    }
 }
 
-impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
+impl<Marker, T: IntoSystem<Marker, ()>> IntoSystemConfigs<Marker> for T  {
     fn into_configs(self) -> SystemConfig {
         SystemConfig {
             system: BoxedSystem::Sync(Box::new(self.into_system())),
@@ -176,24 +203,29 @@ impl<Marker, T: IntoSystem<Marker>> IntoSystemConfigs<Marker> for T  {
                 schedules: Vec::new(),
                 before: Vec::new(),
                 after: Vec::new(),
+                conditions: Vec::new(),
             },
         }
     }
 }
 
-impl<Marker, T: IntoSystem<Marker> + 'static> IntoNodeType<(usize, Marker)> for T {
+impl<Marker, T: IntoSystem<Marker, bool>> Condition<Marker> for T  {}
+
+impl<Marker, T: IntoSystem<Marker, ()> + 'static> IntoNodeType<(usize, Marker)> for T {
     fn into_node_type(self) -> NodeType {
         NodeType::System(TypeId::of::<Self>())
     }
 }
 
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct BaseConfig {
     pub(crate) sets: Vec<Interned<dyn SystemSet>>,
     pub(crate) schedules: Vec<Interned<dyn ScheduleLabel>>, // 需要添加到哪些日程中
     pub(crate) before: Vec<NodeType>, // 节点顺序
     pub(crate) after: Vec<NodeType>, // 节点顺序
+    // 运行条件
+    pub(crate) conditions: Vec<BoxedSystem<bool>>,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]

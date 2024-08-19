@@ -810,6 +810,7 @@ impl<'a, T: 'static> Deref for Mut<'a, T> {
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // log::debug!("changed=================={:?}", std::any::type_name::<T>());
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
         self.c.column.get_mut::<T>(self.row, self.e)
     }

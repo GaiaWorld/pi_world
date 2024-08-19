@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.1.21"
+version = "0.1.22"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -8,7 +8,7 @@ repository = "https://github.com/GaiaWorld/pi_world.git"
 license = "MIT OR Apache-2.0"
 keywords = ["pi", "world", "ecs"]
 readme = "README.md"
-categories = ["data-structures", "memory-management", "ecs"]
+categories = ["data-structures", "memory-management"]
 
 
 [features]

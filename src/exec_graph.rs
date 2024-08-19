@@ -25,12 +25,13 @@ use async_channel::{bounded, Receiver, RecvError, Sender};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
+use fixedbitset::FixedBitSet;
 use pi_append_vec::{AppendVec, SafeVec};
 use pi_arr::Iter;
 use pi_async_rt::prelude::AsyncRuntime;
 use pi_map::vecmap::VecMap;
 use pi_null::Null;
-use pi_share::{fence, Share, ShareMutex, ShareU32, ShareU64};
+use pi_share::{Share, ShareMutex, ShareU32, ShareU64};
 
 use crate::archetype::{Archetype, ArchetypeDependResult, Flags};
 #[cfg(debug_assertions)]
@@ -125,6 +126,13 @@ fn vec_set(vec: &mut Vec<NodeIndex>, index: usize, value: NodeIndex) {
     }
     *unsafe { vec.get_unchecked_mut(index) } = value;
 }
+
+pub struct ExecSystem {
+    pub(crate) system: BoxedSystem<()>,
+    pub(crate) conditions: Vec<BoxedSystem<bool>>,
+    pub(crate) set_conditions: FixedBitSet,
+}
+
 #[derive(Clone)]
 pub struct ExecGraph(Share<GraphInner>, pub String, pub Vec<usize>/*toop排序*/);
 
@@ -167,11 +175,11 @@ impl ExecGraph {
         //inner.map.insert((sys_index as u128, 0), NodeIndex(index as u32));
         NodeIndex(index as u32)
     }
-    pub fn add_set(&self, set_name: Cow<'static, str>) -> NodeIndex {
+    pub fn add_set(&self, start: usize, end: usize, set_name: Cow<'static, str>) -> NodeIndex {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
         
-        let index = inner.nodes.insert(Node::new(NodeType::Set(set_name)));
+        let index = inner.nodes.insert(Node::new(NodeType::Set(start, end, set_name)));
         NodeIndex(index as u32)
     }
     pub fn add_edge(&self, from: NodeIndex, to: NodeIndex) {
@@ -198,7 +206,7 @@ impl ExecGraph {
     }
     /// 初始化方法，每个图可被执行多次， 已经初始化的system和world上的资源和原型不会再次生成图节点
     /// 将system, res, archetype, 添加成图节点，并维护边
-    pub fn initialize(&mut self, systems: Share<SafeVec<BoxedSystem>>, world: &mut World, init_notify: bool) {
+    pub fn initialize(&mut self, systems: Share<SafeVec<ExecSystem>>, set_conditions: Share<SafeVec<BoxedSystem<bool>>>, world: &mut World, init_notify: bool) {
         let inner = self.0.as_ref();
         let old_sys_len = inner.sys_len.load(Ordering::Relaxed);
         let new_sys_len = systems.len();
@@ -206,7 +214,18 @@ impl ExecGraph {
         let range = old_sys_len as usize..new_sys_len;
         // 首先初始化新增的system，有Insert的会产生对应的原型，如果有监听器，则会立即调用add_archetype_node
         for sys in systems.slice(range.clone()) {
-            sys.initialize(world);
+            if sys.conditions.len() > 0 {
+                for i in sys.conditions.iter_mut() {
+                    i.initialize(world);
+                }
+            }
+            sys.system.initialize(world);
+        }
+
+        let old_set_condition_len = inner.set_condition_len.load(Ordering::Relaxed) as usize;
+        let new_set_condition_len = set_conditions.len();
+        for conditions in set_conditions.slice(old_set_condition_len..new_set_condition_len) {
+            conditions.initialize(world);
         }
         // 遍历world上的单例资源，测试和system的读写关系
         // for r in world.single_res_map.iter() {
@@ -226,6 +245,7 @@ impl ExecGraph {
         let sort = self.check().into_iter().filter(|i| {
             match &inner.nodes[*i].label {
                 NodeType::System(_, _) => true,
+                NodeType::Set(start, end, _) => end - start > 0,
                 _ => false,
             } 
         }).collect::<Vec<usize>>();
@@ -267,7 +287,7 @@ impl ExecGraph {
     // 只会在初始化时调用一次。
     fn add_res_node(
         &self,
-        systems: &Share<SafeVec<BoxedSystem>>,
+        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<()>>)>>,
         mut sys_range: Range<usize>,
         tid: &TypeId,
         name: &Cow<'static, str>,
@@ -315,7 +335,7 @@ impl ExecGraph {
     // world的find_archetype保证了不会重复加相同的原型。
     fn add_archetype_node(
         &self,
-        systems: &Share<SafeVec<BoxedSystem>>,
+        systems: &Share<SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<()>>)>>,
         mut sys_range: Range<usize>,
         archetype: &Archetype,
         world: &World,
@@ -399,7 +419,8 @@ impl ExecGraph {
 
     pub async fn run<A: AsyncRuntime>(
         &self,
-        systems: &'static Share<SafeVec<BoxedSystem>>,
+        systems: &'static Share<SafeVec<ExecSystem>>,
+        set_conditions: &'static Share<SafeVec<BoxedSystem<bool>>>,
         rt: &A,
         world: &'static World,
     ) -> std::result::Result<(), RecvError> {
@@ -442,45 +463,84 @@ impl ExecGraph {
         {
             println!("run====={:?}, {:?}", &self.1,  self.2.len());
         }
+
+        let mut completed_set_conditions = FixedBitSet::with_capacity(set_conditions.len());
         // let t = pi_time::Instant::now();
         for i in self.2.iter() {
             let node = unsafe { inner.nodes.load_unchecked(*i) };
             
             match node.label {
                 NodeType::System(sys_index, _) => {
+                    
                     // println!("RUN_START=========={:?}", (node_index.index(), node.label()));
                     // let rt1 = rt.clone();
                     // let g = self.clone();
                     // let inner = g.0.as_ref();
-                    let sys = unsafe { systems.load_unchecked(sys_index) };
+
+                    let sys: &mut ExecSystem = unsafe { systems.load_unchecked(sys_index) };
+                    // 如果有集的条件不满足，则跳过
+                    if  &((&completed_set_conditions) & &sys.set_conditions) != &sys.set_conditions {
+                        continue;
+                    }
+                    
+                    if sys.conditions.len() > 0 {
+                        let mut is_ignore = false;
+                        for s in sys.conditions.iter_mut() {
+                            s.align(world);
+                            if !s.run(world).await {
+                                // 条件不成立， 不执行
+                                is_ignore = true;
+                                break;
+                            }
+                        }
+                        if is_ignore {
+                            continue;
+                        }
+                    }
+                    
                     // let old_status = node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
                     // 如果node为要执行的system，并且未被锁定原型，则执行对齐原型
                     // if old_status & NODE_STATUS_ALIGN_MASK == 0 {
-                        sys.align(world);
+                        sys.system.align(world);
                     // }
                     // NODE_STATUS_RUNNING
                     // node.status.fetch_add(NODE_STATUS_STEP, Ordering::Relaxed);
                     #[cfg(debug_assertions)]
                     if COMPONENT_INDEX.load(std::sync::atomic::Ordering::Relaxed) < std::usize::MAX  ||  ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed)  < std::usize::MAX
-                {
-                    println!("run start===={:?}", sys.name());
-                }
+                    {
+                        println!("run start===={:?}", sys.system.name());
+                    }
                     #[cfg(feature = "trace")]
                     {
                         use tracing::Instrument;
-                        let system_span = tracing::info_span!("system", name = &**sys.name());
-                        sys.run(world).instrument(system_span).await;
+                        let system_span = tracing::info_span!("system", name = &**sys.system.name());
+                        sys.system.run(world).instrument(system_span).await;
                     }
                     #[cfg(not(feature = "trace"))]
-                    sys.run(world).await;
+                    sys.system.run(world).await;
                 }
-                _ => {
+                NodeType::Set(start, end, _) => {
+                    for i in start..end {
+                        let condition = unsafe {set_conditions.load_unchecked(i)};
+                        condition.align(world);
+                        if condition.run(world).await {
+                            completed_set_conditions.insert(i);
+                        }
+                        // 考虑到一些条件system会使用诸如ComponentChanged<T>这类参数， 如果条件不执行，ComponentChanged<T>无法被清理
+                        // 每个条件都需要执行
+                        // 
+                        // else {
+                        //     // 有条件不成立， 不需要再执行后续条件
+                        //     break;
+                        // }
+                    }
                     // RUN_START + RUNNING
                     // node.status
                     //     .fetch_add(NODE_STATUS_STEP + NODE_STATUS_STEP, Ordering::Relaxed);
                     // self.exec_end(systems, rt, world, node, node_index)
-                }
+                },
+                _ => (),
             }
 
         }
@@ -496,7 +556,7 @@ impl ExecGraph {
 
     fn exec<A: AsyncRuntime>(
         &self,
-        systems: &'static SafeVec<BoxedSystem>,
+        systems: &'static SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>,
         rt: &A,
         world: &'static World,
         node_index: NodeIndex,
@@ -516,7 +576,7 @@ impl ExecGraph {
                     // println!("exec, sys_index: {:?} sys:{:?}", sys_index, sys.name());
                     // 如果node为要执行的system，并且未被锁定原型，则执行对齐原型
                     if old_status & NODE_STATUS_ALIGN_MASK == 0 {
-                        sys.align(world);
+                        sys.0.align(world);
                     }
                     
                     // NODE_STATUS_RUNNING
@@ -525,11 +585,11 @@ impl ExecGraph {
                     #[cfg(feature = "trace")]
                     {
                         use tracing::Instrument;
-                        let system_span = tracing::info_span!("system", name = &**sys.name());
-                        sys.run(world).instrument(system_span).await;
+                        let system_span = tracing::info_span!("system", name = &**sys.0.name());
+                        sys.0.run(world).instrument(system_span).await;
                     }
                     #[cfg(not(feature = "trace"))]
-                    sys.run(world).await;
+                    sys.0.run(world).await;
                     // println!("run end===={:?}", sys.name());
                     g.exec_end(systems, &rt1, world, node, node_index)
                 });
@@ -544,7 +604,7 @@ impl ExecGraph {
     }
     fn exec_end<A: AsyncRuntime>(
         &self,
-        systems: &'static SafeVec<BoxedSystem>,
+        systems: &'static SafeVec<(BoxedSystem<()>, Vec<BoxedSystem<bool>>)>,
         rt: &A,
         world: &'static World,
         node: &Node,
@@ -617,6 +677,7 @@ pub struct GraphInner {
     sender: Sender<()>,
     receiver: Receiver<()>,
     sys_len: ShareU32,
+    set_condition_len: ShareU32,
 }
 
 impl GraphInner {
@@ -893,6 +954,7 @@ impl Default for GraphInner {
             sender,
             receiver,
             sys_len: ShareU32::new(0),
+            set_condition_len: ShareU32::new(0),
         }
     }
 }
@@ -936,7 +998,7 @@ pub enum NodeType {
     System(usize, Cow<'static, str>),
     ArchetypeComponent(u128, Cow<'static, str>),
     Res(Cow<'static, str>),
-    Set(Cow<'static, str>),
+    Set(usize/*条件开始索引*/, usize/*条件结束索引*/, Cow<'static, str>),
 }
 impl NodeType {
     // 类型的名字
@@ -946,7 +1008,7 @@ impl NodeType {
             NodeType::System(_, sys_name) => &sys_name,
             NodeType::ArchetypeComponent(_, s) => &s, // 要改一下，但是先这样吧
             NodeType::Res(s) => &s,
-            NodeType::Set(s) => &s,
+            NodeType::Set(_, _, s) => &s,
         }
     }
 }
@@ -957,7 +1019,7 @@ impl Debug for NodeType {
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
             NodeType::ArchetypeComponent(id, s) => write!(f, "ArchetypeComponent({},{:?})", id, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
-            NodeType::Set(s) => write!(f, "Set({:?})", s),
+            NodeType::Set(_start, _end, s) => write!(f, "Set({:?})", s),
         }
     }
 }
@@ -968,7 +1030,7 @@ impl Display for NodeType {
             NodeType::System(_, sys_name) => write!(f, "System({:?})", sys_name),
             NodeType::ArchetypeComponent(id, s) => write!(f, "ArchetypeComponent({},{:?})", id, s),
             NodeType::Res(s) => write!(f, "Res({:?})", s),
-            NodeType::Set(s) => write!(f, "Set({:?})", s),
+            NodeType::Set(_, _, s) => write!(f, "Set({:?})", s),
         }
     }
 }
@@ -1101,7 +1163,7 @@ pub(crate) const fn decode(value: u64) -> (u32, u32) {
 
 struct Notify<'a>(
     ExecGraph,
-    Share<SafeVec<BoxedSystem>>,
+    Share<SafeVec<ExecSystem>>,
     bool,
     PhantomData<&'a ()>,
 );
