@@ -2,7 +2,7 @@ use core::fmt::*;
 use std::{
     cell::SyncUnsafeCell,
     mem::transmute,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     sync::atomic::AtomicUsize,
 };
 
@@ -28,8 +28,22 @@ pub struct Column {
     pub(crate) last_len: SyncUnsafeCell<usize>,
 }
 impl Column {
+    pub fn memsize(&self) -> usize {
+        let mut result = 0;
+        let end = self.arr.capacity(0);
+        for idx in 0..end {
+            if let Some(item) = self.arr.get(idx) {
+                result += item.memsize();
+            }
+        }
+        // self.arr.slice(Range{ start: 0, end: self.arr.capacity(0) }).for_each(|item| {
+        //     result += item.memsize();
+        // });
+        result
+    }
     #[inline(always)]
     pub fn new(info: ComponentInfo) -> Self {
+        // log::warn!("New Column");
         Self {
             info: ColumnInfo {
                 changed: None,
@@ -119,6 +133,7 @@ impl Column {
     where
         F: Fn(&BlobRef, Row, &Archetype),
     {
+        let mut size = 0;
         for ar in archetypes.iter() {
             if let Some(blob) = self.arr.load(ar.index.index()) {
                 // 判断该原型是否包含该列
@@ -135,8 +150,10 @@ impl Column {
                 for row in 0..ar.len().index() {
                     set_fn(&r, row.into(), &ar)
                 }
+                size += blob.memsize();
             }
         }
+        // log::warn!("Column {:?}", size);
     }
     /// 整理内存
     pub(crate) fn settle(&mut self) {
@@ -227,6 +244,22 @@ impl Deref for ColumnInfo {
         &self.info
     }
 }
+impl ColumnInfo {
+    pub fn memsize(&self) -> usize {
+        let mut result = 0;
+        if let Some(item) = &self.changed {
+            result += item.capacity();
+        }
+        if let Some(item) = &self.added {
+            result += item.capacity();
+        }
+        if let Some(item) = &self.removed {
+            result += item.capacity();
+        }
+        result += self.info.size();
+        result
+    }
+}
 
 struct Blob(Arr<u8>);
 impl Default for Blob {
@@ -255,11 +288,22 @@ impl DerefMut for Blob {
         &mut self.0
     }
 }
+impl Blob {
+    pub fn memsize(&self) -> usize {
+        self.0.vec_capacity() + 24
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct BlobTicks {
     blob: Blob,
     pub(crate) ticks: Arr<Tick>,
+}
+impl BlobTicks {
+    pub fn memsize(&self) -> usize {
+        
+        self.blob.memsize() + self.ticks.vec_capacity() * 4
+    }
 }
 
 #[derive(Clone)]

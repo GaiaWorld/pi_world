@@ -1,9 +1,9 @@
 //! 事件，及组件移除
 //!
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::marker::PhantomData;
-use std::mem::transmute;
+use std::mem::{size_of, transmute};
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 
@@ -35,6 +35,9 @@ impl<E> EventVec<E> {
             listeners: Vec::new(),
             vec: SafeVec::default(),
         }
+    }
+    pub fn capacity(&self) -> usize {
+        self.listeners.capacity() * 8 + self.vec.capacity() * size_of::<E>()
     }
     pub fn name(&self) -> &str {
         &self.name
@@ -93,7 +96,9 @@ impl<E> EventVec<E> {
                 }
                 true
             }
-            _ => false,
+            _ => {
+                false
+            },
         }
     }
 }
@@ -233,7 +238,7 @@ impl<T: 'static> SystemParam for ComponentChanged<'_, T> {
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(COMPONENT_TICK);
-        init_changed_state(world, info)
+        init_changed_state(world, TypeId::of::<ComponentChanged<'static, T>>(), info)
     }
 
     #[inline]
@@ -273,7 +278,7 @@ impl<T: 'static> SystemParam for ComponentAdded<'_, T> {
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        init_added_state(world, info)
+        init_added_state(world, TypeId::of::<ComponentAdded<'static, T>>(), info)
     }
 
     #[inline]
@@ -311,7 +316,7 @@ impl<T: 'static> SystemParam for ComponentRemoved<'_, T> {
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        init_removed_state(world, info)
+        init_removed_state(world, TypeId::of::<ComponentRemoved<'static, T>>(), info)
     }
 
     #[inline]
@@ -349,6 +354,10 @@ impl<'w, T: 'static> ComponentEvent<'w, T> {
         }
     }
     #[inline(always)]
+    pub fn capacity(&self) -> usize {
+        self.record.capacity()
+    }
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.record.len(self.listener_index)
     }
@@ -369,7 +378,7 @@ fn init_state<E: 'static>(world: &mut World) -> Share<EventVec<E>> {
     }
 }
 
-fn init_changed_state(world: &mut World, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
+fn init_changed_state(world: &mut World, typeid: TypeId, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
     let (r, c) = init_component_state(world, info, |info| match &info.changed {
         Some(r) => r.clone(),
         None => {
@@ -378,6 +387,7 @@ fn init_changed_state(world: &mut World, info: ComponentInfo) -> (Share<Componen
             r
         }
     });
+    world.init_event_record(typeid, r.0.clone());
     // 首次创建监听器，将所有相关原型的实体都放入到事件列表中
     if r.1 == 0 {
         c.update(&world.archetype_arr, |_, row, ar| {
@@ -386,8 +396,8 @@ fn init_changed_state(world: &mut World, info: ComponentInfo) -> (Share<Componen
     }
     r
 }
-fn init_added_state(world: &mut World, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
-    init_component_state(world, info, |info| match &info.added {
+fn init_added_state(world: &mut World, typeid: TypeId, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
+    let r = init_component_state(world, info, |info| match &info.added {
         Some(r) => r.clone(),
         None => {
             let r = Share::new(ComponentEventVec::new(info.info.type_name().clone()));
@@ -395,11 +405,13 @@ fn init_added_state(world: &mut World, info: ComponentInfo) -> (Share<ComponentE
             r
         }
     })
-    .0
+    .0;
+    world.init_event_record(typeid, r.0.clone());
+    r
 }
 
-fn init_removed_state(world: &mut World, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
-    init_component_state(world, info, |info| match &info.removed {
+fn init_removed_state(world: &mut World, typeid: TypeId, info: ComponentInfo) -> (Share<ComponentEventVec>, usize) {
+    let r = init_component_state(world, info, |info| match &info.removed {
         Some(r) => r.clone(),
         None => {
             let r = Share::new(ComponentEventVec::new(info.info.type_name().clone()));
@@ -407,7 +419,9 @@ fn init_removed_state(world: &mut World, info: ComponentInfo) -> (Share<Componen
             r
         }
     })
-    .0
+    .0;
+    world.init_event_record(typeid, r.0.clone());
+    r
 }
 
 fn init_component_state<F>(

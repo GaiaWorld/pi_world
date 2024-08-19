@@ -662,7 +662,11 @@ impl World {
     /// 获得内存大小
     pub fn mem_size(&self) -> usize {
         let mut size = self.entities.mem_size();
-        size += self.component_arr.capacity() * size_of::<Column>();
+        // size += self.component_arr.capacity() * size_of::<Column>();
+        self.component_arr.iter().for_each(|item| {
+            size += item.memsize();
+        });
+        size += (self.component_arr.capacity() - self.component_arr.len()) * size_of::<Column>();
         size += self.archetype_arr.capacity() * size_of::<Archetype>();
         for ar in self.archetype_arr.iter() {
             size += ar.mem_size();
