@@ -399,14 +399,19 @@ impl World {
             })
     }
 
-    /// 注册单例资源， 如果已经注册，则忽略，返回索引
+    /// 如果单例不存在， 插入单例默认值
     pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize {
         let tid = TypeId::of::<T>();
-        if let Some(r) = self.single_res_map.get(&tid) {
-            return *r;
+        let index = *self.single_res_map.entry(tid).or_insert_with(|| {
+            let index = self.single_res_arr.len();
+            self.single_res_arr.push(None);
+            index
+        });
+        if self.single_res_arr[index].is_none() {
+            let value = T::from_world(self);
+            self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
         }
-        let value = T::from_world(self);
-        self.insert_single_res(value)
+        index
     }
 
     /// 用索引获得指定的只读单例资源

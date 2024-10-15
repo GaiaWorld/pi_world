@@ -299,6 +299,7 @@ fn init_write_state<T: 'static>(
 }
 
 fn init_opt_state<T: 'static>(world: &World, state: &mut Option<Share<TickRes<T>>>, index: usize) {
+    log::error!("t==============={:?}", std::any::type_name::<T>());
     let s = world.index_single_res_any(index).unwrap().clone();
     *state = Some(Share::downcast::<TickRes<T>>(s.into_any()).unwrap());
 }
