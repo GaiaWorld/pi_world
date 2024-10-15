@@ -1,14 +1,11 @@
 use std::{
-    mem::transmute,
-    ops::{Deref, DerefMut},
+    marker::PhantomData, mem::transmute, ops::{Deref, DerefMut}
 };
 
 /// 系统参数的定义
 ///
 use crate::{
-    prelude::FromWorld,
-    system::{Relation, SystemMeta},
-    world::{Tick, World},
+    archetype::ComponentInfo, prelude::FromWorld, system::{Relation, SystemMeta}, world::{ComponentIndex, Tick, World}
 };
 
 use pi_proc_macros::all_tuples;
@@ -118,6 +115,38 @@ impl<T: Send + Sync + 'static + FromWorld> SystemParam for Local<'_, T> {
         tick: Tick,
     ) -> Self::Item<'world> {
         Local(state, tick)
+    }
+    #[inline]
+    fn get_self<'world>(
+        world: &'world World,
+        system_meta: &'world SystemMeta,
+        state: &'world mut Self::State,
+        tick: Tick,
+    ) -> Self {
+        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+    }
+}
+
+pub struct ComponentDebugIndex<T: 'static + Send + Sync>(pub ComponentIndex, PhantomData<T>);
+
+impl<T: 'static + Send + Sync> SystemParam for ComponentDebugIndex<T> {
+    type State = ComponentIndex;
+
+    type Item<'world> = ComponentDebugIndex<T>;
+
+    fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
+        let info = ComponentInfo::of::<T>(0);
+        let rc = world.add_component_info(info);
+        rc.0
+    }
+
+    fn get_param<'world>(
+        _world: &'world World,
+        _system_meta: &'world SystemMeta,
+        _state: &'world mut Self::State,
+        _tick: Tick,
+    ) -> Self::Item<'world> {
+        ComponentDebugIndex(_state.clone(), PhantomData)
     }
     #[inline]
     fn get_self<'world>(
