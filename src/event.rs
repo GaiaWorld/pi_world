@@ -159,6 +159,10 @@ impl<'w, E: 'static> Event<'w, E> {
     pub fn iter(&self) -> SafeVecIter<'_, E> {
         self.record.get_iter(self.listener_index)
     }
+
+    pub fn mark_read(&self) {
+        self.record.mark_read(self.listener_index);
+    }
 }
 
 impl<E: 'static> SystemParam for Event<'_, E> {
