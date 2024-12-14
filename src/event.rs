@@ -75,19 +75,21 @@ impl<E> EventVec<E> {
         let start = read_len.swap(end, Ordering::Relaxed);
         self.vec.slice(start..end)
     }
-    /// 判断是否能够清空脏列表
-    pub(crate) fn can_clear(&mut self) -> Option<usize> {
+    /// 判断是否能够清空事件列表， 如果所有的监听器都读取了全部的事件列表，才可以清空事件列表， 返回Ok(len)表示可以清空，事件列表长度为len，返回Err((len, index))表示不能清空，len表示事件列表的长度，index表示监听器的最小读取长度，即index之前的监听器已经读取完毕，index及之后的监听器还未读取完毕
+    pub(crate) fn can_clear(&mut self) -> Result<usize, (usize, usize)> {
         let len = self.vec.len();
         if len == 0 {
-            return Some(0);
+            return Ok(0);
         }
+        let mut min = 0;
         for read_len in self.listeners.iter_mut() {
-            if *read_len.get_mut() < len {
-                return None;
-            }
+            min = min.max(*read_len.get_mut());
         }
-        // 只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
-        Some(len)
+        if min < len {
+            return Err((len, min));
+        }
+        // 只有所有的监听器都读取了全部的事件列表，才可以清空事件列表
+        Ok(len)
     }
     /// 清理方法
     pub(crate) fn clear(&mut self) {
@@ -96,17 +98,30 @@ impl<E> EventVec<E> {
             *read_len.get_mut() = 0;
         }
     }
-    // 整理方法， 返回是否已经将脏列表清空，只有所有的监听器都读取了全部的脏列表，才可以清空脏列表
+    /// 清理部分已读的事件列表
+    pub(crate) fn clear_part(&mut self, index: usize) {
+        self.vec.remain_settle(index..usize::MAX, 0);
+        if index == 0 {
+            return;
+        }
+        for read_len in self.listeners.iter_mut() {
+            *read_len.get_mut() -= index;
+        }
+    }
+    // 整理方法， 返回是否已经将事件列表清空，只有所有的监听器都读取了全部的事件列表，才可以清空事件列表
     pub(crate) fn settle(&mut self) -> bool {
         match self.can_clear() {
-            Some(len) => {
+            Ok(len) => {
                 if len > 0 {
                     self.clear();
                 }
                 true
             }
-            _ => {
-                false
+            Err((len, index)) => {
+                if len + len > self.vec.vec_capacity() {
+                    // 如果事件列表的数据大于事件列表内的快速槽位的一半，则清理部分事件列表
+                    self.clear_part(index);
+                }
             },
         }
     }
