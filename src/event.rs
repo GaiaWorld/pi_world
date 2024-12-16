@@ -118,10 +118,11 @@ impl<E> EventVec<E> {
                 true
             }
             Err((len, index)) => {
-                if len + len > self.vec.vec_capacity() {
+                if len.saturating_add(len) > self.vec.vec_capacity() {
                     // 如果事件列表的数据大于事件列表内的快速槽位的一半，则清理部分事件列表
                     self.clear_part(index);
                 }
+                false
             },
         }
     }
