@@ -123,9 +123,9 @@ impl ArchetypeDependResult {
     pub fn new() -> Self {
         Self {
             flag: Flags::empty(),
-            reads: Vec::new(),
-            writes: Vec::new(),
-            alters: Vec::new(),
+            reads: Vec::with_capacity(256),
+            writes: Vec::with_capacity(256),
+            alters: Vec::with_capacity(256),
         }
     }
     pub fn merge(&mut self, depend: ArchetypeDepend) {
@@ -248,7 +248,7 @@ impl Archetype {
         removing: &mut Vec<Share<Column>>,
         existed_adding_is_move: bool,
     ) -> ArchetypeInfo {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(256);
         let mut column_index = 0;
         let len = self.column_len();
         let mut pre_index = ComponentIndex::null();

@@ -70,9 +70,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
     };
     let path = ecs_path();
 
-    let mut field_locals = Vec::new();
-    let mut fields = Vec::new();
-    let mut field_types = Vec::new();
+    let mut field_locals = Vec::with_capacity(256);
+    let mut fields = Vec::with_capacity(256);
+    let mut field_types = Vec::with_capacity(256);
     for (i, field) in field_definitions.iter().enumerate() {
         field_locals.push(format_ident!("f{i}"));
         let i = Index::from(i);
@@ -277,9 +277,9 @@ pub fn derive_param_set_element(input: TokenStream) -> TokenStream {
     };
     let path = ecs_path();
 
-    let mut field_locals = Vec::new();
-    let mut fields = Vec::new();
-    let mut field_types = Vec::new();
+    let mut field_locals = Vec::with_capacity(256);
+    let mut fields = Vec::with_capacity(256);
+    let mut field_types = Vec::with_capacity(256);
     for (i, field) in field_definitions.iter().enumerate() {
         field_locals.push(format_ident!("f{i}"));
         let i = Index::from(i);
@@ -627,7 +627,7 @@ pub fn impl_param_set(_input: TokenStream) -> TokenStream {
     let max_params = 8;
     let params = get_idents(|i| format!("P{i}"), max_params);
     // let metas = get_idents(|i| format!("m{i}"), max_params);
-    let mut param_fn_muts = Vec::new();
+    let mut param_fn_muts = Vec::with_capacity(256);
     for (i, param) in params.iter().enumerate() {
         let fn_name = Ident::new(&format!("p{i}"), proc_macro2::Span::call_site());
         let index = Index::from(i);

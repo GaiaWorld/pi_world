@@ -676,6 +676,11 @@ impl World {
         for ar in self.archetype_arr.iter() {
             size += ar.mem_size();
         }
+        size += self.listener_mgr.memsize();
+        size += self.archetype_arr_len;
+        size += self.archetype_map.len();
+        size += self.component_map.len();
+        size += self.single_res_arr.len();
         size
     }
     /// 只有主调度完毕后，才能调用的整理方法，必须保证调用时没有其他线程读写world

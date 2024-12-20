@@ -165,6 +165,10 @@ impl ListenerMgr {
         self.listener_list.settle(0);
         self.event_list.settle(0);
     }
+    pub fn memsize(&self) -> usize {
+        self.listener_list.len() * 100 +
+        self.event_list.len() * 100
+    }
 }
 
 pub struct ListenerList<L: Listener<Event = E>, E> {
