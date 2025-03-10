@@ -378,7 +378,7 @@ impl QState {
             // id,
             related,
             archetypes_len: 0,
-            archetypes: Vec::new(),
+            archetypes: Vec::with_capacity(256),
             bit_set: Default::default(),
             bit_set_start: 0,
             last_run: Tick::default(),

@@ -138,7 +138,7 @@ pub struct ExecGraph(Share<GraphInner>, pub String, pub Vec<usize>/*toop排序*/
 
 impl ExecGraph {
     pub fn new(name: String) -> Self {
-        Self(Default::default(), name, Vec::new())
+        Self(Default::default(), name, Vec::with_capacity(256))
     }
 
     pub fn check(&self) -> Vec<usize> {
@@ -344,8 +344,8 @@ impl ExecGraph {
         let _unused = inner.lock.lock();
 
         let aid = archetype.id() as u128;
-        let mut nodes = Vec::new();
-        let mut ar_component_index_node_index_map = Vec::new();
+        let mut nodes = Vec::with_capacity(256);
+        let mut ar_component_index_node_index_map = Vec::with_capacity(256);
         // 遍历该原型的全部组件
         for c in archetype.get_columns().iter() {
             let info = c.info();
@@ -1205,8 +1205,8 @@ impl NGraph {
             panic!("节点已经存在{:?}", k);
         }
         self.nodes.insert(k, NGraphNode {
-            from: Vec::new(),
-            to: Vec::new(),
+            from: Vec::with_capacity(256),
+            to: Vec::with_capacity(256),
         });
     }
 
@@ -1236,7 +1236,7 @@ impl NGraph {
         }
 
         let nodes = &self.nodes;
-        let mut topological = Vec::new();
+        let mut topological = Vec::with_capacity(256);
         let mut topological_len = 0;
         while let Some(k) = queue.pop_front() { // 遍历依赖就绪的节点
 			let node = nodes.get(k).unwrap();
@@ -1277,8 +1277,8 @@ impl NGraph {
         // println!("cycle1======{:?}", not_contains);
 		let mut iter = not_contains.into_iter();
 		while let Some(n) = iter.next() {
-			let mut cycle_keys = Vec::new();
-			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::new(), HashSet::default());
+			let mut cycle_keys = Vec::with_capacity(256);
+			Self::find_cycle(nodes, n, &mut cycle_keys, Vec::with_capacity(256), HashSet::default());
 
 			if cycle_keys.len() > 0 {
 				return Err(cycle_keys);

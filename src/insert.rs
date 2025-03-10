@@ -50,7 +50,7 @@ impl<B: Bundle + 'static> SystemParam for Insert<'_, B> {
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         // 加meta 如果world上没有找到对应的原型，则创建并放入world中
-        let components = B::components(Vec::new());
+        let components = B::components(Vec::with_capacity(256));
         let ar = meta.insert(world, components);
         let s = B::init_item(world, &ar);
         InsertState::new(ar, s)

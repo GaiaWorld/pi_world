@@ -21,7 +21,7 @@ pub struct ResVec<T: 'static> {
 }
 impl<T: 'static> ResVec<T> {
     pub fn new() -> Self {
-        Self { vec: Vec::new() }
+        Self { vec: Vec::with_capacity(256) }
     }
     pub fn insert(&mut self, value: T) -> usize {
         let index = self.vec.len();

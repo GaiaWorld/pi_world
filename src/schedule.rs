@@ -40,7 +40,7 @@ pub struct Schedule {
 impl Schedule {
     pub fn new(add_listener: bool) -> Self {
         Self {
-            system_configs: Vec::new(),
+            system_configs: Vec::with_capacity(256),
             systems: Share::new(SafeVec::default()),
             set_conditions: Share::new(SafeVec::default()),
             // graph: ExecGraph::default(),
@@ -53,15 +53,15 @@ impl Schedule {
                 Last.intern(),
             ],
 
-            action: Vec::new(),
+            action: Vec::with_capacity(256),
             set: FixedBitSet::new(),
 
             set_configs: HashMap::new(),
             mian_config: BaseConfig {
                 sets: Default::default(),
                 schedules: vec![MainSchedule.intern()],
-                before: Vec::new(),
-                after: Vec::new(),
+                before: Vec::with_capacity(256),
+                after: Vec::with_capacity(256),
                 conditions: Vec::default(),
             },
             add_listener,

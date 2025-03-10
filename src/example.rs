@@ -1,4 +1,6 @@
 #![allow(warnings)]
+use std::ops::Range;
+
 use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Eq, Default,PartialEq, Component)]
@@ -13,43 +15,140 @@ pub struct Age2(usize);
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Component)]
 pub struct Age3(usize);
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub struct Age4(usize);
-#[derive(Component)]
-pub struct Age5([usize; 16]);
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
+pub struct Age5([usize; 16], Range<u64>, Range<u64>);
+#[derive(Component, Default, Clone)]
 pub struct Age6(usize);
-#[derive(Component)]
-pub struct Age7(usize);
-#[derive(Component)]
-pub struct Age8(usize); 
-#[derive(Component, Debug, Default)]
+#[derive(Component, Default, Clone)]
+pub struct Age7(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age8(Vec<u32>, Vec<f32>, usize, usize); 
+#[derive(Component, Debug, Default, Clone)]
 pub struct Age9(usize);
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub struct Age10(usize);
-#[derive(Component)]
-pub struct Age11(usize);
-#[derive(Component)]
-pub struct Age12(usize);
-#[derive(Component)]
-pub struct Age13(usize);
-#[derive(Component)]
-pub struct Age14(usize);
-#[derive(Component)]
-pub struct Age15(usize);
-#[derive(Component)]
-pub struct Age16(usize);
-#[derive(Component)]
-pub struct Age17(usize);
-#[derive(Component)]
-pub struct Age18(usize);
-#[derive(Component)]
-pub struct Age19(usize);
-#[derive(Component)]
-pub struct Age20(usize);
+#[derive(Component, Default, Clone)]
+pub struct Age11(Vec<u32>, Vec<f32>, usize, usize);
+#[derive(Component, Default, Clone)]
+pub struct Age12([f32;8]);
+#[derive(Component, Default, Clone)]
+pub struct Age13([f32;8]);
+#[derive(Component, Default, Clone)]
+pub struct Age14([f32;8]);
+#[derive(Component, Default, Clone)]
+pub struct Age15([f32;8]);
+#[derive(Component, Default, Clone)]
+pub struct Age16([f32;12]);
+#[derive(Component, Default, Clone)]
+pub struct Age17([f32;16], [f32;4], bool);
+#[derive(Component, Default, Clone)]
+pub struct Age18([f32;16]);
+#[derive(Component, Default, Clone)]
+pub struct Age19([f32;16]);
+#[derive(Component, Default, Clone)]
+pub struct Age20([f32;16]);
 
-#[derive(Component, Debug)]
+#[derive(Clone, Component, Debug, Default)]
 pub struct Age21(Vec<u64>);
+
+#[derive(Component, Default, Clone)]
+pub struct Age22([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age23([f32;16], [f32;4], bool, Vec<u64>);
+
+#[derive(Component, Default, Clone)]
+pub struct Age24([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age25([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age26([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age27([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age28([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age29([f32;16], [f32;4], bool, Vec<u64>);
+#[derive(Component, Default, Clone)]
+pub struct Age30(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age31(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age32(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age33(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age34(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age35(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age36(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age37(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age38(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age39(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age40(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age41(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age42(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age43(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+#[derive(Component, Default, Clone)]
+pub struct Age44(usize, Range<u64>, Range<u64>, Option<Range<u64>>);
+
+#[derive(Component, Default, Clone)]
+pub struct PassReset;
+
+#[derive(Component, Default, Clone)]
+pub struct PassModelID(pub Entity);
+
+#[derive(Component, Default, Clone)]
+pub struct PassRendererID(pub Entity);
+
+#[derive(Component, Default, Clone)]
+pub struct PassMaterialID(pub Entity);
+
+#[derive(Component, Default, Clone)]
+pub struct PassGeometryID(pub Entity);
+
+#[derive(Component, Default, Clone)]
+pub struct PassPipelineStateDirty;
+
+#[derive(Component, Default, Clone)]
+pub struct PassBindGroupsDirty;
+
+#[derive(Component, Default, Clone)]
+pub struct PassDrawDirty;
+
+#[derive(Component, Default, Clone)]
+pub struct PassIDs(pub [Entity;8]);
+
+#[derive(Clone, Component, Default)]
+pub struct RecordPassDraw(pub [Option<Entity>; 8]);
+
+#[derive(Component, Default, Clone)]
+pub struct PassFlagShader;
+
+#[derive(Component, Default, Clone)]
+pub struct RenderState([f32;11]);
+
+pub type PassObjInitBundle = (
+    PassModelID,
+    PassMaterialID,
+    PassGeometryID,
+    PassRendererID,
+    PassPipelineStateDirty,
+    PassDrawDirty,
+    RenderState,
+    PassReset,
+    PassBindGroupsDirty,
+    PassFlagShader,
+);
 
 impl Drop for Age21 {
     fn drop(&mut self) {
@@ -211,12 +310,12 @@ struct Velocity([f32; 3]);
 #[cfg(test)]
 mod test_mod {
 
-    use std::{any::TypeId, ops::Deref};
+    use std::{any::TypeId, mem, ops::Deref, ptr};
  
     use super::*;
     use crate::{
         // app::*,
-        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{relate, Relation, SystemMeta, TypeInfo}, table::Table
+        archetype::{Archetype, ComponentInfo, Row}, column::{BlobTicks, Column}, debug::{ArchetypeDebug, ColumnDebug}, editor::EntityEditor, schedule::Update, schedule_config::IntoSystemConfigs, system::{relate, Relation, SystemMeta, TypeInfo}, table::Table, world
     };
     use fixedbitset::FixedBitSet;
     // use bevy_utils::dbg;
@@ -632,8 +731,15 @@ mod test_mod {
         assert_eq!(world.get_component::<Age0>(e2).unwrap().0, 1);
     }
 
-    #[test]
-    fn test_alter() {
+    type Bundle0 = (Age0, Age1, Age2, Age3, Age4, Age5, Age6, Age7);
+    type Bundle1 = (Age8, Age9, Age10, Age11, Age12, Age13, Age14, Age15);
+    type Bundle2 = (Age16, Age17, Age18, Age19, Age20, Age21);
+    type Bundle3 = (Age22, Age23, Age24, Age25, Age26, Age27);
+    type Bundle4 = (Age28, Age29, Age30, Age31, Age32, Age33, Age34, Age35, Age36, Age37, Age38, Age39);
+    type Bundle5 = (Age40, Age41, Age42, Age43, Age44, PassObjInitBundle);
+    type Bundle6 = (Bundle1, Bundle2, Bundle3, Bundle4, Bundle5);
+    #[bench]
+    fn test_alter(b: &mut Bencher) {
         let mut app = crate::prelude::App::new();
         app.add_system(Update, insert1);
         app.add_system(Update, print_changed_entities);
@@ -642,31 +748,125 @@ mod test_mod {
         
         app.run();
 
-        let mut info = ArchetypeDebug {
-            entitys: Some(0),
-            columns_info: vec![
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-            ],
-            destroys_listeners: Some(0),
-            removes: Some(0),
-        };
+        let mut alter1 = app.world.make_alter::<(), (), Bundle0, ()>();
+        let mut alter2 = app.world.make_alter::<(), (), Bundle1, ()>();
+        let mut alter3 = app.world.make_alter::<(), (), Bundle2, ()>();
+        let mut alter4 = app.world.make_alter::<(), (), (Bundle2, Bundle3), ()>();
+        let mut alter5 = app.world.make_alter::<(), (), (Bundle1, Bundle2, Bundle3, Bundle4, Bundle5), ()>();
+        let mut query5 = app.world.make_query::<(&Age8, &Age9, &Age10, &Age11, &Age12), ()>();
 
-        let mut info1 = ArchetypeDebug {
-            entitys: Some(1),
-            columns_info: vec![
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
-                Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
-            ],
-            destroys_listeners: Some(0),
-            removes: Some(0),
-        };
+        b.iter(move || {
+            let len = 10000;
+            let mut entries: Vec<(Bundle1, Bundle2, Bundle3, Bundle4, Bundle5)> = vec![(Bundle1::default(), Bundle2::default(), Bundle3::default(), Bundle4::default(), Bundle5::default());10000];
 
-        app.world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+            // let mut entries: Vec<Bundle5> = vec![Bundle5::default();10000];
 
+            // let mut entries: Vec<(Bundle1, Bundle2, Bundle3, Bundle4, Bundle5)> = Vec::with_capacity(len);
+            // entries.resize_with(entries.capacity(), || (Bundle1::default(), Bundle2::default(), Bundle3::default(), Bundle4::default(), Bundle5::default()));
+            // let temp = Bundle6::default();
+            // for count in 0..len {
+            //     unsafe {
+            //         let end = entries.as_mut_ptr().add(count);
+            //         core::ptr::write(end, temp.clone());
+            //     }
+            // }
+            unsafe {
+                entries.set_len(len);
+            }
+
+            // for i in 0..100 {
+            //     let entity = app.world.spawn_empty();
+            //     let mut alter = alter1.get_param(&app.world);
+            //     alter.alter(entity, Bundle0::default());
+
+            //     let entity = app.world.spawn_empty();
+            //     let mut alter = alter2.get_param(&app.world);
+            //     alter.alter(entity, Bundle1::default());
+
+            //     // let entity = app.world.spawn_empty();
+            //     // let mut alter = alter3.get_param(&app.world);
+            //     // alter.alter(entity, Bundle2::default());
+
+            //     // let entity = app.world.spawn_empty();
+            //     // let mut alter = alter4.get_param(&app.world);
+            //     // alter.alter(entity, (Bundle2::default(), Bundle3::default()));
+
+            //     let entity = app.world.spawn_empty();
+            //     let mut alter = alter5.get_param(&app.world);
+            //     alter.alter(entity, (Bundle1::default(), Bundle2::default(), Bundle3::default(), Bundle4::default(), Bundle5::default()));
+
+            //     query5.align(&app.world);
+            // }
+        });
+
+        // let mut info = ArchetypeDebug {
+        //     entitys: Some(0),
+        //     columns_info: vec![
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+        //     ],
+        //     destroys_listeners: Some(0),
+        //     removes: Some(0),
+        // };
+
+        // let mut info1 = ArchetypeDebug {
+        //     entitys: Some(1),
+        //     columns_info: vec![
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age1")}),
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age0")}),
+        //         Some(ColumnDebug{change_listeners: 0, name: Some("Age3")}),
+        //     ],
+        //     destroys_listeners: Some(0),
+        //     removes: Some(0),
+        // };
+
+        // app.world.assert_archetype_arr(&[None, Some(info.clone()), Some(info1)]);
+
+        // app.run();
+        // app.run();
+    }
+    #[test]
+    fn test_alter0() {
+        let mut app = crate::prelude::App::new();
+        app.add_system(Update, insert1);
+        app.add_system(Update, print_changed_entities);
+        app.add_system(Update, alter1);
+        // app.add_system(Update, p_set);
+        
         app.run();
-        app.run();
+
+        let mut alter1 = app.world.make_alter::<(), (), Bundle0, ()>();
+        let mut alter2 = app.world.make_alter::<(), (), Bundle1, ()>();
+        let mut alter3 = app.world.make_alter::<(), (), Bundle2, ()>();
+        let mut alter4 = app.world.make_alter::<(), (), (Bundle2, Bundle3), ()>();
+        let mut alter5 = app.world.make_alter::<(), (), (Bundle1, Bundle2, Bundle3, Bundle4, Bundle5), ()>();
+        let mut query5 = app.world.make_query::<(&Age8, &Age9, &Age10, &Age11, &Age12), ()>();
+        loop {
+            for i in 0..100 {
+                let entity = app.world.spawn_empty();
+                let mut alter = alter1.get_param(&app.world);
+                alter.alter(entity, Bundle0::default());
+
+                let entity = app.world.spawn_empty();
+                let mut alter = alter2.get_param(&app.world);
+                alter.alter(entity, Bundle1::default());
+
+                let entity = app.world.spawn_empty();
+                let mut alter = alter3.get_param(&app.world);
+                alter.alter(entity, Bundle2::default());
+
+                let entity = app.world.spawn_empty();
+                let mut alter = alter4.get_param(&app.world);
+                alter.alter(entity, (Bundle2::default(), Bundle3::default()));
+
+                let entity = app.world.spawn_empty();
+                let mut alter = alter5.get_param(&app.world);
+                alter.alter(entity, (Bundle1::default(), Bundle2::default(), Bundle3::default(), Bundle4::default(), Bundle5::default()));
+
+                query5.align(&app.world);
+            }
+            app.run();
+        }
     }
     #[test]
     fn test_alter1() {
@@ -1905,8 +2105,8 @@ mod test_mod {
 
         pub fn insert_entity(mut editor: EntityEditor ) {
             println!("insert_entity start!!!");
-            let e1 = editor.insert_entity((Age21(Vec::new()),));
-            let e2 = editor.insert_entity((Age21(Vec::new()),));
+            let e1 = editor.insert_entity((Age21(Vec::with_capacity(256)),));
+            let e2 = editor.insert_entity((Age21(Vec::with_capacity(256)),));
 
             println!("insert_entity end!!! e: {:?}", (e1, e2));
         }

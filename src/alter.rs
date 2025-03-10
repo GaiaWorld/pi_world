@@ -224,6 +224,7 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
         let (addr, local_index) = self.state.check(&self.query.world, e)?;
+        // log::error!("Alert: {:?}", (self.state.bundle_vec.capacity(), self.state.adding.capacity(), self.state.sorted_add_removes.capacity(), self.state.mapping_dirtys.capacity(), self.state.moving.capacity(), self.state.vec.capacity()));
         self.state.alter(
             &self.query.world,
             local_index,
@@ -249,7 +250,7 @@ impl<
         let q = Query::init_state(world, system_meta);
         QueryAlterState(
             q,
-            AlterState::make(world, A::components(Vec::new()), D::components(Vec::new())),
+            AlterState::make(world, A::components(Vec::with_capacity(256)), D::components(Vec::with_capacity(256))),
             PhantomData,
         )
     }
@@ -343,9 +344,9 @@ impl<A: Bundle> AlterState<A> {
     ) -> Self {
         let state = AState::make(world, add, remove);
         Self {
-            bundle_vec: Vec::new(),
-            vec: Vec::new(),
-            mapping_dirtys: Vec::new(),
+            bundle_vec: Vec::with_capacity(256),
+            vec: Vec::with_capacity(256),
+            mapping_dirtys: Vec::with_capacity(256),
             state,
         }
     }
@@ -440,7 +441,7 @@ impl AState {
         add: Vec<ComponentInfo>,
         remove: Vec<ComponentInfo>,
     ) -> Self {
-        let mut sorted_add_removes = Vec::new();
+        let mut sorted_add_removes = Vec::with_capacity(256);
         world.add_component_indexs(add, &mut sorted_add_removes, true);
         world.add_component_indexs(remove, &mut sorted_add_removes, false);
         sorted_add_removes.sort_unstable();

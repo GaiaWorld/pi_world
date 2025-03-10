@@ -39,6 +39,7 @@ impl Column {
         // self.arr.slice(Range{ start: 0, end: self.arr.capacity(0) }).for_each(|item| {
         //     result += item.memsize();
         // });
+        result += self.info.memsize();
         result
     }
     #[inline(always)]
@@ -290,7 +291,12 @@ impl DerefMut for Blob {
 }
 impl Blob {
     pub fn memsize(&self) -> usize {
-        self.0.vec_capacity() + 24
+        let val = self.0.vec_capacity();
+        if val.is_null() {
+            24
+        } else {
+            val + 24
+        }
     }
 }
 

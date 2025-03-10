@@ -107,11 +107,11 @@ impl<T: SystemSet> IntoSystemSetConfigs for T {
         SetConfig{
             set: self.intern(),
             config: BaseConfig {
-                sets: Vec::new(),
-                schedules: Vec::new(),
-                before: Vec::new(),
-                after: Vec::new(),
-                conditions: Vec::new(),
+                sets: Vec::with_capacity(256),
+                schedules: Vec::with_capacity(256),
+                before: Vec::with_capacity(256),
+                after: Vec::with_capacity(256),
+                conditions: Vec::with_capacity(256),
             },
         }
         
@@ -199,11 +199,11 @@ impl<Marker, T: IntoSystem<Marker, ()>> IntoSystemConfigs<Marker> for T  {
         SystemConfig {
             system: BoxedSystem::Sync(Box::new(self.into_system())),
             config: BaseConfig {
-                sets: Vec::new(),
-                schedules: Vec::new(),
-                before: Vec::new(),
-                after: Vec::new(),
-                conditions: Vec::new(),
+                sets: Vec::with_capacity(256),
+                schedules: Vec::with_capacity(256),
+                before: Vec::with_capacity(256),
+                after: Vec::with_capacity(256),
+                conditions: Vec::with_capacity(256),
             },
         }
     }
