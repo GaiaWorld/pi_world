@@ -122,7 +122,7 @@ mod sealed {
 }
 
 // Dummy plugin used to temporary hold the place in the plugin registry
-struct PlaceholderPlugin;
-impl Plugin for PlaceholderPlugin {
-    fn build(&self, _app: &mut App) {}
-}
+// struct PlaceholderPlugin;
+// impl Plugin for PlaceholderPlugin {
+//     fn build(&self, _app: &mut App) {}
+// }

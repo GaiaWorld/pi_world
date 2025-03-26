@@ -135,8 +135,8 @@ impl ArchetypeDependResult {
             _ => (),
         }
     }
-    pub fn insert(&mut self, ar: &Archetype, world: &World, components: Vec<ComponentInfo>) {
-        let id = ComponentInfo::calc_id(&components);
+    pub fn insert(&mut self, _ar: &Archetype, world: &World, components: Vec<ComponentInfo>) {
+        // let id = ComponentInfo::calc_id(&components);
         // if &id != ar.id() {
         //     return;
         // }

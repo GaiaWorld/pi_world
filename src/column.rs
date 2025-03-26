@@ -2,7 +2,7 @@ use core::fmt::*;
 use std::{
     cell::SyncUnsafeCell,
     mem::transmute,
-    ops::{Deref, DerefMut, Range},
+    ops::{Deref, DerefMut},
     sync::atomic::AtomicUsize,
 };
 
@@ -134,7 +134,7 @@ impl Column {
     where
         F: Fn(&BlobRef, Row, &Archetype),
     {
-        let mut size = 0;
+        // let mut size = 0;
         for ar in archetypes.iter() {
             if let Some(blob) = self.arr.load(ar.index.index()) {
                 // 判断该原型是否包含该列
@@ -151,7 +151,7 @@ impl Column {
                 for row in 0..ar.len().index() {
                     set_fn(&r, row.into(), &ar)
                 }
-                size += blob.memsize();
+                // size += blob.memsize();
             }
         }
         // log::warn!("Column {:?}", size);
@@ -399,12 +399,12 @@ impl<'a> BlobRef<'a> {
         }
     }
     #[inline(always)]
-    pub fn get<T>(&self, row: Row, e: Entity) -> &'a T {
+    pub fn get<T>(&self, row: Row, _e: Entity) -> &'a T {
         // self.trace(row, e, "get", std::ptr::null_mut());
         unsafe { transmute(self.get_blob(row)) }
     }
     #[inline(always)]
-    pub fn get_mut<T>(&self, row: Row, e: Entity) -> &'a mut T {
+    pub fn get_mut<T>(&self, row: Row, _e: Entity) -> &'a mut T {
         // self.trace(row, e, "get_mut", std::ptr::null_mut());
         unsafe { transmute(self.load_blob(row)) }
     }

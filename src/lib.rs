@@ -7,7 +7,7 @@
 #![feature(test)]
 #![feature(specialization)]
 #![allow(invalid_type_param_default)]
-#[warn(async_fn_in_trait)]
+#![allow(elided_named_lifetimes)]
 
 extern crate test;
 /// Most commonly used re-exported types.

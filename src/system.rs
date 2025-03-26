@@ -321,10 +321,10 @@ pub fn relate(r: &Related<ComponentIndex>, archetype: &Archetype, mut start: usi
         RelateNode::new(true),
     )
 }
-// 获取该原型的每组件的读写依赖
-pub fn depend(r: &Related<ComponentIndex>, archetype: &Archetype) {
-    todo!()
-}
+// // 获取该原型的每组件的读写依赖
+// pub fn depend(r: &Related<ComponentIndex>, archetype: &Archetype) {
+//     todo!()
+// }
 /// The metadata of a [`System`].
 pub struct SystemMeta {
     pub(crate) type_info: TypeInfo,
