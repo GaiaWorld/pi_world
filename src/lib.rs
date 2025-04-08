@@ -9,6 +9,8 @@
 #![allow(invalid_type_param_default)]
 #![allow(elided_named_lifetimes)]
 
+// 当编译wasm时启用重新编译Rust标准库使用test做基准测试会出现重复链接的编译错误
+#[cfg(not(target_arch = "wasm32"))]
 extern crate test;
 /// Most commonly used re-exported types.
 pub mod prelude {
