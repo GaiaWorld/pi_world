@@ -18,7 +18,7 @@ use crate::archetype::{
 use crate::column::Column;
 #[cfg(debug_assertions)]
 use crate::column::{ARCHETYPE_INDEX, COMPONENT_INDEX};
-use crate::editor::{EditorState, EntityEditor};
+use crate::editor::{EditorState, EntityEditorInner};
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, InsertState};
@@ -28,6 +28,7 @@ use crate::prelude::Mut;
 use crate::query::{QueryError, QueryState};
 use crate::single_res::TickRes;
 use crate::system::{SystemMeta, TypeInfo};
+use crate::world_ptr::Ptr;
 use core::fmt::*;
 use core::result::Result;
 use std::marker::PhantomData;
@@ -136,6 +137,7 @@ pub struct World {
     archetype_ok_key: EventListKey,
     // 世界当前的tick
     tick: ShareUsize,
+    default_system_meta: SystemMeta,
 }
 impl Debug for World {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -147,7 +149,15 @@ impl Debug for World {
     }
 }
 impl World {
-    pub fn new() -> Self {
+    #[inline]
+    pub fn create() -> Box<Self> {
+        // TODO, 这么做依然无法阻止Self发生移动，但会规避很多情况
+        let r = Box::new(Self::new());
+        println!("create============{:p}", &*r as &World);
+        r
+    }
+    
+    fn new() -> Self {
         #[cfg(debug_assertions)]
         match std::env::var("ECS_DEBUG") {
             Ok(r) => {
@@ -195,6 +205,7 @@ impl World {
             archetype_ok_key,
             tick: ShareUsize::new(1),
             entity_editor_state: Default::default(),
+            default_system_meta: SystemMeta::new(TypeInfo::of::<()>()),
         }
     }
     // 获得世界当前的tick
@@ -308,7 +319,7 @@ impl World {
         let components = B::components(Vec::new());
         let ar = self.find_ar(components);
         let s = B::init_item(self, &ar);
-        InsertState::new(ar, s)
+        InsertState::new(ar, s, Ptr::new(&mut self.default_system_meta))
     }
     /// 兼容bevy的接口，提供query
     pub fn query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
@@ -341,11 +352,12 @@ impl World {
         query_state.align(self);
         // 将新多出来的原型，创建原型空映射
         alter_state.align(self,  &query_state.archetypes);
-        QueryAlterState(query_state, alter_state, PhantomData)
+        QueryAlterState(query_state, alter_state, Ptr::new(self), PhantomData)
     }
     /// 创建一个实体编辑器
-    pub fn make_entity_editor(&mut self) -> EntityEditor {
-        EntityEditor::new(self)
+    pub fn make_entity_editor(&mut self) -> EntityEditorInner {
+        println!("make_entity_editor====={:p}", self);
+        EntityEditorInner::new(self)
     }
 
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {

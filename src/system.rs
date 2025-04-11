@@ -9,12 +9,13 @@ use std::{
     pin::Pin,
 };
 
+use pi_null::Null;
 use pi_share::Share;
 
 use crate::{
     archetype::{Archetype, ComponentInfo, ShareArchetype},
     column::Column,
-    world::{ComponentIndex, World},
+    world::{ComponentIndex, Tick, World},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -327,6 +328,9 @@ pub fn relate(r: &Related<ComponentIndex>, archetype: &Archetype, mut start: usi
 // }
 /// The metadata of a [`System`].
 pub struct SystemMeta {
+    pub(crate) last_run: Tick, // 系统最后一次运行的时间
+    pub(crate) this_run: Tick, // 本次运行时的tick
+
     pub(crate) type_info: TypeInfo,
     pub(crate) vec: Vec<Share<Related<ComponentIndex>>>, // SystemParam参数的组件关系列表
     pub(crate) cur_related: Related<ComponentIndex>,     // 当前SystemParam参数的关系
@@ -348,6 +352,8 @@ impl SystemMeta {
 
             res_reads: Default::default(),
             res_writes: Default::default(),
+            last_run: Tick::null(),
+            this_run: Tick::null(),
         }
     }
     /// Returns the system's type_id

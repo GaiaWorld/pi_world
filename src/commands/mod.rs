@@ -1,6 +1,7 @@
 #![allow(warnings)]
 mod command_queue;
 use crate::{insert::Bundle, prelude::{Entity, World}};
+use crate as pi_world;
 
 pub use command_queue::CommandQueue;
 use pi_world_macros::SystemParam;
@@ -116,7 +117,7 @@ pub trait Command: Send + 'static {
 #[derive(SystemParam)]
 pub struct Commands<'w> {
     // queue: Deferred<'w, CommandQueue>,
-    insert: crate::insert::Insert<'w, ()>,
+    insert: crate::insert::InsertInner<'w, ()>,
     // entities: &'w Entities,
 }
 

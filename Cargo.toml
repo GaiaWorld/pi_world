@@ -17,13 +17,14 @@ single_thread = []
 trace = []
 
 [dependencies]
+derive-deref-rs = "0.1"
 backtrace = "0.3"
 pi_map = "0.2"
 bitflags="2.9"
 smallvec="1.13"
 fixedbitset="0.5"
 pi_null = "0.1"
-pi_share = "0.5"
+pi_share = {version="0.5", features = ["rc"]}
 pi_key_alloter = "0.6"
 pi_slot = "0.4"
 pi_append_vec = "0.6"
@@ -48,6 +49,7 @@ serde = { version = "=1.0.203", features = ["serde_derive"] }
 [dev-dependencies]
 cgmath="0.18"
 rand = "0.8"
+pi_world_2 = {version = "0.2.0", package="pi_world"}
 
 [workspace]
 members = ["macros"]

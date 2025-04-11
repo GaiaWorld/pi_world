@@ -60,16 +60,7 @@ impl Manifest {
         let deps_dev = self.manifest.get("dev-dependencies");
 
         deps.and_then(find_in_deps)
-            .or_else(|| deps_dev.and_then(find_in_deps)).or_else(|| {
-                if let Some(p) = self.manifest.get("package") {
-                    match p.get("name") {
-                        Some(r) if r.as_str().unwrap() == name => Some(Self::parse_str::<syn::Path>("crate")),
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            })
+            .or_else(|| deps_dev.and_then(find_in_deps))
     }
 
     // /// Returns the path for the crate with the given name.

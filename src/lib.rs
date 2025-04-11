@@ -1,5 +1,6 @@
 #![feature(const_type_id)]
 #![feature(get_mut_unchecked)]
+#![feature(associated_type_defaults)]
 #![allow(invalid_reference_casting)]
 #![allow(incomplete_features)]
 #![feature(downcast_unchecked)]
@@ -9,7 +10,7 @@
 #![allow(invalid_type_param_default)]
 #![allow(elided_named_lifetimes)]
 
-extern crate test;
+extern crate test as test1;
 /// Most commonly used re-exported types.
 pub mod prelude {
 
@@ -20,14 +21,14 @@ pub mod prelude {
         insert::{Insert, Bundle, Component},
         alter::Alter,
         editor::EntityEditor,
-        event:: {Event, EventReader, EventSender, EventWriter, ComponentChanged, ComponentAdded, ComponentRemoved},
+        event:: {Event, EventReader, EventWriter, ComponentChanged, ComponentAdded, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
-        single_res::{SingleRes, SingleResMut},
-        multi_res::{MultiRes, MultiResMut},
+        single_res::{SingleRes, SingleResMut, OptionSingleRes, OptionSingleResMut},
+        // multi_res::{MultiRes, MultiResMut},
         filter::{Changed, With, Without, Or, FilterComponents},
         fetch::{Has, Ref, Mut, OrDefault, OrDefaultRef, Ticker, ComponentId, ArchetypeName},
         system::{BoxedSystem, IntoSystem, IntoAsyncSystem, SystemMeta},
-        system_params::{SystemParam, Local},
+        system_params::{SystemParam, Local, ComponentDebugIndex},
         world::{Entity, World, FromWorld, Tick},
         listener::Listener,
         plugin::{Plugin, Plugins},
@@ -65,10 +66,12 @@ pub mod dot;
 pub mod schedule;
 pub mod editor;
 pub mod commands;
+pub mod entry_query;
+pub mod world_ptr;
 
-pub mod example;
+mod test;
 pub mod schedule_config;
 mod plugin;
 mod plugin_group;
 pub mod utils;
-mod debug;
+pub mod debug;

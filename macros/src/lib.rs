@@ -226,17 +226,15 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
                 //     <(#(#tuple_types,)*) as #path::prelude::SystemParam>::res_depend(world, system_meta, &state.state, res_tid, res_name, single, result);
                 // }
 
-                fn align<'w>(world: &'w #path::world::World, system_meta: &'w #path::system::SystemMeta, state: &'w mut Self::State) {
-                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::align(world, system_meta, &mut state.state);
+                fn align<'w>(world: &'w World, state: &'w mut Self::State) {
+                    <(#(#tuple_types,)*) as #path::prelude::SystemParam>::align(world, &mut state.state);
                 }
 
                 fn get_param<'w>(
                     world: &'w #path::world::World,
-                    system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
-                    tick: #path::world::Tick,
                 ) -> Self::Item<'w> {
-                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, system_meta, &mut state.state, tick);
+                    let (#(#tuple_patterns,)*) = <(#(#tuple_types,)*) as #path::prelude::SystemParam>::get_param(world, &mut state.state);
                     #struct_name {
                         #(#fields: #field_locals,)*
                     }
@@ -245,11 +243,9 @@ pub fn derive_system_param(input: TokenStream) -> TokenStream {
 
                 fn get_self<'w>(
                     world: &'w #path::world::World,
-                    system_meta: &'w #path::system::SystemMeta,
                     state: &'w mut Self::State,
-                    tick: #path::world::Tick,
                 ) -> Self {
-                    unsafe { std::mem::transmute(Self::get_param(world, system_meta, state, tick)) }
+                    unsafe { std::mem::transmute(Self::get_param(world, state)) }
                 }
             }
             // Safety: Each field is `ReadOnlySystemParam`, so this can only read from the `World`
@@ -642,7 +638,7 @@ pub fn impl_param_set(_input: TokenStream) -> TokenStream {
         param_fn_muts.push(quote! {
             #[doc = #comment]
             /// No other parameters may be accessed while this one is active.
-            pub fn #fn_name(&mut self) -> &mut SystemParamItem<'w, #param>{
+            pub fn #fn_name(&mut self) -> &mut SystemParamFetch2<'w, #param>{
                 // SAFETY: systems run without conflicts with other systems.
                 // Conflicting params in ParamSet are not accessible at the same time
                 // ParamSets are guaranteed to not conflict with other SystemParams
@@ -657,7 +653,7 @@ pub fn impl_param_set(_input: TokenStream) -> TokenStream {
         let param_fn_mut = &param_fn_muts[0..param_count];
         tokens.extend(TokenStream::from(quote! {
 
-            impl<'w,  #(#param: SystemParam + 'static,)*> ParamSet<'w, (#(#param,)*)>
+            impl<'w,  #(#param: SystemFetch + 'static,)*> ParamSetInner<'w, (#(#param,)*)>
             {
                 #(#param_fn_mut)*
             }

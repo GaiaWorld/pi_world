@@ -12,6 +12,7 @@ use crate::filter::FilterComponents;
 use crate::system::{relate, Related, SystemMeta};
 use crate::system_params::SystemParam;
 use crate::world::*;
+use crate::world_ptr::Ptr;
 use fixedbitset::FixedBitSet;
 use pi_null::*;
 use pi_share::Share;
@@ -95,10 +96,11 @@ pub enum QueryError {
 //     }
 // }
 
-pub struct Query<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
-    pub(crate) world: &'w World,
+pub type Query<'w, Q, F=()> = &'w mut QueryInner<'w, Q, F>;
+
+pub struct QueryInner<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static = ()> {
     pub(crate) state: &'w mut QueryState<Q, F>,
-    pub(crate) tick: Tick,
+    pub(crate) world: &'w World,
     // 缓存上次的索引映射关系
     cache_index: SyncUnsafeCell<ArchetypeIndex>,
     fetch_filter: SyncUnsafeCell<
@@ -108,29 +110,28 @@ pub struct Query<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static
         )>,
     >,
 }
-unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Send for Query<'w, Q, F> {}
-unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Sync for Query<'w, Q, F> {}
-impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
-    pub fn new(world: &'w World, state: &'w mut QueryState<Q, F>, tick: Tick) -> Self {
-        Query {
-            world,
+unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Send for QueryInner<'w, Q, F> {}
+unsafe impl<'w, Q: FetchComponents, F: FilterComponents> Sync for QueryInner<'w, Q, F> {}
+impl<'w, Q: FetchComponents, F: FilterComponents> QueryInner<'w, Q, F> {
+    pub fn new(state: &'w mut QueryState<Q, F>, world: &'w World) -> Self {
+        QueryInner {
             state,
-            tick,
+            world,
             cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
             fetch_filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
     pub fn tick(&self) -> Tick {
-        self.tick
+        self.state.system_meta.this_run
     }
 
     pub fn last_run(&self) -> Tick {
-        self.state.last_run
+        self.state.system_meta.last_run
     }
 
     pub fn contains(&self, entity: Entity) -> bool {
-        self.state.contains(self.world, entity)
+        self.state.contains(&self.world, entity)
     }
 
     pub fn get(
@@ -139,15 +140,14 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
         self.state
             .as_readonly()
-            .get_by_tick(self.world, self.tick, e, &self.cache_index, unsafe {
+            .get_by_tick(&self.world, e, &self.cache_index, unsafe {
                 transmute(&self.fetch_filter) // unsafe transmute 要求所有的FetchComponents的ReadOnly和Fetch类型是相同的
             })
     }
 
     pub fn get_mut(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
         let r = self.state.get_by_tick(
-            self.world,
-            self.tick,
+            &self.world,
             e,
             &self.cache_index,
             &self.fetch_filter,
@@ -168,48 +168,44 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
     }
 
     pub fn iter(&self) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
-        QueryIter::new(self.world, self.state.as_readonly(), self.tick)
+        let state = unsafe {&mut *(self.state as *const QueryState<Q, F> as usize as *mut QueryState<Q, F>)}; // 非安全， 强制可变
+        state.align(self.world);
+        println!("iter=============={:p}", self.world);
+        QueryIter::new(self.world, self.state.as_readonly())
     }
     pub fn iter_mut(&mut self) -> QueryIter<'_, Q, F> {
-        QueryIter::new(self.world, &self.state, self.tick)
+        self.state.align(self.world);
+        QueryIter::new(self.world, &self.state)
     }
 }
 
+// pub type QueryRef
+
 impl<'a, Q: FetchComponents + 'static, F: FilterComponents + Send + Sync> SystemParam
-    for Query<'a, Q, F>
+    for QueryInner<'a, Q, F>
 {
     type State = QueryState<Q, F>;
-    type Item<'w> = Query<'w, Q, F>;
+    type Item<'w> = QueryInner<'w, Q, F>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         Self::State::create(world, system_meta)
     }
-    fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
-        state.align(world);
+    fn align(world: &World, state: &mut Self::State) {
+        // state.align(world);
     }
 
     fn get_param<'w>(
         world: &'w World,
-        _system_meta: &'w SystemMeta,
         state: &'w mut Self::State,
-        tick: Tick,
     ) -> Self::Item<'w> {
-        Query::new(world, state, tick)
+        QueryInner::new(state, world)
     }
 
     fn get_self<'w>(
         world: &'w World,
-        system_meta: &'w SystemMeta,
         state: &'w mut Self::State,
-        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
-    }
-}
-
-impl<'w, Q: FetchComponents, F: FilterComponents> Drop for Query<'w, Q, F> {
-    fn drop(&mut self) {
-        self.state.last_run = self.tick;
+        unsafe { transmute(Self::get_param(world, state)) }
     }
 }
 
@@ -244,6 +240,7 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
     pub(crate) qstate: QState,
+    pub(crate) system_meta: Ptr<SystemMeta>, // 
 }
 
 impl<Q: FetchComponents + 'static, F: FilterComponents + 'static> Deref for QueryState<Q, F> {
@@ -259,6 +256,10 @@ impl<Q: FetchComponents + 'static, F: FilterComponents + 'static> DerefMut for Q
 }
 
 impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
+    #[inline(always)]
+    pub fn align(&mut self, world: &World) {
+        self.qstate.align(world);
+    }
     pub fn as_readonly(&self) -> &QueryState<Q::ReadOnly, F> {
         unsafe { &*(self as *const QueryState<Q, F> as *const QueryState<Q::ReadOnly, F>) }
     }
@@ -269,59 +270,55 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             fetch_state,
             filter_state,
             qstate: QState::new(system_meta),
+            system_meta: Ptr::new(system_meta),
         }
     }
     pub fn contains(&self, world: &World, entity: Entity) -> bool {
-        self.check(world, entity).is_ok()
+        self.qstate.check(world, entity).is_ok()
     }
     pub fn last_run(&self) -> Tick {
-        self.last_run
+        self.system_meta.last_run
     }
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Query<Q, F> {
-        Query::new(world, self, world.tick())
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> QueryInner<Q, F> {
+        QueryInner::new(self, world)
     }
     pub fn get<'w>(
         &'w self,
-        world: &'w World,
+        world: &World, 
         e: Entity,
     ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
-        let tick = world.tick();
         let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
         let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
         self.as_readonly()
-            .get_by_tick(world, tick, e, &cache_index, &fetch_filter)
+            .get_by_tick(world, e, &cache_index, &fetch_filter)
     }
 
     pub fn get_mut(
         &mut self,
-        world: &mut World,
+        world: &World, 
         e: Entity,
     ) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
-        let tick = world.tick();
         let cache_index = SyncUnsafeCell::new(ArchetypeIndex::null());
         let fetch_filter = SyncUnsafeCell::new(MaybeUninit::uninit());
-        let r = self.get_by_tick(world, tick, e, &cache_index, &fetch_filter);
+        let r = self.get_by_tick(world, e, &cache_index, &fetch_filter);
         unsafe { transmute(r) }
     }
     pub fn iter<'w>(
         &'w mut self,
-        world: &'w World,
+        world: &'w World, 
     ) -> QueryIter<'_, <Q as FetchComponents>::ReadOnly, F> {
         self.align(world);
-        let tick = world.tick();
-        QueryIter::new(world, self.as_readonly(), tick)
+        QueryIter::new(world, self.as_readonly())
     }
-    pub fn iter_mut<'w>(&'w mut self, world: &'w mut World) -> QueryIter<'_, Q, F> {
+    pub fn iter_mut<'w>(&'w mut self, world: &'w World) -> QueryIter<'_, Q, F> {
         self.align(world);
-        let tick = world.tick();
-        QueryIter::new(world, self, tick)
+        QueryIter::new(world, self)
     }
 
     #[inline(always)]
     pub fn get_by_tick<'w>(
         &self,
-        world: &'w World,
-        tick: Tick,
+        world: &World, 
         e: Entity,
         cache_index: &SyncUnsafeCell<ArchetypeIndex>,
         fetch_filter: &SyncUnsafeCell<
@@ -339,15 +336,15 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
                 world,
                 &self.fetch_state,
                 addr.archetype_index(),
-                tick,
-                self.last_run,
+                self.system_meta.this_run,
+                self.system_meta.last_run,
             );
             let filter = F::init_filter(
                 world,
                 &self.filter_state,
                 addr.archetype_index(),
-                tick,
-                self.last_run,
+                self.system_meta.this_run,
+                self.system_meta.last_run,
             );
 
             unsafe { *cache_index.get() = addr.archetype_index() };
@@ -368,7 +365,6 @@ pub struct QState {
     pub(crate) archetypes: Vec<ShareArchetype>, // 每原型
     pub(crate) bit_set: FixedBitSet,  // world上的原型索引是否在本地
     pub(crate) bit_set_start: usize,
-    pub(crate) last_run: Tick, // 上次运行的tick
 }
 
 impl QState {
@@ -381,16 +377,21 @@ impl QState {
             archetypes: Vec::with_capacity(256),
             bit_set: Default::default(),
             bit_set_start: 0,
-            last_run: Tick::default(),
         }
     }
 
     // 对齐world上新增的原型
+    #[inline(always)]
     pub fn align(&mut self, world: &World) {
-        let len = world.archetype_arr.len();
-        if len == self.archetypes_len {
+        if world.archetype_arr.len() == self.archetypes_len {
             return;
         }
+        self.align1(world);
+    }
+
+    #[inline(always)]
+    pub fn align1(&mut self, world: &World) {
+        let len = world.archetype_arr.len();
         // 检查新增的原型
         for i in self.archetypes_len..len {
             let ar = unsafe { world.archetype_arr.get_unchecked(i) };
@@ -456,9 +457,8 @@ impl QState {
 }
 
 pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static> {
-    pub(crate) world: &'w World,
     pub(crate) state: &'w QueryState<Q, F>,
-    pub(crate) tick: Tick,
+    pub(crate) world: &'w World,
     // 原型的位置
     pub(crate) ar_index: LocalIndex,
     // 原型
@@ -471,11 +471,10 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     /// # Safety
     /// - `world` must have permission to access any of the components registered in `query_state`.
     /// - `world` must be the same one used to initialize `query_state`.
-    pub fn new(world: &'w World, state: &'w QueryState<Q, F>, tick: Tick) -> Self {
+    pub fn new(world: &'w World,  state: &'w QueryState<Q, F>) -> Self {
         QueryIter {
             world,
             state,
-            tick,
             ar: world.empty_archetype(),
             ar_index: state.archetypes.len().into(),
             fetch_filter: MaybeUninit::uninit(),
@@ -494,26 +493,26 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
         self.row = self.ar.len();
         if self.row.0 > 0 {
             let fetch = Q::init_fetch(
-                self.world,
+                &self.world,
                 &self.state.fetch_state,
                 self.ar.index(),
-                self.tick,
-                self.state.last_run,
+                self.state.system_meta.this_run,
+                self.state.system_meta.last_run,
             );
             let filter = F::init_filter(
-                self.world,
+                &self.world,
                 &self.state.filter_state,
                 self.ar.index(),
-                self.tick,
-                self.state.last_run,
+                self.state.system_meta.this_run,
+                self.state.system_meta.last_run,
             );
             self.fetch_filter = MaybeUninit::new((fetch, filter));
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
-            // println!("iter_normal: {:?}", (self.e, self.row, self.ar.index(), self.ar.name()));
+            println!("iter_normal: {:?}", (self.e, self.row, self.ar.index(), self.ar.name()));
             if self.row.0 > 0 {
                 self.row.0 -= 1;
                 self.e = self.ar.get_unchecked(self.row);
@@ -551,7 +550,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
 impl<'w, Q: FetchComponents, F: FilterComponents> Iterator for QueryIter<'w, Q, F> {
     type Item = Q::Item<'w>;
 
-    #[inline(always)]
+    // #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_normal()
     }

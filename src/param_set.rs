@@ -3,51 +3,47 @@
 
 use std::mem::transmute;
 
-use crate::function_system::SystemParamItem;
+use crate::function_system::SystemParamFetch2;
 use crate::system::SystemMeta;
-use crate::system_params::SystemParam;
+use crate::system_params::{SystemFetch, SystemParam};
 use crate::world::*;
 use pi_world_macros::impl_param_set;
 
 pub use pi_world_macros::ParamSetElement;
 
-
-pub struct ParamSet<'w, T: 'static + SystemParam>(<T as SystemParam>::Item<'w>);
+pub type ParamSet<'w, T> = &'w mut ParamSetInner<'w, T>;
+pub struct ParamSetInner<'w, T: 'static + SystemFetch>(<<T as SystemFetch>::Target as SystemParam>::Item<'w>);
 
 impl_param_set!();
 
 
-impl<T: 'static + SystemParam> SystemParam for ParamSet<'_, T> {
-    type State = <T as SystemParam>::State;
+impl<T: 'static + SystemFetch> SystemParam for ParamSetInner<'_, T> {
+    type State = <<T as SystemFetch>::Target as SystemParam>::State;
 
-    type Item<'w> = ParamSet<'w, T>;
+    type Item<'w> = ParamSetInner<'w, T>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.param_set_start();
-        let s = T::init_state(world, meta);
+        let s = T::Target::init_state(world, meta);
         meta.param_set_end();
         // system_meta.param_set_ok();
         s
     }
 
-    fn align(world: &World, system_meta: &SystemMeta, state: &mut Self::State) {
-        <T as SystemParam>::align(world, system_meta, state)
+    fn align(world: &World, state: &mut Self::State) {
+        <<T as SystemFetch>::Target as SystemParam>::align(world, state)
     }
     fn get_param<'world>(
         world: &'world World,
-        system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
-        tick: Tick,
     ) -> Self::Item<'world> {
-        ParamSet(<T as SystemParam>::get_param(world, system_meta, state, tick))
+        ParamSetInner(<<T as SystemFetch>::Target as SystemParam>::get_param(world, state))
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
-        system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
-        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+        unsafe { transmute(Self::get_param(world, state)) }
     }
 }

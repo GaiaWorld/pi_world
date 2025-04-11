@@ -12,88 +12,86 @@ use crate::column::Column;
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::world::*;
+use crate::world_ptr::Ptr;
 pub use pi_world_macros::Bundle;
 pub use pi_world_macros::Component;
 
-pub struct Insert<'world, B: Bundle> {
-    pub(crate) world: &'world World,
+pub type Insert<'w, B> = &'w mut InsertInner<'w, B>;
+pub struct InsertInner<'world, B: Bundle> {
     state: &'world InsertState<B>,
-    tick: Tick,
+    world: &'world World,
 }
 
-impl<'world, B: Bundle> Insert<'world, B> {
+impl<'world, B: Bundle> InsertInner<'world, B> {
     #[inline(always)]
-    pub(crate) fn new(world: &'world World, state: &'world InsertState<B>, tick: Tick) -> Self {
-        Insert { world, state, tick }
+    pub(crate) fn new(state: &'world InsertState<B>, world: &'world World) -> Self {
+        InsertInner { state, world }
     }
     #[inline]
     pub fn tick(&self) -> Tick {
-        self.tick
+        self.state.system_meta.this_run
     }
     #[inline]
     pub fn insert(&self, components: B) -> Entity {
         self.state
-            .insert_with_tick(&self.world, components, self.tick)
+            .insert_with_tick(self.world, components)
     }
     #[inline(always)]
     pub fn batch<'w, I: IntoIterator<Item = B>>(
         &'w self,
         iter: I,
     ) -> InsertBatchIter<'_, <I as IntoIterator>::IntoIter, B> {
-        InsertBatchIter::new(self.world, self.state, self.tick, iter.into_iter())
+        InsertBatchIter::new(&self.world, self.state, iter.into_iter())
     }
 }
 
-impl<B: Bundle + 'static> SystemParam for Insert<'_, B> {
+impl<B: Bundle + 'static> SystemParam for InsertInner<'_, B> {
     type State = InsertState<B>;
-    type Item<'w> = Insert<'w, B>;
+    type Item<'w> = InsertInner<'w, B>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         // 加meta 如果world上没有找到对应的原型，则创建并放入world中
         let components = B::components(Vec::with_capacity(256));
         let ar = meta.insert(world, components);
         let s = B::init_item(world, &ar);
-        InsertState::new(ar, s)
+        InsertState::new(ar, s, Ptr::new(meta))
     }
     #[inline]
     fn get_param<'world>(
         world: &'world World,
-        _system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
-        tick: Tick,
     ) -> Self::Item<'world> {
-        Insert::new(world, state, tick)
+        InsertInner::new(state, world)
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
-        system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
-        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+        unsafe { transmute(Self::get_param(world, state)) }
     }
 }
 
 pub struct InsertState<B: Bundle> {
     pub(crate) archetype: ShareArchetype,
     pub(crate) item: B::Item,
+    pub(crate) system_meta: Ptr<SystemMeta>,
 }
 
 impl<B: Bundle> InsertState<B> {
     #[inline(always)]
-    pub fn new(archetype: ShareArchetype, item: B::Item) -> Self {
-        Self { archetype, item }
+    pub fn new(archetype: ShareArchetype, item: B::Item, system_meta: Ptr<SystemMeta>) -> Self {
+        Self { archetype, item, system_meta}
     }
     #[inline(always)]
     pub fn insert(&self, world: &World, components: B) -> Entity {
-        self.insert_with_tick(world, components, world.tick())
+        self.insert_with_tick(world, components)
     }
     #[inline(always)]
-    pub fn insert_with_tick(&self, world: &World, components: B, tick: Tick) -> Entity {
+    pub fn insert_with_tick(&self, world: &World, components: B) -> Entity {
         let (r, row) = self.archetype.alloc();
         let e = world.insert_addr(self.archetype.index(), row.into());
-        B::insert(&self.item, components, e, row.into(), tick);
+        B::insert(&self.item, components, e, row.into(), self.system_meta.this_run);
         *r = e;
         e
     }
@@ -103,11 +101,11 @@ impl<B: Bundle> InsertState<B> {
         world: &'w World,
         iter: I,
     ) -> InsertBatchIter<'_, <I as IntoIterator>::IntoIter, B> {
-        InsertBatchIter::new(world, self, world.tick(), iter.into_iter())
+        InsertBatchIter::new(world, self, iter.into_iter())
     }
     #[inline]
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Insert<'w, B> {
-        Insert::new(world, self, world.tick())
+    pub fn get_param<'w>(&'w mut self,  world: &'w World) -> InsertInner<'w, B> {
+        InsertInner::new(self, world)
     }
 }
 pub struct InsertBatchIter<'w, I, B>
@@ -121,7 +119,7 @@ where
     iter: I,
 }
 impl<'w, I: Iterator<Item = B>, B: Bundle> InsertBatchIter<'w, I, B> {
-    pub fn new(world: &'w World, state: &'w InsertState<B>, tick: Tick, iter: I) -> Self {
+    pub fn new(world: &'w World, state: &'w InsertState<B>, iter: I) -> Self {
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
         let ptr: *mut SlotMap<Entity, EntityAddr> = unsafe { transmute(&world.entities) };
@@ -133,7 +131,7 @@ impl<'w, I: Iterator<Item = B>, B: Bundle> InsertBatchIter<'w, I, B> {
         Self {
             world,
             state,
-            tick,
+            tick: state.system_meta.this_run,
             iter,
         }
     }
@@ -157,7 +155,7 @@ where
 
     fn next(&mut self) -> Option<Entity> {
         let item = self.iter.next()?;
-        let i = Insert::<B>::new(&self.world, &mut self.state, self.tick);
+        let i = InsertInner::<B>::new( &mut self.state, &self.world);
         Some(i.insert(item))
     }
 

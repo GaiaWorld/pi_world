@@ -27,11 +27,12 @@ use crate::column::{BlobRef, Column};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::Bundle;
-use crate::query::{LocalIndex, Query, QueryError, QueryIter, QueryState};
+use crate::query::{LocalIndex, QueryInner, QueryError, QueryIter, QueryState};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::utils::VecExt;
 use crate::world::*;
+use crate::world_ptr::Ptr;
 
 // // todo 移除
 // pub struct Alterer<
@@ -150,32 +151,33 @@ use crate::world::*;
 //     }
 // }
 
-pub struct Alter<
+pub type Alter<'w, Q, F, A, D> = &'w mut AlterInner<'w, Q, F, A, D>;
+pub struct AlterInner<
     'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle = (),
     D: Bundle = (),
 > {
-    query: Query<'w, Q, F>,
+    query: QueryInner<'w, Q, F>,
     state: &'w mut AlterState<A>,
     _k: PhantomData<D>,
 }
 
 unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Send for Alter<'w, Q, F, A, D>
+    Send for AlterInner<'w, Q, F, A, D>
 {
 }
 unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Sync for Alter<'w, Q, F, A, D>
+    Sync for AlterInner<'w, Q, F, A, D>
 {
 }
 
 impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Alter<'w, Q, F, A, D>
+    AlterInner<'w, Q, F, A, D>
 {
-    pub(crate) fn new(query: Query<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
-        Alter {
+    pub(crate) fn new(query: QueryInner<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
+        AlterInner {
             query,
             state,
             _k: PhantomData,
@@ -226,12 +228,12 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
         let (addr, local_index) = self.state.check(&self.query.world, e)?;
         // log::error!("Alert: {:?}", (self.state.bundle_vec.capacity(), self.state.adding.capacity(), self.state.sorted_add_removes.capacity(), self.state.mapping_dirtys.capacity(), self.state.moving.capacity(), self.state.vec.capacity()));
         self.state.alter(
-            &self.query.world,
+            self.query.world,
             local_index,
             e,
             addr,
             components,
-            self.query.tick,
+            self.query.state.system_meta.this_run,
         )
     }
 }
@@ -241,50 +243,47 @@ impl<
         F: FilterComponents + Send + Sync + 'static,
         A: Bundle + 'static,
         D: Bundle + Send + 'static,
-    > SystemParam for Alter<'_, Q, F, A, D>
+    > SystemParam for AlterInner<'_, Q, F, A, D>
 {
     type State = QueryAlterState<Q, F, A, D>;
-    type Item<'w> = Alter<'w, Q, F, A, D>;
+    type Item<'w> = AlterInner<'w, Q, F, A, D>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let q = Query::init_state(world, system_meta);
+        let q = QueryInner::init_state(world, system_meta);
         QueryAlterState(
             q,
             AlterState::make(world, A::components(Vec::with_capacity(256)), D::components(Vec::with_capacity(256))),
+            Ptr::new(world),
             PhantomData,
         )
     }
-    fn align(world: &World, _system_meta: &SystemMeta, state: &mut Self::State) {
+    fn align(world: &World, state: &mut Self::State) {
         state.0.align(world);
     }
 
     fn get_param<'w>(
         world: &'w World,
-        _system_meta: &'w SystemMeta,
         state: &'w mut Self::State,
-        tick: Tick,
     ) -> Self::Item<'w> {
         // 将新多出来的原型，创建原型空映射
-        state.1.align(world, &state.0.archetypes);
-        Alter::new(Query::new(world, &mut state.0, tick), &mut state.1)
+        state.1.align(&state.2, &state.0.archetypes);
+        AlterInner::new(QueryInner::new( &mut state.0, world), &mut state.1)
     }
 
     fn get_self<'w>(
         world: &'w World,
-        system_meta: &'w SystemMeta,
         state: &'w mut Self::State,
-        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+        unsafe { transmute(Self::get_param(world, state)) }
     }
 }
 
 impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
-    for Alter<'w, Q, F, A, D>
+    for AlterInner<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         self.state.state.clear(
-            self.query.world,
+            &self.query.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
         );
@@ -299,6 +298,7 @@ pub struct QueryAlterState<
 >(
     pub(crate) QueryState<Q, F>,
     pub(crate) AlterState<A>,
+    pub(crate) Ptr<World>,
     pub(crate) PhantomData<D>,
 );
 unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Send
@@ -313,8 +313,8 @@ unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bund
 impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
     QueryAlterState<Q, F, A, D>
 {
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Alter<'_, Q, F, A, D> {
-        Alter::new(Query::new(world, &mut self.0, world.tick()), &mut self.1)
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> AlterInner<'_, Q, F, A, D> {
+        AlterInner::new(QueryInner::new(&mut self.0, world), &mut self.1)
     }
 }
 
@@ -375,6 +375,7 @@ impl<A: Bundle> AlterState<A> {
         components: A,
         tick: Tick,
     ) -> Result<bool, QueryError> {
+        println!("alter: {:p}", world);
         let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
         let (is_new, _new_ar) = self.state.find_mapping(world, mapping, false);
@@ -785,7 +786,7 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
             self.it.e,
             addr,
             components,
-            self.it.tick,
+            self.it.state.system_meta.this_run,
         )
     }
 }

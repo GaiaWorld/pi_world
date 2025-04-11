@@ -1,6 +1,83 @@
-use pi_world::{prelude::App, schedule::Update, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs}, single_res::SingleResMut};
+use pi_world::{debug::{ArchetypeDebug, ColumnDebug}, prelude::{App, Component, Entity, Query}, schedule::Update, schedule_config::{IntoSystemConfigs, IntoSystemSetConfigs}, single_res::SingleResMut};
 use pi_world_macros::SystemSet;
-use pi_world::schedule_config;
+
+#[test]
+fn test_schedule() {
+    #[derive(Component)]
+    struct A(f32);
+    #[derive(Component)]
+    struct B(f32);
+    #[derive(Component)]
+    struct C(f32);
+    #[derive(Component)]
+    struct D(f32);
+    #[derive(Component)]
+    struct E(f32);
+
+    fn ab(query: Query<(&mut A, &mut B)>) {
+        for (mut a, mut b) in query.iter_mut() {
+            std::mem::swap(&mut a.0, &mut b.0);
+        }
+    }
+
+    fn cd(query: Query<(&mut C, &mut D)>) {
+        for (mut c, mut d) in query.iter_mut() {
+            std::mem::swap(&mut c.0, &mut d.0);
+        }
+    }
+
+    fn ce(query: Query<(&mut C, &mut E)>) {
+        for (mut c, mut e) in query.iter_mut() {
+            std::mem::swap(&mut c.0, &mut e.0);
+        }
+    }
+    let mut app = pi_world::prelude::App::new();
+    let i = app.world.make_insert::<(A, B)>();
+    let it = (0..10_000).map(|_| (A(0.0), B(0.0)));
+    let _ = i.batch(&app.world, it).collect::<Vec<Entity>>();
+
+    let i = app.world.make_insert::<(A, B, C)>();
+    let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0)));
+    let _ = i.batch(&app.world, it).collect::<Vec<Entity>>();
+
+    let i = app.world.make_insert::<(A, B, C, D)>();
+    let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), D(0.0)));
+    let _ = i.batch(&app.world, it).collect::<Vec<Entity>>();
+
+    let i = app.world.make_insert::<(A, B, C, E)>();
+    let it = (0..10_000).map(|_| (A(0.0), B(0.0), C(0.0), E(0.0)));
+    let _ = i.batch(&app.world, it).collect::<Vec<Entity>>();
+
+    app.world.settle();
+    app.add_system(Update, ab);
+    app.add_system(Update, cd);
+    app.add_system(Update, ce);
+    
+    let mut info = ArchetypeDebug {
+        entitys: Some(10000),
+        columns_info: vec![
+            Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+            Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+        ],
+        destroys_listeners: Some(0),
+        removes: Some(0),
+    };
+    app.world.assert_archetype_arr(&[None, Some(info.clone()), None, None, None,]);
+
+    app.run();
+
+    info.columns_info = vec![
+        Some(ColumnDebug{change_listeners: 0, name: Some("A")}), 
+        Some(ColumnDebug{change_listeners: 0, name: Some("B")}), 
+        Some(ColumnDebug{change_listeners: 0, name: Some("C")}), 
+    ];
+
+    app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
+
+    for _ in 0..1000 {
+        app.run();
+    }
+}
 
 #[test]
 fn test_set_condition() {
@@ -59,30 +136,30 @@ pub fn condition_false() -> bool {
 
 #[derive(Debug, Default)]
 pub struct RunSystem(Vec<&'static str>);
-pub fn system1(mut run_system: SingleResMut<RunSystem>) {
+pub fn system1(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system1");
 }
 
-pub fn system2(mut run_system: SingleResMut<RunSystem>) {
+pub fn system2(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system2");
 }
 
-pub fn system3(mut run_system: SingleResMut<RunSystem>) {
+pub fn system3(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system3");
 }
 
-pub fn system4(mut run_system: SingleResMut<RunSystem>) {
+pub fn system4(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system4");
 }
 
-pub fn system5(mut run_system: SingleResMut<RunSystem>) {
+pub fn system5(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system5");
 }
 
-pub fn system6(mut run_system: SingleResMut<RunSystem>) {
+pub fn system6(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system6");
 }
 
-pub fn system7(mut run_system: SingleResMut<RunSystem>) {
+pub fn system7(run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system7");
 }

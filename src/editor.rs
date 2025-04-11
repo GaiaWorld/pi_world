@@ -6,7 +6,7 @@ use pi_map::{hashmap::HashMap, Map};
 use pi_null::Null;
 
 use crate::{
-    alter::{AState, ArchetypeMapping, QueryAlterState}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::{Bundle, InsertState}, prelude::{Entity, Mut, QueryError, Tick, World}, query::{LocalIndex, QueryState}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex
+    alter::{AState, ArchetypeMapping, QueryAlterState}, archetype::{ArchetypeIndex, ArchetypeInfo, Row}, fetch::FetchComponents, filter::FilterComponents, insert::{Bundle, InsertState}, prelude::{Entity, Mut, QueryError, Tick, World}, query::{LocalIndex, QueryState}, system::SystemMeta, system_params::SystemParam, world::ComponentIndex, world_ptr::Ptr
 };
 
 impl AState {
@@ -27,11 +27,13 @@ impl AState {
         }
     }
 }
-pub struct EntityEditor<'w> {
+
+pub type EntityEditor<'w> = &'w mut EntityEditorInner<'w>;
+pub struct EntityEditorInner<'w> {
     world: &'w mut World,
 }
 
-impl<'w> EntityEditor<'w> {
+impl<'w> EntityEditorInner<'w> {
     pub fn new(world: &'w mut World) -> Self {
         Self { world }
     }
@@ -257,6 +259,7 @@ impl<'w> EntityEditor<'w> {
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
+        println!("add components: {:p}", self.world);
         self.world.make_alter::<(), (), B, ()>().get_param(self.world).alter(e, components)?;
         Ok(())
     }
@@ -313,34 +316,28 @@ impl Debug for EditorState {
     }
 }
 
-impl SystemParam for EntityEditor<'_> {
-    type State = ();
-    type Item<'w> = EntityEditor<'w>;
+impl SystemParam for EntityEditorInner<'_> {
+    type State = Ptr<World>;
+    type Item<'w> = EntityEditorInner<'w>;
 
-    fn init_state(_world: &mut World, meta: &mut SystemMeta) -> Self::State {
+    fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.relate(crate::system::Relation::WriteAll);
         meta.related_ok();
-        ()
+        Ptr::new(world)
     }
 
     #[inline]
     fn get_param<'world>(
         world: &'world World,
-        _system_meta: &'world SystemMeta,
-        _state: &'world mut Self::State,
-        _tick: Tick,
+        state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        let ptr: *const World = world;
-        let world = unsafe { &mut *(ptr as *mut World) };
-        world.make_entity_editor()
+        state.make_entity_editor()
     }
     #[inline]
     fn get_self<'world>(
         world: &'world World,
-        system_meta: &'world SystemMeta,
         state: &'world mut Self::State,
-        tick: Tick,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, system_meta, state, tick)) }
+        unsafe { transmute(Self::get_param(world, state)) }
     }
 }

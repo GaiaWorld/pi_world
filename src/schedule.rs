@@ -1,4 +1,5 @@
 use std::{any::TypeId, borrow::Cow, collections::HashMap};
+use crate as pi_world;
 
 /// Schedule包含一个主执行器，及多个阶段执行器
 ///

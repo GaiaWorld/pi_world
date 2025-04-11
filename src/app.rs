@@ -9,7 +9,7 @@ use crate::{schedule::{MainSchedule, Schedule}, schedule_config::{IntoSystemConf
 pub type App = AppInner<runtime::Runtime>;
 
 pub struct AppInner<A: AsyncRuntime + AsyncRuntimeExt> {
-    pub world: World,
+    pub world: Box<World>,
     pub schedule: Schedule,
     pub startup_schedule: Schedule,
     pub rt: A,
@@ -18,8 +18,8 @@ pub struct AppInner<A: AsyncRuntime + AsyncRuntimeExt> {
 impl AppInner<runtime::Runtime> {
     pub fn new() -> Self {
         App {
-            world: World::new(),
             schedule: Schedule::new(true),
+            world: World::create(),
             startup_schedule: Schedule::new(false),
             rt: runtime::create_runtime(),
             is_first_run: true,
