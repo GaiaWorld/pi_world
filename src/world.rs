@@ -764,7 +764,7 @@ pub trait FromWorld {
 }
 
 impl<T: Default> FromWorld for T {
-    fn from_world(_world: &mut World) -> Self {
+    default fn from_world(_world: &mut World) -> Self {
         T::default()
     }
 }
