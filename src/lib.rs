@@ -1,3 +1,4 @@
+#![feature(arbitrary_self_types)]
 #![feature(const_type_id)]
 #![feature(get_mut_unchecked)]
 #![feature(associated_type_defaults)]
@@ -10,22 +11,24 @@
 #![allow(invalid_type_param_default)]
 #![allow(elided_named_lifetimes)]
 
-// 当编译wasm时启用重新编译Rust标准库使用test做基准测试会出现重复链接的编译错误
-#[cfg(not(target_arch = "wasm32"))]
-extern crate test as test1;
+
+// // 当编译wasm时启用重新编译Rust标准库使用test做基准测试会出现重复链接的编译错误
+// #[cfg(not(target_arch = "wasm32"))]
+// extern crate test as test1;
 /// Most commonly used re-exported types.
 pub mod prelude {
 
     #[doc(hidden)]
     pub use crate::{
+        param_unready::ParamUnReady,
         app::App,
-        query::{Query, QueryError},
+        query::{Query, QueryUnReady, QueryError, EntryQuery},
         insert::{Insert, Bundle, Component},
         alter::Alter,
         editor::EntityEditor,
         event:: {Event, EventReader, EventWriter, ComponentChanged, ComponentAdded, ComponentRemoved},
         param_set::{ParamSet, ParamSetElement},
-        single_res::{SingleRes, SingleResMut, OptionSingleRes, OptionSingleResMut},
+        single_res::{SingleRes, SingleResMut},
         // multi_res::{MultiRes, MultiResMut},
         filter::{Changed, With, Without, Or, FilterComponents},
         fetch::{Has, Ref, Mut, OrDefault, OrDefaultRef, Ticker, ComponentId, ArchetypeName},
@@ -43,6 +46,7 @@ pub mod prelude {
     };
 }
 
+pub mod param_unready;
 pub mod column;
 pub mod table;
 pub mod archetype;

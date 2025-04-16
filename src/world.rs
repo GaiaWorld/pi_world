@@ -18,7 +18,7 @@ use crate::archetype::{
 use crate::column::Column;
 #[cfg(debug_assertions)]
 use crate::column::{ARCHETYPE_INDEX, COMPONENT_INDEX};
-use crate::editor::{EditorState, EntityEditorInner};
+use crate::editor::{EditorState, EntityEditor};
 use crate::fetch::{ColumnTick, FetchComponents};
 use crate::filter::FilterComponents;
 use crate::insert::{Bundle, InsertState};
@@ -152,9 +152,7 @@ impl World {
     #[inline]
     pub fn create() -> Box<Self> {
         // TODO, 这么做依然无法阻止Self发生移动，但会规避很多情况
-        let r = Box::new(Self::new());
-        println!("create============{:p}", &*r as &World);
-        r
+        Box::new(Self::new())
     }
     
     fn new() -> Self {
@@ -319,7 +317,7 @@ impl World {
         let components = B::components(Vec::new());
         let ar = self.find_ar(components);
         let s = B::init_item(self, &ar);
-        InsertState::new(ar, s, Ptr::new(&mut self.default_system_meta))
+        InsertState::new(ar, s, Ptr::new(&mut self.default_system_meta), Ptr::new(self))
     }
     /// 兼容bevy的接口，提供query
     pub fn query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
@@ -331,9 +329,10 @@ impl World {
     pub fn make_query<Q: FetchComponents + 'static, F: FilterComponents + 'static = ()>(
         &mut self,
     ) -> QueryState<Q, F> {
-        let mut meta = SystemMeta::new(TypeInfo::of::<QueryState<Q, F>>());
-        let mut state = QueryState::create(self, &mut meta);
-        state.align(self);
+        self.default_system_meta.this_run = self.tick();
+        let meta = Ptr::new(&mut self.default_system_meta);
+        let mut state = QueryState::create(self, meta);
+        state.align();
         state
     }
     /// 创建一个改变器
@@ -345,19 +344,19 @@ impl World {
     >(
         &mut self,
     ) -> QueryAlterState<Q, F, A, D> {
-        let mut meta = SystemMeta::new(TypeInfo::of::<QueryAlterState<Q, F, A, D>>());
-        let mut query_state = QueryState::create(self, &mut meta);
+        self.default_system_meta.this_run = self.tick();
+        let meta = Ptr::new(&mut self.default_system_meta);
+        let mut query_state = QueryState::create(self, meta);
         let mut alter_state =
             AlterState::make(self, A::components(Vec::new()), D::components(Vec::new()));
-        query_state.align(self);
+        query_state.align();
         // 将新多出来的原型，创建原型空映射
         alter_state.align(self,  &query_state.archetypes);
         QueryAlterState(query_state, alter_state, Ptr::new(self), PhantomData)
     }
     /// 创建一个实体编辑器
-    pub fn make_entity_editor(&mut self) -> EntityEditorInner {
-        println!("make_entity_editor====={:p}", self);
-        EntityEditorInner::new(self)
+    pub fn make_entity_editor(&mut self) -> EntityEditor {
+        EntityEditor::new(self)
     }
 
     pub fn unsafe_world<'a>(&self) -> ManuallyDrop<&'a mut World> {
@@ -724,6 +723,7 @@ impl World {
             er.settle();
         }
         // 整理每个原型
+        // #[cfg(not(feature="rc"))]
         for ar in self.archetype_arr.iter() {
             let archetype = unsafe { Share::get_mut_unchecked(ar) };
             archetype.settle(self, action, set);

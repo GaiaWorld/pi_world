@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.2.2"
+version = "0.2.4"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -15,6 +15,7 @@ categories = ["data-structures", "memory-management"]
 default = ["single_thread"]
 single_thread = []
 trace = []
+rc = ["pi_share/rc", "pi_arr/rc"]
 
 [dependencies]
 derive-deref-rs = "0.1"
@@ -24,11 +25,11 @@ bitflags="2.9"
 smallvec="1.13"
 fixedbitset="0.5"
 pi_null = "0.1"
-pi_share = {version="0.5", features = ["rc"]}
+pi_share = {version="0.5"}
 pi_key_alloter = "0.6"
 pi_slot = "0.4"
 pi_append_vec = "0.6"
-pi_arr = "0.20"
+pi_arr = {version="0.20"}
 dashmap ="6.0"
 pi-async-rt = "0.2"
 async-channel = "2.2"
@@ -49,10 +50,12 @@ serde = { version = "=1.0.203", features = ["serde_derive"] }
 [dev-dependencies]
 cgmath="0.18"
 rand = "0.8"
-pi_world_2 = {version = "0.2.0", package="pi_world"}
+pi_world_2 = {version = "=0.2.3", package="pi_world"}
 
 [workspace]
 members = ["macros"]
 
 [patch.crates-io]
+pi_share = {path = "../pi_share"}
+pi_arr = {path = "../pi_arr"}
 # pi_append_vec = {path = "../pi_append_vec"}

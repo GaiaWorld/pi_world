@@ -8,7 +8,7 @@ fn test() {
     let mut app = App::new();
 
     fn system1 (index: ComponentDebugIndex<Age>) {
-        debug_assert_eq!((*index).0, ComponentIndex::from(0 as u32));
+        debug_assert_eq!(index.0, ComponentIndex::from(0 as u32));
     }
 
     app.add_system(Update, system1);

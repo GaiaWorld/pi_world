@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 
 use pi_share::{Share, ShareUsize};
 
-use crate::single_res::{SingleResInner, SingleResMutInner, TickRes};
+use crate::single_res::{SingleRes, SingleResMut, TickRes};
 use crate::system::{Relation, SystemMeta};
 use crate::system_params::SystemParam;
 use crate::world::*;

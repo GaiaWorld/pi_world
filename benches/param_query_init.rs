@@ -4,7 +4,7 @@ extern crate test;
 
 
 mod mod3 {
-    use pi_world::prelude::{Component, Query, App, Update};
+    use pi_world::{prelude::{App, Component, Query, Update}, query::QueryUnReady};
     use  test::Bencher;
     use super::*;
 
@@ -63,6 +63,46 @@ mod mod3 {
         let count = 500;
         for i in 0..count {
             app.add_system(Update, system);
+        }
+        
+        // app.add_system(Update, p_set);
+        
+        app.run();
+
+        b.iter(move || {
+            app.run();
+        });
+    }
+
+
+
+
+    fn system1(
+        q: QueryUnReady<&Age>,
+        q1: QueryUnReady<&Age1>,
+        q2: QueryUnReady<&Age2>,
+        q3: QueryUnReady<&Age3>,
+        q4: QueryUnReady<&Age4>,
+        q5: QueryUnReady<&Age5>,
+        q6: QueryUnReady<&Age6>,
+        q7: QueryUnReady<&Age7>,
+        q8: QueryUnReady<&Age8>,
+        q9: QueryUnReady<&Age9>,
+        q10: QueryUnReady<&Age10>,
+        q11: QueryUnReady<&Age11>,
+        q12: QueryUnReady<&Age12>,
+        q13: QueryUnReady<&Age13>,
+    
+    ) {
+    }
+
+    #[bench]
+    fn param_init_3_queryunready(b: &mut Bencher) {
+        let mut app = App::new();
+
+        let count = 500;
+        for i in 0..count {
+            app.add_system(Update, system1);
         }
         
         // app.add_system(Update, p_set);

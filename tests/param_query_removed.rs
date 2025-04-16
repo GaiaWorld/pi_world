@@ -13,7 +13,7 @@ fn test_removed() {
         println!("insert1 is end, e:{:?}", e);
     }
     pub fn alter(
-        i0: Alter<&Age1, (), (), (Age3,)>,
+        mut i0: Alter<&Age1, (), (), (Age3,)>,
         q0: Query<(Entity, &mut Age0, &Age1), ()>,
     ) {
         println!("alter1 it:{:?}", q0.iter().size_hint());
@@ -23,7 +23,7 @@ fn test_removed() {
         }
         println!("alter1: end");
     }
-    pub fn removed_l(q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
+    pub fn removed_l(mut q0: Query<(&mut Age0, &mut Age1)>, removed: ComponentRemoved<Age3>) {
         println!("removed_l");
         for e in removed.iter() {
             println!("e:{:?}, q0: {:?}", e, q0.get_mut(*e));

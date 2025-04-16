@@ -1,8 +1,8 @@
-use std::{any::TypeId, borrow::Cow, mem::transmute};
+use std::{any::TypeId, borrow::Cow};
 
 use crate::{
     system::{IntoSystem, RunSystem, System, SystemMeta, TypeInfo},
-    system_params::{SystemFetch, SystemParam},
+    system_params::SystemParam,
     world::*,
 };
 
@@ -10,16 +10,16 @@ use pi_proc_macros::all_tuples;
 
 /// Shorthand way of accessing the associated type [`SystemParam::Item`] for a given [`SystemParam`].
 pub type SystemParamItem<'w, P> = <P as SystemParam>::Item<'w>;
-pub type SystemParamFetch<'w, P> = <P as SystemParam>::Fetch<'w>;
-pub type SystemParamFetch1<'w, P> = <<P as SystemFetch>::Target as SystemParam>::Fetch<'w>;
-pub type SystemParamFetch2<'w, P> = <<P as SystemFetch>::Target as SystemParam>::Item<'w>;
+// pub type SystemParamFetch<'w, P> = <P as SystemParam>::Fetch<'w>;
+// pub type SystemParamFetch1<'w, P> = <<P as SystemFetch>::Target as SystemParam>::Fetch<'w>;
+// pub type SystemParamFetch2<'w, P> = <<P as SystemFetch>::Target as SystemParam>::Item<'w>;
 
 pub trait SystemParamFunction<Marker, Out>: Send + Sync + 'static {
     /// The [`SystemParam`]/s used by this system to access the [`World`].
-    type Param: SystemFetch;
+    type Param: SystemParam;
 
     /// Executes this system once. See [`System::run`] or [`System::run_unsafe`].
-    fn run(&mut self, _param_value: SystemParamFetch1<Self::Param>) -> Out;
+    fn run(&mut self, _param_value: SystemParamItem<Self::Param>) -> Out;
 }
 
 /// The [`System`] counter part of an ordinary function.
@@ -37,7 +37,7 @@ where
     F: SystemParamFunction<Marker, Out>,
 {
     func: F,
-    param: ParamSystem<<F::Param as SystemFetch>::Target>,
+    param: ParamSystem<F::Param>,
 }
 
 impl<Marker: 'static, Out: 'static + Send + Sync, F> IntoSystem<Marker, Out> for F
@@ -94,7 +94,10 @@ where
     // }
     #[inline]
     fn align(&mut self, world: &World) {
-        self.param.align(world)
+        if self.param.archetype_align_len < world.archetype_arr.len() {
+            self.param.align();
+            self.param.archetype_align_len = world.archetype_arr.len();
+        }
     }
 }
 impl<Marker, Out: 'static + Send + Sync, F> RunSystem for FunctionSystem<Marker, Out, F>
@@ -103,7 +106,6 @@ where
 {
     #[inline]
     fn run(&mut self, world: &World) -> Out {
-        self.param.align(world);
         let params = self.param.get_param(world);
         self.func.run(params)
     }
@@ -111,16 +113,20 @@ where
 pub struct ParamSystem<P: SystemParam> {
     pub(crate) param_state: Option<P::State>,
     pub(crate) system_meta: SystemMeta,
-    pub(crate) param: Box<Option<P::Item<'static>>>,
-    pub(crate) fetch: Box<Option<P::Fetch<'static>>>,
+    pub (crate) is_first: bool, // 首次运行system， 需要调用systemParam的init方法
+    pub (crate) archetype_align_len: usize, // 原型对齐索引， 优化参数的对齐， 如果该系统的原型已经对齐， 不需要在调用每个参数的对齐方法
+    // pub(crate) param: Box<Option<P::Item<'static>>>,
+    // pub(crate) fetch: Box<Option<P::Fetch<'static>>>,
 }
 impl<P: SystemParam> ParamSystem<P> {
     pub fn new(system_meta: SystemMeta) -> Self {
         Self {
             param_state: None,
             system_meta,
-            param: Box::new(None),
-            fetch: Box::new(None)
+            is_first: true,
+            archetype_align_len:0,
+            // param: Box::new(None),
+            // fetch: Box::new(None)
         }
     }
     #[inline]
@@ -173,30 +179,37 @@ impl<P: SystemParam> ParamSystem<P> {
     //         result,
     //     )
     // }
-    #[inline]
-    pub(crate) fn align(&mut self, world: &World) {
+    #[inline(always)]
+    pub(crate) fn align(&mut self) {
         // self.system_meta.this_run = world.increment_tick();
         let param_state: &mut _ = self.param_state.as_mut().unwrap();
-        P::align(world, param_state);
+        P::align(param_state);
     }
     #[inline]
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParamFetch<'w, P> {
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> SystemParamItem<'w, P> {
+        self.system_meta.last_run = self.system_meta.this_run;
         self.system_meta.this_run = world.increment_tick();
-        match &mut *self.fetch {
-            Some(r) => unsafe {
-                transmute(SystemFetch::copy(r))
-            },
-            None => {
-                let param_state = self.param_state.as_mut().unwrap();
-                let item = P::get_param( world, param_state);
-                let r_static: <P as SystemParam>::Item<'static> = unsafe {transmute(item)};
-                self.param = Box::new(Some(r_static));
-                let item_ref = (*self.param).as_mut().unwrap();
-                let fetch = <<P as SystemParam>::Fetch<'static> as SystemFetch>::from_item(item_ref);
-                self.fetch = Box::new(Some(fetch));
-                unsafe {transmute(SystemFetch::copy((*self.fetch).as_mut().unwrap()))}
-            },
+        let param_state = self.param_state.as_mut().unwrap();
+        if self.is_first {
+            P::init( param_state);
+            self.is_first = false;
         }
+        P::get_param( param_state)
+        // let r_static: <P as SystemParam>::Item<'static> = unsafe {transmute(item)};
+        // self.param = Box::new(Some(r_static));
+        // let item_ref = (*self.param).as_mut().unwrap();
+        // let fetch = <<P as SystemParam>::Item<'static> as SystemFetch>::from_item(item_ref);
+        // self.fetch = Box::new(Some(fetch));
+        // unsafe {transmute(SystemFetch::copy((*self.fetch).as_mut().unwrap()))}
+
+        // match &mut *self.fetch {
+        //     Some(r) => unsafe {
+        //         transmute(SystemFetch::copy(r))
+        //     },
+        //     None => {
+                
+        //     },
+        // }
       
     }
 }
@@ -204,15 +217,15 @@ impl<P: SystemParam> ParamSystem<P> {
 macro_rules! impl_system_function {
     ($($param: ident),*) => {
         #[allow(non_snake_case)]
-        impl<Func: Send + Sync + 'static, Out, $($param: SystemFetch),*> SystemParamFunction<fn($($param,)*) -> Out, Out> for Func
+        impl<Func: Send + Sync + 'static, Out, $($param: SystemParam),*> SystemParamFunction<fn($($param,)*) -> Out, Out> for Func
         where
         for <'a> &'a mut Func:
                 FnMut($($param),*) -> Out +
-                FnMut($(SystemParamFetch1<$param>),*) -> Out,
+                FnMut($(SystemParamItem<$param>),*) -> Out,
         {
             type Param = ($($param,)*);
             #[inline(always)]
-            fn run(&mut self, param_value: SystemParamFetch1< ($($param,)*)>) -> Out {
+            fn run(&mut self, param_value: SystemParamItem< ($($param,)*)>) -> Out {
                 // Yes, this is strange, but `rustc` fails to compile this impl
                 // without using this function. It fails to recognize that `func`
                 // is a function, potentially because of the multiple impls of `FnMut`

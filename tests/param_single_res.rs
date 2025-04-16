@@ -1,4 +1,4 @@
-use pi_world::prelude::{World, App, Update, OptionSingleRes, OptionSingleResMut, SingleRes, SingleResMut};
+use pi_world::prelude::{World, App, Update, SingleRes, SingleResMut};
 
 #[derive(Debug)]
 pub struct Age(pub usize);
@@ -9,7 +9,7 @@ fn test() {
     let mut app = App::new();
     app.world.insert_single_res(Age(5));
 
-    pub fn system1(age: SingleRes<Age>, age1: OptionSingleRes<Age>, id: OptionSingleRes<Id>) {
+    pub fn system1(age: SingleRes<Age>, age1: Option<SingleRes<Age>>, id: Option<SingleRes<Id>>) {
         debug_assert_eq!(age.0, 5);
         debug_assert_eq!(age1.is_some(), true);
         let age1 = age1.as_ref().unwrap();
@@ -17,12 +17,12 @@ fn test() {
         debug_assert_eq!(id.is_none(), true);
     }
 
-    pub fn system2(age: SingleResMut<Age>, id: OptionSingleResMut<Id>) {
+    pub fn system2(age: SingleResMut<Age>, id: Option<SingleResMut<Id>>) {
         debug_assert_eq!(age.0, 5);
         debug_assert_eq!(id.is_none(), true);
     }
 
-    pub fn system3(age1: OptionSingleResMut<Age>) {
+    pub fn system3(age1: Option<SingleResMut<Age>>) {
         debug_assert_eq!(age1.is_some(), true);
         let age1 = age1.as_ref().unwrap();
         debug_assert_eq!(age1.0, 5);
@@ -44,17 +44,17 @@ fn test_res() {
     struct D(f32);
     struct E(f32);
 
-    fn ab(a: SingleRes<A>, b: SingleResMut<B>) {
+    fn ab(a: SingleRes<A>, mut b: SingleResMut<B>) {
         println!("ab:{:?}", b.0);
         b.0 += a.0 + 1.0;
         println!("ab:{:?}", b.0);
     }
 
-    fn cd(c: SingleRes<C>, d: SingleResMut<D>) {
+    fn cd(c: SingleRes<C>, mut d: SingleResMut<D>) {
         d.0 += c.0 + 1.0;
     }
 
-    fn ce(_w: &World, c: SingleRes<C>, e: SingleResMut<E>, b: SingleResMut<B>) {
+    fn ce(_w: &World, c: SingleRes<C>, mut e: SingleResMut<E>, mut b: SingleResMut<B>) {
         e.0 += c.0 + 1.0;
         b.0 += c.0 + 1.0;
         println!("ce:{:?}", b.0);

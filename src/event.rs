@@ -151,33 +151,27 @@ impl<E: 'static> Downcast for EventVec<E> {
     }
 }
 
-pub type EventReader<'w, E> = &'w mut Event<'w, E>;
+pub type EventReader<'w, E> = Event<'w, E>;
 
-pub struct Event<'w, E: 'static> {
-    pub(crate) record: &'w Share<EventVec<E>>,
-    pub(crate) listener_index: usize,
-}
+pub struct Event<'w, E: 'static> (&'w (Share<EventVec<E>>, usize));
 unsafe impl<E> Send for Event<'_, E> {}
 unsafe impl<E> Sync for Event<'_, E> {}
 
 impl<'w, E: 'static> Event<'w, E> {
     #[inline]
-    pub(crate) fn new(record: &'w Share<EventVec<E>>, listener_index: usize) -> Self {
-        Event {
-            record,
-            listener_index,
-        }
+    pub(crate) fn new(state: &'w (Share<EventVec<E>>, usize)) -> Self {
+        Event (state)
     }
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.record.len(self.listener_index)
+        self.0.0.len(self.0.1)
     }
     pub fn iter(&self) -> SafeVecIter<'_, E> {
-        self.record.get_iter(self.listener_index)
+        self.0.0.get_iter(self.0.1)
     }
 
     pub fn mark_read(&self) {
-        self.record.mark_read(self.listener_index);
+        self.0.0.mark_read(self.0.1);
     }
 }
 
@@ -190,23 +184,24 @@ impl<E: 'static> SystemParam for Event<'_, E> {
         let index = unsafe { Share::get_mut_unchecked(&mut vec).insert_listener() };
         (vec, index)
     }
+
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        Event::new(&state.0, state.1)
+        Event::new(state)
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param(state)) }
     }
 }
 
-pub type EventWriter<'w, E> = &'w mut EventSender<'w, E>;
+pub type EventWriter<'w, E> = EventSender<'w, E>;
 
 pub struct EventSender<'w, E: 'static>(&'w Share<EventVec<E>>);
 unsafe impl<E> Send for EventSender<'_, E> {}
@@ -228,25 +223,23 @@ impl<E: 'static> SystemParam for EventSender<'_, E> {
 
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         EventSender(state)
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param(state)) }
     }
 }
 
-pub type ComponentChanged<'w, T> = &'w mut ComponentChangedInner<'w, T>;
-pub struct ComponentChangedInner<'w, T: 'static>(ComponentEvent<'w, T>);
-unsafe impl<T> Send for ComponentChangedInner<'_, T> {}
-unsafe impl<T> Sync for ComponentChangedInner<'_, T> {}
-impl<'w, T> Deref for ComponentChangedInner<'w, T> {
+// pub type ComponentChanged<'w, T> = &'w mut ComponentChanged<'w, T>;
+pub struct ComponentChanged<'w, T: 'static>(ComponentEvent<'w, T>);
+unsafe impl<T> Send for ComponentChanged<'_, T> {}
+unsafe impl<T> Sync for ComponentChanged<'_, T> {}
+impl<'w, T> Deref for ComponentChanged<'w, T> {
     type Target = ComponentEvent<'w, T>;
 
     fn deref(&self) -> &Self::Target {
@@ -254,36 +247,34 @@ impl<'w, T> Deref for ComponentChangedInner<'w, T> {
     }
 }
 
-impl<T: 'static> SystemParam for ComponentChangedInner<'_, T> {
+impl<T: 'static> SystemParam for ComponentChanged<'_, T> {
     type State = (Share<ComponentEventVec>, usize);
-    type Item<'w> = ComponentChangedInner<'w, T>;
+    type Item<'w> = ComponentChanged<'w, T>;
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(COMPONENT_TICK);
-        init_changed_state(world, TypeId::of::<ComponentChangedInner<'static, T>>(), info)
+        init_changed_state(world, TypeId::of::<ComponentChanged<'static, T>>(), info)
     }
 
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        ComponentChangedInner(ComponentEvent::new(&state.0, state.1))
+        ComponentChanged(ComponentEvent::new(&state.0, state.1))
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param( state)) }
     }
 }
 
-pub type ComponentAdded<'w, T> = &'w mut ComponentAddedInner<'w, T>;
-pub struct ComponentAddedInner<'w, T: 'static>(ComponentEvent<'w, T>);
-unsafe impl<T> Send for ComponentAddedInner<'_, T> {}
-unsafe impl<T> Sync for ComponentAddedInner<'_, T> {}
-impl<'w, T> Deref for ComponentAddedInner<'w, T> {
+// pub type ComponentAdded<'w, T> = &'w mut ComponentAdded<'w, T>;
+pub struct ComponentAdded<'w, T: 'static>(ComponentEvent<'w, T>);
+unsafe impl<T> Send for ComponentAdded<'_, T> {}
+unsafe impl<T> Sync for ComponentAdded<'_, T> {}
+impl<'w, T> Deref for ComponentAdded<'w, T> {
     type Target = ComponentEvent<'w, T>;
 
     fn deref(&self) -> &Self::Target {
@@ -291,64 +282,64 @@ impl<'w, T> Deref for ComponentAddedInner<'w, T> {
     }
 }
 
-impl<T: 'static> SystemParam for ComponentAddedInner<'_, T> {
+impl<T: 'static> SystemParam for ComponentAdded<'_, T> {
     type State = (Share<ComponentEventVec>, usize);
-    type Item<'w> = ComponentAddedInner<'w, T>;
+    type Item<'w> = ComponentAdded<'w, T>;
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        init_added_state(world, TypeId::of::<ComponentAddedInner<'static, T>>(), info)
+        init_added_state(world, TypeId::of::<ComponentAdded<'static, T>>(), info)
     }
 
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        ComponentAddedInner(ComponentEvent::new(&state.0, state.1))
+        ComponentAdded(ComponentEvent::new(&state.0, state.1))
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param( state)) }
     }
 }
 
-pub type ComponentRemoved<'w, T> = &'w mut ComponentRemovedInner<'w, T>;
-pub struct ComponentRemovedInner<'w, T: 'static>(ComponentEvent<'w, T>);
-unsafe impl<T> Send for ComponentRemovedInner<'_, T> {}
-unsafe impl<T> Sync for ComponentRemovedInner<'_, T> {}
-impl<'w, T> Deref for ComponentRemovedInner<'w, T> {
+// pub type ComponentRemoved<'w, T> = &'w mut ComponentRemoved<'w, T>;
+pub struct ComponentRemoved<'w, T: 'static>(ComponentEvent<'w, T>);
+unsafe impl<T> Send for ComponentRemoved<'_, T> {}
+unsafe impl<T> Sync for ComponentRemoved<'_, T> {}
+impl<'w, T> Deref for ComponentRemoved<'w, T> {
     type Target = ComponentEvent<'w, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<T: 'static> SystemParam for ComponentRemovedInner<'_, T> {
+impl<T: 'static> SystemParam for ComponentRemoved<'_, T> {
     type State = (Share<ComponentEventVec>, usize);
-    type Item<'w> = ComponentRemovedInner<'w, T>;
+    type Item<'w> = ComponentRemoved<'w, T>;
 
     fn init_state(world: &mut World, _meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        init_removed_state(world, TypeId::of::<ComponentRemovedInner<'static, T>>(), info)
+        init_removed_state(world, TypeId::of::<ComponentRemoved<'static, T>>(), info)
     }
 
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        ComponentRemovedInner(ComponentEvent::new(&state.0, state.1))
+        ComponentRemoved(ComponentEvent::new(&state.0, state.1))
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param(state)) }
     }
 }
 

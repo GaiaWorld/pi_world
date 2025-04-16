@@ -34,6 +34,7 @@ where
     pub func: F,
     pub param: ParamSystem<F::Param>,
     pub marker: PhantomData<Out>,
+    pub(crate) is_first: bool,
 }
 
 impl<Marker: 'static, F, Out: 'static + Send + Sync> IntoAsyncSystem<Marker, Out> for F
@@ -46,6 +47,7 @@ where
             func: self,
             param: ParamSystem::new(SystemMeta::new(TypeInfo::of::<F>())),
             marker: PhantomData,
+            is_first: true,
         }
     }
 }
@@ -91,7 +93,10 @@ where
     // }
     #[inline]
     fn align(&mut self, world: &World) {
-        self.param.align(world)
+        if self.param.archetype_align_len < world.archetype_arr.len() {
+            self.param.align();
+            self.param.archetype_align_len = world.archetype_arr.len();
+        }
     }
 }
 impl<Marker: 'static, Out: 'static + Send + Sync, F> AsyncRunSystem for AsyncFunctionSystem<Marker, Out, F>
@@ -100,9 +105,17 @@ where
 {
     #[inline]
     fn run(&mut self, world: &'static World) -> Pin<Box<dyn Future<Output = Out> + Send + 'static>> {
-        self.param.align(world);
+        self.param.system_meta.last_run = self.param.system_meta.this_run;
+        if self.param.archetype_align_len < world.archetype_arr.len() {
+            self.param.align();
+            self.param.archetype_align_len = world.archetype_arr.len();
+        }
         let param_state = self.param.param_state.as_mut().unwrap();
-        let params = F::Param::get_self(world, param_state);
+        let params = F::Param::get_self(param_state);
+        if self.is_first {
+            F::Param::init( param_state);
+            self.is_first = false;
+        }
         self.func.clone().run(params)
     }
 }

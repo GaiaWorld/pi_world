@@ -117,6 +117,7 @@ fn test_alter0() {
     let mut alter4 = app.world.make_alter::<(), (), (Bundle2, Bundle3), ()>();
     let mut alter5 = app.world.make_alter::<(), (), (Bundle1, Bundle2, Bundle3, Bundle4, Bundle5), ()>();
     let mut query5 = app.world.make_query::<(&Age8, &Age9, &Age10, &Age11, &Age12), ()>();
+    let mut r = 0;
     loop {
         for i in 0..100 {
             let entity = app.world.spawn_empty();
@@ -139,9 +140,13 @@ fn test_alter0() {
             let mut alter = alter5.get_param(&app.world);
             alter.alter(entity, (Bundle1::default(), Bundle2::default(), Bundle3::default(), Bundle4::default(), Bundle5::default()));
 
-            query5.align(&app.world);
+            query5.align();
         }
+        r += 1;
         app.run();
+        if r > 10 {
+            break;
+        }
     }
 }
 #[test]
@@ -244,11 +249,11 @@ fn test_alter3() {
     println!("========== e: {:?}", e);
     app.world.insert_single_res(EntityRes(e));
 
-    pub fn query(p: ParamSet<(Query<(Entity, &Age0, &Age1, &Age2)>, EntityEditor)> ) {
+    pub fn query(mut p: ParamSet<(Query<(Entity, &Age0, &Age1, &Age2)>, EntityEditor)> ) {
         println!("query start!!!");
         let mut entity = None;
         {
-            let q = p.p0();
+            let mut q = p.p0();
             q.iter().for_each(|(e, a0, a1, a2)|{
                 entity = Some(e);
                 println!("v: {:?}", (e, a0, a1, a2));

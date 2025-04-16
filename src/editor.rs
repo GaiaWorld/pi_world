@@ -28,12 +28,12 @@ impl AState {
     }
 }
 
-pub type EntityEditor<'w> = &'w mut EntityEditorInner<'w>;
-pub struct EntityEditorInner<'w> {
+// pub type EntityEditor<'w> = &'w mut EntityEditor<'w>;
+pub struct EntityEditor<'w> {
     world: &'w mut World,
 }
 
-impl<'w> EntityEditorInner<'w> {
+impl<'w> EntityEditor<'w> {
     pub fn new(world: &'w mut World) -> Self {
         Self { world }
     }
@@ -259,7 +259,6 @@ impl<'w> EntityEditorInner<'w> {
         e: Entity,
         components: B,
     ) -> Result<(), QueryError> {
-        println!("add components: {:p}", self.world);
         self.world.make_alter::<(), (), B, ()>().get_param(self.world).alter(e, components)?;
         Ok(())
     }
@@ -316,9 +315,9 @@ impl Debug for EditorState {
     }
 }
 
-impl SystemParam for EntityEditorInner<'_> {
+impl SystemParam for EntityEditor<'_> {
     type State = Ptr<World>;
-    type Item<'w> = EntityEditorInner<'w>;
+    type Item<'w> = EntityEditor<'w>;
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.relate(crate::system::Relation::WriteAll);
@@ -328,16 +327,16 @@ impl SystemParam for EntityEditorInner<'_> {
 
     #[inline]
     fn get_param<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
         state.make_entity_editor()
     }
     #[inline]
     fn get_self<'world>(
-        world: &'world World,
+        // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param(state)) }
     }
 }

@@ -179,6 +179,7 @@ impl ExecGraph {
         let inner = self.0.as_ref();
         inner.to_len.fetch_add(1, Ordering::Relaxed);
         
+        
         let index = inner.nodes.insert(Node::new(NodeType::Set(start, end, set_name)));
         NodeIndex(index as u32)
     }
@@ -670,10 +671,10 @@ pub struct GraphInner {
     nodes: AppendVec<Node>,
     edges: AppendVec<Edge>,
     map: DashMap<(u128, ComponentIndex), NodeIndex>,
-    to_len: ShareU32,
+    to_len: ShareU32, // 图中的end节点的数量
+    to_count: ShareU32, // 多线程运行时数据， 表示还剩多少结束节点未执行（派发开始， to_count设置为to_len， to_count为0时， 表示本次派发完成）
     froms: Vec<NodeIndex>,
     lock: ShareMutex<()>,
-    to_count: ShareU32,
     sender: Sender<()>,
     receiver: Receiver<()>,
     sys_len: ShareU32,
@@ -843,6 +844,7 @@ impl GraphInner {
         // }
 
         // 如果from的旧的to_len值为0，表示为结束节点，现在被连起来了，要将全局的to_len减1, to_count也减1
+        
         if to_edge_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
             self.to_count.fetch_sub(1, Ordering::Relaxed);

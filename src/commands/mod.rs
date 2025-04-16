@@ -117,7 +117,7 @@ pub trait Command: Send + 'static {
 #[derive(SystemParam)]
 pub struct Commands<'w> {
     // queue: Deferred<'w, CommandQueue>,
-    insert: crate::insert::InsertInner<'w, ()>,
+    insert: crate::insert::Insert<'w, ()>,
     // entities: &'w Entities,
 }
 

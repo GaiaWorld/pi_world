@@ -9,7 +9,7 @@ use pi_world::{debug::{ArchetypeDebug, ColumnDebug}, prelude::{Changed, Componen
 #[test]
 fn test_editor() {
     let mut app = pi_world::prelude::App::new();
-    pub fn alter_add(edit: EntityEditor) {
+    pub fn alter_add(mut edit: EntityEditor) {
         println!("alter_add start!!");
         let scomponents = [
             edit.init_component::<Age0>(), 
@@ -21,7 +21,7 @@ fn test_editor() {
     }
 
     pub fn alter_add2(
-        edit: EntityEditor,
+        mut edit: EntityEditor,
         q: Query<(Entity, &Age1, &Age0), (Changed<Age1>, Changed<Age0>)>,
     ) {
         println!("alter_add2 start!!");
@@ -57,6 +57,7 @@ fn test_editor() {
         println!("query start!!!");
         let re = removed.iter().next();
         assert_eq!(re.is_some(), true);
+        println!("query entity!!!,{:?}", re);
         let (_age1, _age2, _age3) = q.get(*re.unwrap()).unwrap();
         println!("query end!!!");
     }
@@ -119,7 +120,7 @@ fn test_editor2() {
 
     let mut app = pi_world::prelude::App::new();
 
-    pub fn insert_entity(editor: EntityEditor ) {
+    pub fn insert_entity(mut editor: EntityEditor ) {
         println!("insert_entity start!!!");
         let e1 = editor.insert_entity( (Age0(10),));
         let e2 = editor.insert_entity((Age0(20),));
@@ -127,8 +128,8 @@ fn test_editor2() {
         println!("insert_entity end!!! e: {:?}", (e1, e2));
     }
 
-    pub fn add_components(q: Query<(Entity, &Age0)>, editor: EntityEditor){
-        println!("query2 start!!!");
+    pub fn add_components(q: Query<(Entity, &Age0)>, mut editor: EntityEditor){
+        println!("query1 start!!!");
         let mut len = 0;
         q.iter().for_each(|(e, a0)|{
             len += 1;
@@ -140,7 +141,7 @@ fn test_editor2() {
             editor.add_components(e2, (Age10(10),(Age1(1), Age2(2)))).unwrap();
             editor.add_components(e2, (Age9(9),)).unwrap();
         });
-        println!("query2 end!!!");
+        println!("query1 end!!!");
         assert_eq!(len, 2);
     }
 
@@ -168,7 +169,7 @@ fn test_editor3() {
 
     let mut app = pi_world::prelude::App::new();
 
-    pub fn insert_entity(editor: EntityEditor ) {
+    pub fn insert_entity(mut editor: EntityEditor ) {
         println!("insert_entity start!!!");
         let e1 = editor.insert_entity((Age21(Vec::with_capacity(256)),));
         let e2 = editor.insert_entity((Age21(Vec::with_capacity(256)),));
@@ -176,8 +177,8 @@ fn test_editor3() {
         println!("insert_entity end!!! e: {:?}", (e1, e2));
     }
 
-    pub fn add_components(q: Query<(Entity, &mut Age21)>, _editor: EntityEditor){
-        println!("query2 start!!!");
+    pub fn add_components(mut q: Query<(Entity, &mut Age21)>, _editor: EntityEditor){
+        println!("query5 start!!!");
         let mut len = 0;
         q.iter_mut().for_each(|(e, mut a21)|{
             len += 1;
@@ -186,7 +187,7 @@ fn test_editor3() {
             a21.0.push(21);
             a21.0.push(22);
         });
-        println!("query2 end!!!");
+        println!("query5 end!!!");
         assert_eq!(len, 2);
     }
 
@@ -212,7 +213,7 @@ fn test_editor3() {
 #[test] 
 fn test_editor_settle() {
     let mut app = pi_world::prelude::App::new();
-    pub fn alter_add(edit: EntityEditor) {
+    pub fn alter_add(mut edit: EntityEditor) {
         let scomponents = [
             edit.init_component::<Age0>(), 
             edit.init_component::<Age1>()
@@ -222,7 +223,7 @@ fn test_editor_settle() {
     }
 
     pub fn alter_add2(
-        edit: EntityEditor,
+        mut edit: EntityEditor,
         q: Query<(Entity, &Age1, &Age0), (Changed<Age1>, Changed<Age0>)>,
     ) {
         // assert_eq!(q.is_empty(), false);

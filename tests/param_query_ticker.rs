@@ -13,7 +13,7 @@ fn test_ticker() {
         println!("insert1 is end, e:{:?}", e);
     }
     pub fn print_changed_entities(
-        q0: Query<(
+        mut q0: Query<(
             Entity,
             Ticker<&mut Age0>,
             Ticker<&mut Age1>,

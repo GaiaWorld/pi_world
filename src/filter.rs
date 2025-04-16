@@ -10,7 +10,7 @@ use pi_proc_macros::all_tuples;
 use pi_share::Share;
 use std::marker::PhantomData;
 
-use crate::archetype::{ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
+use crate::archetype::{Archetype, ArchetypeIndex, ComponentInfo, Row, COMPONENT_TICK};
 use crate::column::{BlobRef, Column};
 use crate::prelude::{Entity, Tick};
 use crate::system::SystemMeta;
@@ -31,6 +31,22 @@ pub trait FilterComponents {
         last_run: Tick,
     ) -> Self::Filter<'w>;
 
+    fn init_filter_opt<'w>(
+        world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        tick: Tick,
+        last_run: Tick,
+    ) -> (Self::Filter<'w>, bool);
+
+    
+    // fn is_match<'w>(
+    //     state: &'w Self::State,
+    //     archetype: &'w Archetype,
+    // ) -> bool;
+
+
+
     fn filter<'w>(_filter: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
         false
     }
@@ -40,14 +56,14 @@ pub struct Without<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for Without<T> {
 
     type Filter<'w> = ();
-    type State = ComponentIndex;
+    type State = Share<Column>;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
             crate::system::Relation::Without(0usize.into()),
         )
-        .0
+        .1
     }
 
     #[inline]
@@ -60,31 +76,74 @@ impl<T: 'static> FilterComponents for Without<T> {
     ) -> Self::Filter<'w> {
         ()
     }
+
+    #[inline]
+    fn init_filter_opt<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        _tick: Tick,
+        _last_run: Tick,
+    ) -> (Self::Filter<'w>, bool) {
+        match state.blob_ref(index) {
+            Some(_) => ((), false),
+            None => ((), true),
+        }
+    }
+
+    // fn is_match<'w>(
+    //     state: &'w Self::State,
+    //     archetype: &'w Archetype,
+    // ) -> bool {
+    //     !archetype.contains(*state)
+    // }
+    
 }
 
 pub struct With<T: 'static>(PhantomData<T>);
 impl<T: 'static> FilterComponents for With<T> {
 
     type Filter<'w> = ();
-    type State = ComponentIndex;
+    type State = Share<Column>;
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         meta.component_relate(
             world,
             ComponentInfo::of::<T>(0),
             crate::system::Relation::With(0usize.into()),
         )
-        .0
+        .1
     }
     #[inline]
     fn init_filter<'w>(
         _world: &'w World,
-        _state: &'w Self::State,
-        _index: ArchetypeIndex,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
         _tick: Tick,
         _last_run: Tick,
-    ) -> Self::Filter<'w> {
+    ) -> Self::Filter<'w>{
         ()
     }
+
+    #[inline]
+    fn init_filter_opt<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        _tick: Tick,
+        _last_run: Tick,
+    ) -> (Self::Filter<'w>, bool) {
+        match state.blob_ref(index) {
+            Some(_) => ((), true),
+            None => ((), false),
+        }
+    }
+
+    // fn is_match<'w>(
+    //     state: &'w Self::State,
+    //     archetype: &'w Archetype,
+    // ) -> bool {
+    //     archetype.contains(*state)
+    // }
 
 }
 
@@ -114,10 +173,23 @@ impl<T: 'static> FilterComponents for Changed<T> {
     }
 
     #[inline(always)]
+    fn init_filter_opt<'w>(
+        _world: &'w World,
+        state: &'w Self::State,
+        index: ArchetypeIndex,
+        _tick: Tick,
+        last_run: Tick,
+    ) -> (Self::Filter<'w>, bool) {
+        let r = state.blob_ref(index);
+        let is_match = r.is_some();
+        ((state.blob_ref(index), last_run), is_match)
+    }
+
+    #[inline(always)]
     fn filter<'w>(filter: &Self::Filter<'w>, row: Row, _e: Entity) -> bool {
         if let Some(r) = &filter.0 {
             r.get_tick_unchecked(row) <= filter.1
-        }else{
+        } else {
             true
         }
     }
@@ -151,6 +223,27 @@ macro_rules! impl_tuple_filter {
                 let ($($state,)*) = _state;
                 ($($name::init_filter(_world, $state, _index, _tick, _last_run),)*)
             }
+
+            #[allow(clippy::unused_unit)]
+            #[inline]
+            fn init_filter_opt<'w>(
+                _world: &'w World,
+                _state: &'w Self::State,
+                _index: ArchetypeIndex,
+                _tick: Tick,
+                _last_run: Tick,
+                ) -> (Self::Filter<'w>, bool) {
+                let ($($state,)*) = _state;
+                #[allow(unused_mut)]
+                let mut is_match = true;
+                (($({
+                    let r = $name::init_filter_opt(_world, $state, _index, _tick, _last_run);
+                    is_match = is_match && r.1;
+                    r.0
+                },)*), is_match)
+            }
+
+            
 
             #[allow(clippy::unused_unit)]
             #[inline(always)]
@@ -190,6 +283,25 @@ macro_rules! impl_tuple_filter {
                 ) -> Self::Filter<'w> {
                 let ($($state,)*) = _state;
                 ($($name::init_filter(_world, $state, _index, _tick, _last_run),)*)
+            }
+
+            #[allow(clippy::unused_unit)]
+            #[inline]
+            fn init_filter_opt<'w>(
+                _world: &'w World,
+                _state: &'w Self::State,
+                _index: ArchetypeIndex,
+                _tick: Tick,
+                _last_run: Tick,
+                ) -> (Self::Filter<'w>, bool) {
+                let ($($state,)*) = _state;
+                #[allow(unused_mut)]
+                let mut is_match = true;
+                (($({
+                    let r = $name::init_filter_opt(_world, $state, _index, _tick, _last_run);
+                    is_match = is_match && r.1;
+                    r.0
+                },)*), is_match)
             }
 
             #[allow(clippy::unused_unit)]

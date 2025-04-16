@@ -27,7 +27,7 @@ use crate::column::{BlobRef, Column};
 use crate::fetch::FetchComponents;
 use crate::filter::FilterComponents;
 use crate::insert::Bundle;
-use crate::query::{LocalIndex, QueryInner, QueryError, QueryIter, QueryState};
+use crate::query::{LocalIndex, Query, QueryError, QueryIter, QueryState};
 use crate::system::SystemMeta;
 use crate::system_params::SystemParam;
 use crate::utils::VecExt;
@@ -151,33 +151,33 @@ use crate::world_ptr::Ptr;
 //     }
 // }
 
-pub type Alter<'w, Q, F, A, D> = &'w mut AlterInner<'w, Q, F, A, D>;
-pub struct AlterInner<
+// pub type Alter<'w, Q, F, A, D> = &'w mut Alter<'w, Q, F, A, D>;
+pub struct Alter<
     'w,
     Q: FetchComponents + 'static,
     F: FilterComponents + 'static = (),
     A: Bundle = (),
     D: Bundle = (),
 > {
-    query: QueryInner<'w, Q, F>,
+    query: Query<'w, Q, F>,
     state: &'w mut AlterState<A>,
     _k: PhantomData<D>,
 }
 
 unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Send for AlterInner<'w, Q, F, A, D>
+    Send for Alter<'w, Q, F, A, D>
 {
 }
 unsafe impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    Sync for AlterInner<'w, Q, F, A, D>
+    Sync for Alter<'w, Q, F, A, D>
 {
 }
 
 impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
-    AlterInner<'w, Q, F, A, D>
+    Alter<'w, Q, F, A, D>
 {
-    pub(crate) fn new(query: QueryInner<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
-        AlterInner {
+    pub(crate) fn new(query: Query<'w, Q, F>, state: &'w mut AlterState<A>) -> Self {
+        Alter {
             query,
             state,
             _k: PhantomData,
@@ -221,14 +221,14 @@ impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle,
 
     pub fn destroy(&mut self, e: Entity) -> Result<bool, QueryError> {
         // self.state
-        self.state.destroy(&self.query.world, e)
+        self.state.destroy(&self.query.state.world, e)
     }
 
     pub fn alter(&mut self, e: Entity, components: A) -> Result<bool, QueryError> {
-        let (addr, local_index) = self.state.check(&self.query.world, e)?;
+        let (addr, local_index) = self.state.check(&self.query.state.world, e)?;
         // log::error!("Alert: {:?}", (self.state.bundle_vec.capacity(), self.state.adding.capacity(), self.state.sorted_add_removes.capacity(), self.state.mapping_dirtys.capacity(), self.state.moving.capacity(), self.state.vec.capacity()));
         self.state.alter(
-            self.query.world,
+            &self.query.state.world,
             local_index,
             e,
             addr,
@@ -243,13 +243,13 @@ impl<
         F: FilterComponents + Send + Sync + 'static,
         A: Bundle + 'static,
         D: Bundle + Send + 'static,
-    > SystemParam for AlterInner<'_, Q, F, A, D>
+    > SystemParam for Alter<'_, Q, F, A, D>
 {
     type State = QueryAlterState<Q, F, A, D>;
-    type Item<'w> = AlterInner<'w, Q, F, A, D>;
+    type Item<'w> = Alter<'w, Q, F, A, D>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let q = QueryInner::init_state(world, system_meta);
+        let q = Query::init_state(world, system_meta);
         QueryAlterState(
             q,
             AlterState::make(world, A::components(Vec::with_capacity(256)), D::components(Vec::with_capacity(256))),
@@ -257,33 +257,33 @@ impl<
             PhantomData,
         )
     }
-    fn align(world: &World, state: &mut Self::State) {
-        state.0.align(world);
+    fn align(state: &mut Self::State) {
+        state.0.align();
     }
 
     fn get_param<'w>(
-        world: &'w World,
+        // world: &'w World,
         state: &'w mut Self::State,
     ) -> Self::Item<'w> {
         // 将新多出来的原型，创建原型空映射
         state.1.align(&state.2, &state.0.archetypes);
-        AlterInner::new(QueryInner::new( &mut state.0, world), &mut state.1)
+        Alter::new(Query::new( &mut state.0), &mut state.1)
     }
 
     fn get_self<'w>(
-        world: &'w World,
+        // world: &'w World,
         state: &'w mut Self::State,
     ) -> Self {
-        unsafe { transmute(Self::get_param(world, state)) }
+        unsafe { transmute(Self::get_param(state)) }
     }
 }
 
 impl<'w, Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle> Drop
-    for AlterInner<'w, Q, F, A, D>
+    for Alter<'w, Q, F, A, D>
 {
     fn drop(&mut self) {
         self.state.state.clear(
-            &self.query.world,
+            &self.query.state.world,
             &mut self.state.vec,
             &mut self.state.mapping_dirtys,
         );
@@ -313,8 +313,8 @@ unsafe impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bund
 impl<Q: FetchComponents + 'static, F: FilterComponents + 'static, A: Bundle, D: Bundle>
     QueryAlterState<Q, F, A, D>
 {
-    pub fn get_param<'w>(&'w mut self, world: &'w World) -> AlterInner<'_, Q, F, A, D> {
-        AlterInner::new(QueryInner::new(&mut self.0, world), &mut self.1)
+    pub fn get_param<'w>(&'w mut self, world: &'w World) -> Alter<'_, Q, F, A, D> {
+        Alter::new(Query::new(&mut self.0), &mut self.1)
     }
 }
 
@@ -375,7 +375,6 @@ impl<A: Bundle> AlterState<A> {
         components: A,
         tick: Tick,
     ) -> Result<bool, QueryError> {
-        println!("alter: {:p}", world);
         let mapping = unsafe { self.vec.get_unchecked_mut(ar_index.index()) };
         // println!("alter: {:?}", (e, src_row, ar_index));
         let (is_new, _new_ar) = self.state.find_mapping(world, mapping, false);
@@ -775,13 +774,13 @@ impl<'w, Q: FetchComponents, F: FilterComponents, A: Bundle> AlterIter<'w, Q, F,
     }
     /// 标记销毁当前迭代的实体
     pub fn destroy(&mut self) -> Result<bool, QueryError> {
-        AState::destroy_row(&self.it.world, &self.it.ar, self.it.row)
+        AState::destroy_row(&self.it.state.world, &self.it.ar, self.it.row)
     }
     pub fn alter(&mut self, components: A) -> Result<bool, QueryError> {
-        let addr = self.it.world.entities.load(self.it.e).unwrap();
+        let addr = self.it.state.world.entities.load(self.it.e).unwrap();
         // let (addr, _) =self.state.check(&self.it.world, self.it.e)?;
         self.state.alter(
-            &self.it.world,
+            &self.it.state.world,
             self.it.ar_index,
             self.it.e,
             addr,

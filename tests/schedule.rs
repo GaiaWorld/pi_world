@@ -14,22 +14,22 @@ fn test_schedule() {
     #[derive(Component)]
     struct E(f32);
 
-    fn ab(query: Query<(&mut A, &mut B)>) {
+    fn ab(mut query: Query<(&mut A, &mut B)>) {
         for (mut a, mut b) in query.iter_mut() {
-            std::mem::swap(&mut a.0, &mut b.0);
+        //     // std::mem::swap(&mut a.0, &mut b.0);
         }
     }
 
-    fn cd(query: Query<(&mut C, &mut D)>) {
-        for (mut c, mut d) in query.iter_mut() {
-            std::mem::swap(&mut c.0, &mut d.0);
-        }
+    fn cd(mut query: Query<(&mut C, &mut D)>) {
+        // for (mut c, mut d) in query.iter_mut() {
+        //     std::mem::swap(&mut c.0, &mut d.0);
+        // }
     }
 
-    fn ce(query: Query<(&mut C, &mut E)>) {
-        for (mut c, mut e) in query.iter_mut() {
-            std::mem::swap(&mut c.0, &mut e.0);
-        }
+    fn ce(mut query: Query<(&mut C, &mut E)>) {
+        // for (mut c, mut e) in query.iter_mut() {
+        //     std::mem::swap(&mut c.0, &mut e.0);
+        // }
     }
     let mut app = pi_world::prelude::App::new();
     let i = app.world.make_insert::<(A, B)>();
@@ -74,7 +74,8 @@ fn test_schedule() {
 
     app.world.assert_archetype_arr(&[None, None, Some(info.clone()), None, None,]);
 
-    for _ in 0..1000 {
+    for i in 0..1000 {
+        // println!("run=========={i}");
         app.run();
     }
 }
@@ -136,30 +137,30 @@ pub fn condition_false() -> bool {
 
 #[derive(Debug, Default)]
 pub struct RunSystem(Vec<&'static str>);
-pub fn system1(run_system: SingleResMut<RunSystem>) {
+pub fn system1(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system1");
 }
 
-pub fn system2(run_system: SingleResMut<RunSystem>) {
+pub fn system2(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system2");
 }
 
-pub fn system3(run_system: SingleResMut<RunSystem>) {
+pub fn system3(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system3");
 }
 
-pub fn system4(run_system: SingleResMut<RunSystem>) {
+pub fn system4(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system4");
 }
 
-pub fn system5(run_system: SingleResMut<RunSystem>) {
+pub fn system5(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system5");
 }
 
-pub fn system6(run_system: SingleResMut<RunSystem>) {
+pub fn system6(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system6");
 }
 
-pub fn system7(run_system: SingleResMut<RunSystem>) {
+pub fn system7(mut run_system: SingleResMut<RunSystem>) {
     run_system.0.push("system7");
 }

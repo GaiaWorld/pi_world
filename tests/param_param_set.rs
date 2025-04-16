@@ -21,7 +21,7 @@ fn test() {
     let r = app.world.make_entity_editor().add_components(e, Age(5));
 
     debug_assert_eq!(r.is_ok(), true);
-    pub fn system1(query_set: ParamSet<(Query<&Age>, Query<&mut Age>)>) {
+    pub fn system1(mut query_set: ParamSet<(Query<&Age>, Query<&mut Age>)>) {
         let mut count = 0;
         let query = query_set.p0();
         for i in  query.iter() {
