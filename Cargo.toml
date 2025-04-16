@@ -56,6 +56,5 @@ pi_world_2 = {version = "=0.2.3", package="pi_world"}
 members = ["macros"]
 
 [patch.crates-io]
-pi_share = {path = "../pi_share"}
-pi_arr = {path = "../pi_arr"}
+# pi_share = {path = "../pi_share"}
 # pi_append_vec = {path = "../pi_append_vec"}
