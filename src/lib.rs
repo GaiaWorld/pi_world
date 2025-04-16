@@ -8,7 +8,6 @@
 #![feature(sync_unsafe_cell)]
 #![feature(test)]
 #![feature(specialization)]
-#![feature(arbitrary_self_types)]
 #![allow(invalid_type_param_default)]
 #![allow(elided_named_lifetimes)]
 
