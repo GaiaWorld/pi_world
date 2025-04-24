@@ -53,7 +53,7 @@ serde = { version = "=1.0.203", features = ["serde_derive"] }
 [dev-dependencies]
 cgmath="0.18"
 rand = "0.8"
-pi_world_2 = {version = "=0.2.5", package="pi_world"}
+# pi_world_2 = {version = "=0.2.5", package="pi_world"}
 
 [patch.crates-io]
 # pi_share = {path = "../pi_share"}
