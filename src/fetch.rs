@@ -103,7 +103,7 @@ impl FetchComponents for Entity {
 }
 
 impl<T: 'static> FetchComponents for &T {
-    type Fetch<'w> = ColumnTick<'w>; // 必须和&mut T的Fetch一致，因为Query做了Fetch的缓冲
+    type Fetch<'w> = BlobRef<'w>; // 必须和&mut T的Fetch一致，因为Query做了Fetch的缓冲
     type Item<'w> = &'w T;
     type ReadOnly = Self;
     type State = Share<Column>;
@@ -116,15 +116,15 @@ impl<T: 'static> FetchComponents for &T {
         )
         .1
     }
-    #[inline]
+    #[inline(always)]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
         index: ArchetypeIndex,
-        tick: Tick,
-        last_run: Tick,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Self::Fetch<'w>{
-        ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
+        state.blob_ref_unchecked(index)
     }
 
     #[inline]
@@ -132,17 +132,15 @@ impl<T: 'static> FetchComponents for &T {
         _world: &'w World,
         state: &'w Self::State,
         index: ArchetypeIndex,
-        tick: Tick,
-        last_run: Tick,
+        _tick: Tick,
+        _last_run: Tick,
     ) -> Option<Self::Fetch<'w>>{
-        state.blob_ref(index).map(|r| {
-            ColumnTick::new(r, tick, last_run)
-        }) 
+        state.blob_ref(index)
     }
 
     #[inline(always)]
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
-        fetch.column.get::<T>(row, e)
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
+        fetch.get_unchecked::<T>(row)
     }
 }
 
@@ -502,9 +500,9 @@ impl<T: 'static> FetchComponents for Option<&T> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
     #[inline(always)]
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
-            Some(c) => Some(c.column.get::<T>(row, e)),
+            Some(c) => Some(c.column.get_unchecked::<T>(row)),
             None => None,
         }
     }
@@ -600,9 +598,9 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     } 
     #[inline(always)]
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
-            Ok(c) => c.get::<T>(row, e),
+            Ok(c) => c.get_unchecked::<T>(row),
             Err(r) => *r,
         }
     }
@@ -651,11 +649,11 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
     #[inline(always)]
-    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
+    fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
             Ok(c) => {
                 let tick = c.column.get_tick_unchecked(row);
-                ValueRef::new(c.column.get::<T>(row, e), tick, c.last_run)
+                ValueRef::new(c.column.get_unchecked::<T>(row), tick, c.last_run)
             }
             Err(r) => ValueRef::new(r.0, 0usize.into(), r.1),
         }
@@ -911,7 +909,7 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row, self.e)
+        self.c.column.get_unchecked::<T>(self.row)
     }
 }
 
@@ -919,7 +917,7 @@ impl<'a, T: 'static> Deref for Ticker<'a, &'_ mut T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row, self.e)
+        self.c.column.get_unchecked::<T>(self.row)
     }
 }
 
@@ -990,7 +988,7 @@ impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.c.column.get::<T>(self.row, self.e)
+        self.c.column.get_unchecked::<T>(self.row)
     }
 }
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
@@ -998,7 +996,7 @@ impl<'a, T: 'static> DerefMut for Mut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // log::debug!("changed=================={:?}", std::any::type_name::<T>());
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
-        self.c.column.get_mut::<T>(self.row, self.e)
+        self.c.column.get_unchecked_mut::<T>(self.row)
     }
 }
 

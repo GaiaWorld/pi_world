@@ -423,14 +423,17 @@ pub fn derive_bundle(input: TokenStream) -> TokenStream {
             impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
                 type Item = (#(<#tuple_types as #world_path::insert::Bundle>::Item,)*);
 
+                #[inline(always)]
                 fn components(c: Vec<#world_path::archetype::ComponentInfo>) -> Vec<#world_path::archetype::ComponentInfo> {
                     #(let c = #tuple_types::components(c);)*
                     c
                 }
+                #[inline(always)]
                 fn init_item(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
                     (#(<#tuple_types as #world_path::insert::Bundle>::init_item(_world, _archetype),)*)
                 }
 
+                #[inline(always)]
                 fn insert(
                     _item: &Self::Item,
                     components: Self,
@@ -464,14 +467,17 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             impl #impl_generics #world_path::insert::Bundle for #struct_name #ty_generics #where_clause {
                 type Item = #world_path::insert::TypeItem<Self>;
 
+                #[inline(always)]
                 fn components(mut c: Vec<#world_path::archetype::ComponentInfo>) -> Vec<#world_path::archetype::ComponentInfo> {
                     c.push(#world_path::archetype::ComponentInfo::of::<Self>(0));
                     c
                 }
+                #[inline(always)]
                 fn init_item(_world: &#world_path::world::World, _archetype: & #world_path::archetype::Archetype) -> Self::Item {
                     #world_path::insert::TypeItem::new(_world, _archetype)
                 }
 
+                #[inline(always)]
                 fn insert(
                     state: &Self::Item,
                     components: Self,

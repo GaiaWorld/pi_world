@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.2.4"
+version = "0.2.6"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -10,6 +10,8 @@ keywords = ["pi", "world", "ecs"]
 readme = "README.md"
 categories = ["data-structures", "memory-management"]
 
+[workspace]
+members = ["ecs_bench", "macros"]
 
 [features]
 default = ["single_thread"]
@@ -25,6 +27,7 @@ bitflags="2.9"
 smallvec="1.13"
 fixedbitset="0.5"
 pi_null = "0.1"
+pi_hash = "0.1"
 pi_share = {version="0.5"}
 pi_key_alloter = "0.6"
 pi_slot = "0.4"
@@ -50,11 +53,10 @@ serde = { version = "=1.0.203", features = ["serde_derive"] }
 [dev-dependencies]
 cgmath="0.18"
 rand = "0.8"
-pi_world_2 = {version = "=0.2.3", package="pi_world"}
-
-[workspace]
-members = ["macros"]
+pi_world_2 = {version = "=0.2.5", package="pi_world"}
 
 [patch.crates-io]
 # pi_share = {path = "../pi_share"}
 # pi_append_vec = {path = "../pi_append_vec"}
+# pi_arr = {path = "../pi_arr"}
+# pi_key_alloter = {path = "../pi_key_alloter"}

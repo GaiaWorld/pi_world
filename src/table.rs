@@ -61,14 +61,12 @@ impl Table {
     }
     #[inline(always)]
     pub fn get_unchecked(&self, row: Row) -> Entity {
-        // todo 改成load_unchecked
-        *self.entities.load(row.index()).unwrap()
+        unsafe { *self.entities.load_unchecked(row.index()) }
         // *unsafe { self.entities.load_unchecked(row.index()) }
     }
     #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
-        // todo 改成load_unchecked
-        let a = self.entities.load(row.index()).unwrap();
+        let a = unsafe { self.entities.load_unchecked(row.index()) };
         // println!("set1：{:p} {:p} {:?}", &self.entities, a, (&a, row, e, self.entities.vec_capacity(), self.entities.len()));
         *a = e;
     }

@@ -847,7 +847,7 @@ impl GraphInner {
         
         if to_edge_len == 0 {
             self.to_len.fetch_sub(1, Ordering::Relaxed);
-            self.to_count.fetch_sub(1, Ordering::Relaxed);
+            // self.to_count.fetch_sub(1, Ordering::Relaxed);
         }
         // 该to节点的from_count已经为0，表示正在执行（本身依赖为0的节点， 一定已经将任务派发出去了， 可以认为是正在执行的状态）
         if old_from == 0 {

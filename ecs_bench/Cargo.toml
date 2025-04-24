@@ -1,0 +1,55 @@
+[package]
+name = "ecs_bench"
+version = "0.1.0"
+authors = ["suncy"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+env_logger = "0.9"
+bevy_11_ecs = {version="0.11", package="bevy_ecs"}
+bevy_11_app = {version="0.11", package="bevy_app"}
+# bevy_5_ecs = {version="0.5", package="bevy_ecs", path="../bevy/crates/bevy_ecs"}
+bevy_15_ecs = {version="0.15", package="bevy_ecs"}
+bevy_15_app = {version = "0.15", package="bevy_app"}
+bincode = "1.3"
+cgmath = { version = "0.17", feature = ["serde"] }
+hecs = { version = "0.5", features = ["column-serialize", "row-serialize"] }
+legion = "0.3"
+legion4 = {version="0.4", package="legion"}
+planck_ecs = { version = "1.1.0", features = ["parallel"] }
+rayon = "1.3"
+ron = "0.6"
+# pi_ecs = {git = "https://github.com/GaiaWorld/pi_ecs.git"}
+serde = { version = "1.0", features = ["derive"] }
+shipyard = "0.5"
+specs = {version = "0.16.1", features = ["serde"] }
+specs-derive = "0.4.1"
+# ecs = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+# ecs_derive = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+# cross_performance = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+# map = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+# atom = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+# share = {git = "https://github.com/GaiaWorld/pi_lib.git"}
+log="0.4"
+pi_world={path="../", version= "0.2.4"}
+json ="0.12"
+# pi_idtree1={path="../pi_idtree", package="pi_idtree"}
+# pi_idtree="0.1"
+# pi_hash="0.1" 
+# pi_map="0.1"
+# pi_style = {path="../pi_style"}
+# pi_atom={version="0.2", features = ["serde"]}
+lazy_static = "1.4"
+winit = {git = "http://ser.yinengyun.com:10082/tech/winit.git"}
+rand = "0.8"
+# pi_async = "0.5"
+
+[dev-dependencies]
+criterion = "0.3"
+rayon = "1.3"
+
+[[bench]]
+name = "benchmarks"
+harness = false

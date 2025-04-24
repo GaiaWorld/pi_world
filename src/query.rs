@@ -140,6 +140,22 @@ impl<'w, Q: FetchComponents, F: FilterComponents> Query<'w, Q, F> {
         unsafe { transmute(r) }
     }
 
+    pub fn get_by_catch(
+        &self,
+        e: Entity,
+    ) -> Result<<<Q as FetchComponents>::ReadOnly as FetchComponents>::Item<'_>, QueryError> {
+        self.state
+            .as_readonly()
+            .get_by_tick_catch(e)
+    }
+
+    pub fn get_mut_by_catch(&mut self, e: Entity) -> Result<<Q as FetchComponents>::Item<'_>, QueryError> {
+        let r = self.state.get_by_tick_catch(
+            e
+        );
+        unsafe { transmute(r) }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.state.is_empty()
     }
@@ -348,11 +364,12 @@ pub struct QueryState<Q: FetchComponents + 'static, F: FilterComponents + 'stati
 
     // 缓存上次的索引映射关系
     cache_index: SyncUnsafeCell<ArchetypeIndex>,
-    fetch_filter: SyncUnsafeCell<
-        MaybeUninit<(
-            <Q as FetchComponents>::Fetch<'static>,
-            <F as FilterComponents>::Filter<'static>,
-        )>,
+    fetch: SyncUnsafeCell<
+        MaybeUninit<<Q as FetchComponents>::Fetch<'static>>,
+    >,
+    filter: SyncUnsafeCell<
+        MaybeUninit<
+            <F as FilterComponents>::Filter<'static>>,
     >,
     is_match: SyncUnsafeCell<bool>,
 }
@@ -391,7 +408,8 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             qstate: QState::new(&mut system_meta),
             system_meta: system_meta,
             cache_index: SyncUnsafeCell::new(ArchetypeIndex::null()),
-            fetch_filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
+            fetch: SyncUnsafeCell::new(MaybeUninit::uninit()),
+            filter: SyncUnsafeCell::new(MaybeUninit::uninit()),
             is_match: SyncUnsafeCell::new(false),
         }
     }
@@ -432,7 +450,7 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     }
 
     #[inline(always)]
-    pub fn get_by_tick<'w>(
+    pub fn get_by_tick_catch<'w>(
         &'w self, 
         e: Entity,
     ) -> Result<Q::Item<'w>, QueryError> {
@@ -445,6 +463,51 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
         if addr.archetype_index() != unsafe { *self.cache_index.get() } {
+            if !self.bit_set.contains(
+                addr.archetype_index()
+                    .index()
+                    .wrapping_sub(self.bit_set_start),
+            ) {
+                return Err(QueryError::NoMatchArchetype);
+            }
+            unsafe { (&mut *self.fetch.get()).write(transmute::<_, <Q as FetchComponents>::Fetch<'static>>( Q::init_fetch(
+                &self.world,
+                &self.fetch_state,
+                addr.archetype_index(),
+                self.system_meta.this_run,
+                self.system_meta.last_run,
+            )))};
+            unsafe { (&mut *self.filter.get()).write(transmute::<_, <F as FilterComponents>::Filter<'static>>( F::init_filter(
+                &self.world,
+                &self.filter_state,
+                addr.archetype_index(),
+                self.system_meta.this_run,
+                self.system_meta.last_run,
+            )))};
+
+            unsafe { *self.cache_index.get() = addr.archetype_index() };
+        };
+        // let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
+        if F::filter(unsafe { (&*self.filter.get()).assume_init_ref() }, addr.row, e) {
+            return Err(QueryError::NoMatchEntity(e));
+        }
+        Ok(unsafe {transmute(Q::fetch( (&*self.fetch.get()).assume_init_ref() , addr.row, e))})
+    }
+
+    #[inline(always)]
+    pub fn get_by_tick<'w>(
+        &'w self, 
+        e: Entity,
+    ) -> Result<Q::Item<'w>, QueryError> {
+        // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
+        let addr = match self.world.entities.load(e) {
+            Some(v) => v,
+            None => return Err(QueryError::NoSuchEntity(e)),
+        };
+        // println!("check addr======{:?}", (entity, &addr));
+        
+        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
+        // if addr.archetype_index() != unsafe { *self.cache_index.get() } {
             if !self.bit_set.contains(
                 addr.archetype_index()
                     .index()
@@ -468,14 +531,14 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
                 self.system_meta.last_run,
             );
 
-            unsafe { *self.cache_index.get() = addr.archetype_index() };
-            unsafe { (&mut *self.fetch_filter.get()).write(transmute((fetch, filter))) };
-        };
-        let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
-        if F::filter(filter, addr.row, e) {
+            // unsafe { *self.cache_index.get() = addr.archetype_index() };
+            // unsafe { (&mut *self.fetch_filter.get()).write(transmute((fetch, filter))) };
+        // };
+        // let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
+        if F::filter(&filter, addr.row, e) {
             return Err(QueryError::NoMatchEntity(e));
         }
-        Ok(unsafe {transmute(Q::fetch(fetch, addr.row, e))})
+        Ok(unsafe {transmute(Q::fetch(&fetch, addr.row, e))})
     }
 
     #[inline(always)]
@@ -487,45 +550,46 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity(e)),
         };
-        // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
+        // // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
 
-        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
-        if addr.archetype_index() != unsafe { *self.cache_index.get() } {
-            unsafe { *self.cache_index.get() = addr.archetype_index() };
-            let fetch = match Q::init_fetch_opt(
-                &self.world,
-                &self.fetch_state,
-                addr.archetype_index(),
-                self.system_meta.this_run,
-                self.system_meta.last_run,
-            ) {
-                Some(fetch) => fetch,
-                None => {
-                    unsafe {*self.is_match.get() = false};
-                    return Err(QueryError::NoMatchEntity(e))
-                },
-            };
-            let (filter, is_match) = F::init_filter_opt(
-                &self.world,
-                &self.filter_state,
-                addr.archetype_index(),
-                self.system_meta.this_run,
-                self.system_meta.last_run,
-            );
-            unsafe {*self.is_match.get() = is_match};
-            if !is_match {
-                return Err(QueryError::NoMatchEntity(e));
-            }
+        // // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
+        // if addr.archetype_index() != unsafe { *self.cache_index.get() } {
+        //     unsafe { *self.cache_index.get() = addr.archetype_index() };
+        //     let fetch = match Q::init_fetch_opt(
+        //         &self.world,
+        //         &self.fetch_state,
+        //         addr.archetype_index(),
+        //         self.system_meta.this_run,
+        //         self.system_meta.last_run,
+        //     ) {
+        //         Some(fetch) => fetch,
+        //         None => {
+        //             unsafe {*self.is_match.get() = false};
+        //             return Err(QueryError::NoMatchEntity(e))
+        //         },
+        //     };
+        //     let (filter, is_match) = F::init_filter_opt(
+        //         &self.world,
+        //         &self.filter_state,
+        //         addr.archetype_index(),
+        //         self.system_meta.this_run,
+        //         self.system_meta.last_run,
+        //     );
+        //     unsafe {*self.is_match.get() = is_match};
+        //     if !is_match {
+        //         return Err(QueryError::NoMatchEntity(e));
+        //     }
             
-            unsafe { (&mut *self.fetch_filter.get()).write(transmute((fetch, filter))) };
-        } else if unsafe { *self.is_match.get() == false } {
-            return Err(QueryError::NoMatchEntity(e));
-        };
-        let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
-        if F::filter(filter, addr.row, e) {
-            return Err(QueryError::NoMatchEntity(e));
-        }
-        Ok(unsafe {transmute(Q::fetch(fetch, addr.row, e))})
+        //     unsafe { (&mut *self.fetch_filter.get()).write(transmute((fetch, filter))) };
+        // } else if unsafe { *self.is_match.get() == false } {
+        //     return Err(QueryError::NoMatchEntity(e));
+        // };
+        // let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
+        // if F::filter(filter, addr.row, e) {
+        //     return Err(QueryError::NoMatchEntity(e));
+        // }
+        // Ok(unsafe {transmute(Q::fetch(fetch, addr.row, e))})
+        todo!()
     }
 }
 
@@ -634,7 +698,8 @@ pub struct QueryIter<'w, Q: FetchComponents + 'static, F: FilterComponents + 'st
     pub(crate) ar_index: LocalIndex,
     // 原型
     pub(crate) ar: &'w Archetype,
-    fetch_filter: MaybeUninit<(Q::Fetch<'w>, F::Filter<'w>)>,
+    fetch: MaybeUninit<Q::Fetch<'w>>,
+    filter: MaybeUninit<F::Filter<'w>>,
     pub(crate) e: Entity,
     pub(crate) row: Row,
 }
@@ -647,7 +712,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
             state,
             ar: state.world.empty_archetype(),
             ar_index: state.archetypes.len().into(),
-            fetch_filter: MaybeUninit::uninit(),
+            fetch: MaybeUninit::uninit(),
+            filter: MaybeUninit::uninit(),
             e: Entity::null(),
             row: Row(0),
         }
@@ -676,7 +742,8 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 self.state.system_meta.this_run,
                 self.state.system_meta.last_run,
             );
-            self.fetch_filter = MaybeUninit::new((fetch, filter));
+            self.fetch = MaybeUninit::new(fetch);
+            self.filter = MaybeUninit::new(filter);
         }
     }
     // #[inline(always)]
@@ -689,13 +756,12 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
                 // 要求条目不为空
                 // println!("iter_normal1: {:?}", (self.e, self.row));
                 if !self.e.is_null() {
-                    let (fetch, filter) = unsafe { self.fetch_filter.assume_init_ref() };
                     // println!("iter_normal1111: {:?}", (self.e, self.row));
-                    if F::filter(filter, self.row, self.e) {
+                    if F::filter(unsafe { self.filter.assume_init_ref() }, self.row, self.e) {
                         continue;
                     }
                     // println!("iter_normal2222: {:?}", (self.e, self.row));
-                    let item = Q::fetch(fetch, self.row, self.e);
+                    let item = Q::fetch(unsafe { self.fetch.assume_init_ref() }, self.row, self.e);
                     return Some(item);
                 }
                 continue;

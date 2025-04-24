@@ -55,7 +55,7 @@ new_key_type! {
 }
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ComponentIndex(u32);
+pub struct ComponentIndex(pub(crate) u32);
 impl ComponentIndex {
     pub fn index(&self) -> usize {
         self.0 as usize
@@ -118,6 +118,7 @@ impl From<usize> for Tick {
 pub struct ArchetypeInit<'a>(pub &'a ShareArchetype, pub &'a World);
 #[derive(Clone, Debug)]
 pub struct ArchetypeOk<'a>(pub &'a ShareArchetype, pub ArchetypeIndex, pub &'a World);
+
 
 pub struct World {
     pub(crate) single_res_map: HashMap<TypeId, usize>,

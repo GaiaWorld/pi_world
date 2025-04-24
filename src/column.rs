@@ -352,13 +352,13 @@ impl<'a> BlobRef<'a> {
             vec.record(e);
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn changed_tick(&self, e: Entity, row: Row, tick: Tick) {
         // println!("changed_tick: {:?}", (e, row, tick, self.info.is_tick(), ));
         if !self.info.is_tick() {
             return;
         }
-        let old = self.blob.ticks.load_alloc(row.index());
+        let old = unsafe { self.blob.ticks.load_alloc(row.index()) };
         if *old >= tick {
             return;
         }
@@ -404,9 +404,20 @@ impl<'a> BlobRef<'a> {
         unsafe { transmute(self.get_blob(row)) }
     }
     #[inline(always)]
+    pub fn get_unchecked<T>(&self, row: Row) -> &'a T {
+        // self.trace(row, e, "get", std::ptr::null_mut());
+        unsafe { transmute(self.get_blob_unchecked(row)) }
+    }
+    #[inline(always)]
     pub fn get_mut<T>(&self, row: Row, _e: Entity) -> &'a mut T {
         // self.trace(row, e, "get_mut", std::ptr::null_mut());
         unsafe { transmute(self.load_blob(row)) }
+    }
+
+    #[inline(always)]
+    pub fn get_unchecked_mut<T>(&self, row: Row) -> &'a mut T {
+        // self.trace(row, e, "get", std::ptr::null_mut());
+        unsafe { transmute(self.get_blob_unchecked(row)) }
     }
     #[inline(always)]
     pub(crate) fn write<T>(&self, row: Row, e: Entity, val: T) {
@@ -455,8 +466,13 @@ impl<'a> BlobRef<'a> {
     // 如果没有分配内存，则返回的指针为is_null()
     #[inline(always)]
     pub fn get_blob(&self, row: Row) -> *mut u8 {
-        assert!(!row.is_null());
         unsafe { transmute(self.blob.blob.get_multiple(row.index(), self.info.size())) }
+    }
+
+    #[inline(always)]
+    pub fn get_blob_unchecked(&self, row: Row) -> *mut u8 {
+        assert!(!row.is_null());
+        unsafe { transmute(self.blob.blob.get_multiple_unchecked(row.index(), self.info.size())) }
     }
     // 一定会返回分配后的内存
     #[inline(always)]
