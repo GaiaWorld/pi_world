@@ -1,6 +1,6 @@
 [package]
 name = "pi_world"
-version = "0.2.3"
+version = "0.2.5"
 authors = ["suncy <530739162@qq.com>"]
 edition = "2021"
 description = "ecs world"
@@ -34,7 +34,7 @@ async-channel = "2.2"
 pi_proc_macros = "0.1"
 bevy_ptr = "0.13"
 bevy_utils = "0.13"
-pi_world_macros = {version = "0.1", path = "./macros"}
+pi_world_macros = {version = "=0.1.2", path = "./macros"}
 log = "0.4"
 downcast-rs = "1.2"
 bitvec = { version = "1.0", features = ["serde"] }
