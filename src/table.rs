@@ -61,7 +61,7 @@ impl Table {
     }
     #[inline(always)]
     pub fn get_unchecked(&self, row: Row) -> Entity {
-        unsafe { *self.entities.load_unchecked(row.index()) }
+        *self.entities.load(row.index()).unwrap()
         // *unsafe { self.entities.load_unchecked(row.index()) }
     }
     #[inline(always)]
@@ -70,6 +70,8 @@ impl Table {
         // println!("set1：{:p} {:p} {:?}", &self.entities, a, (&a, row, e, self.entities.vec_capacity(), self.entities.len()));
         *a = e;
     }
+
+    
     #[inline(always)]
     pub fn get_columns(&self) -> &Vec<Share<Column>> {
         &self.sorted_columns
