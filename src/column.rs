@@ -67,11 +67,12 @@ impl Column {
     // 初始化原型对应列的blob
     pub fn init_blob(&self, index: ArchetypeIndex) {
         *unsafe { &mut *self.last_len.get() } = index.index() + 1;
-        let blob = self.arr.load_alloc(index.index());
-        if self.info.info.size() > 0 {
-            unsafe { blob.blob.set_vec_capacity(0) };
+        if self.info.info.size() == 0 {
+            // 如果是0， 设置容量为最大数减1， std::usize::MAX有特殊意义， 表示blob未初始化
+            unsafe { self.arr.load_alloc(index.index()).blob.set_vec_capacity(std::usize::MAX - 1) };
+        } else {
+            unsafe { self.arr.load_alloc(index.index()).blob.set_vec_capacity(0) };
         }
-        
     }
     // 列是否包含指定原型
     pub fn contains(&self, index: ArchetypeIndex) -> bool {
@@ -481,7 +482,6 @@ impl<'a> BlobRef<'a> {
     // 一定会返回分配后的内存
     #[inline(always)]
     pub fn load_blob(&self, row: Row) -> *mut u8 {
-       
         assert!(!row.is_null());
         unsafe {
             transmute(
