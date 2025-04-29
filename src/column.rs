@@ -296,7 +296,7 @@ impl DerefMut for Blob {
 }
 impl Blob {
     pub fn memsize(&self) -> usize {
-        let val = self.0.vec_capacity();
+        let val = self.0.capacity(0);
         if val.is_null() {
             24
         } else {
@@ -313,7 +313,7 @@ pub(crate) struct BlobTicks {
 impl BlobTicks {
     pub fn memsize(&self) -> usize {
         
-        self.blob.memsize() + self.ticks.vec_capacity() * 4
+        self.blob.memsize() + self.ticks.capacity(0) * 4
     }
 }
 
