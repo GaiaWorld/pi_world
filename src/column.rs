@@ -297,7 +297,7 @@ impl DerefMut for Blob {
 impl Blob {
     pub fn memsize(&self) -> usize {
         let val = self.0.capacity(0);
-        if val.is_null() {
+        if val == std::usize::MAX - 1 {
             24
         } else {
             val + 24
