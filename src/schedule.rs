@@ -50,7 +50,6 @@ impl Schedule {
                 First.intern(),
                 PreUpdate.intern(),
                 Update.intern(),
-                PreUpdate.intern(),
                 PostUpdate.intern(),
                 Last.intern(),
                 End.intern(),
@@ -167,6 +166,7 @@ impl Schedule {
         // 按顺序运行stage
         for stage in self.stage_sort.iter() {
             if let Some(stage) = g.get_mut(stage) {
+                 
                 Self::run_graph(world, rt, stage, &self.systems, &self.set_conditions);
             }
         }
