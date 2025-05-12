@@ -70,6 +70,20 @@ impl Schedule {
         }
     }
 
+    /// 在某个阶段之后，添加一个阶段
+    pub fn add_stage_after(
+        &mut self,
+        stage_label: Interned<dyn StageLabel>,
+        after_label: Interned<dyn StageLabel>,
+    ) {
+        for i in 0..self.stage_sort.len() {
+            if self.stage_sort[i] == after_label {
+                self.stage_sort.insert(i + 1, stage_label);
+                return;
+            }
+        }
+    }
+
     /// 配置系统集
     pub fn configure_set(&mut self, config: SetConfig) {
         log::debug!(
