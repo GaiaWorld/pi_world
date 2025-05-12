@@ -50,8 +50,10 @@ impl Schedule {
                 First.intern(),
                 PreUpdate.intern(),
                 Update.intern(),
+                PreUpdate.intern(),
                 PostUpdate.intern(),
                 Last.intern(),
+                End.intern(),
             ],
 
             action: Vec::with_capacity(256),
@@ -838,6 +840,9 @@ pub struct PostUpdate;
 
 #[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Last;
+
+#[derive(StageLabel, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct End;
 
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct MainSchedule;
