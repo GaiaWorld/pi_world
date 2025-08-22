@@ -384,7 +384,7 @@ fn init_opt_state<T: 'static + Send + Sync>(state: &mut ResState<T>) {
 
 #[inline(always)]
 fn get_opt<'w, T: 'static + Send + Sync>(state: &'w ResState1) -> Option<*mut TickRes<T>> {
-    println!("get_opt======{:?}", (state.index, std::any::type_name::<T>()));
+    // println!("get_opt======{:?}", (state.index, std::any::type_name::<T>()));
     match state.world.index_single_res_any(state.index) {
         Some(s) => Some(Share::as_ptr(&Share::downcast::<TickRes<T>>(s.clone().into_any()).unwrap()) as usize as *mut TickRes<T>),
         None => None,
