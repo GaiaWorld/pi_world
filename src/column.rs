@@ -17,6 +17,7 @@ use crate::{
     world::{Entity, Tick},
 };
 
+use crate::blob::Blob;
 #[cfg(debug_assertions)]
 pub static COMPONENT_INDEX: AtomicUsize = AtomicUsize::new(usize::MAX);
 #[cfg(debug_assertions)]
@@ -165,7 +166,7 @@ impl Column {
     pub(crate) fn settle(&mut self) {
         let len = *self.last_len.get_mut();
         if len > self.arr.vec_capacity() {
-            self.arr.settle(len, 0, 1);
+            self.arr.settle(len, 0);
         }
     }
     /// 整理合并指定原型的空位
@@ -214,7 +215,7 @@ impl Column {
             // 整理合并blob内存
             blob.blob.settle(len, additional, self.info.size());
             // 整理合并ticks内存
-            blob.ticks.settle(len, additional, 1);
+            blob.ticks.settle(len, additional);
             return;
         }
         for (src, dst) in action.iter() {
@@ -264,44 +265,6 @@ impl ColumnInfo {
         }
         result += self.info.size();
         result
-    }
-}
-
-struct Blob(Arr<u8>);
-impl Default for Blob {
-    fn default() -> Self {
-        let mut arr = Arr::default();
-        unsafe { arr.set_vec_capacity(usize::null()) };
-        Self(arr)
-    }
-}
-impl Drop for Blob {
-    fn drop(&mut self) {
-        if self.vec_capacity().is_null() {
-            unsafe { self.set_vec_capacity(0) };
-        }
-    }
-}
-
-impl Deref for Blob {
-    type Target = Arr<u8>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for Blob {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl Blob {
-    pub fn memsize(&self) -> usize {
-        let val = self.0.capacity(0);
-        if val >= std::usize::MAX - 1 {
-            24
-        } else {
-            val + 24
-        }
     }
 }
 
@@ -471,13 +434,19 @@ impl<'a> BlobRef<'a> {
     // 如果没有分配内存，则返回的指针为is_null()
     #[inline(always)]
     pub fn get_blob(&self, row: Row) -> *mut u8 {
-        unsafe { transmute(self.blob.blob.get_multiple(row.index(), self.info.size())) }
+        let blob: *const Blob = &self.blob.blob;
+        let blob = unsafe { &mut *(blob as *mut Blob) };
+        unsafe { transmute(blob.get_multiple(row.index(), self.info.size())) }
+        // unsafe { transmute(blob.get_mut(row.index(), /* self.info.size() */)) }
     }
 
     #[inline(always)]
     pub fn get_blob_unchecked(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
-        unsafe { transmute(self.blob.blob.get_multiple_unchecked(row.index(), self.info.size())) }
+        let blob: *const Blob = &self.blob.blob;
+        let blob = unsafe { &mut *(blob as *mut Blob) };
+        unsafe { transmute(blob.get_multiple_unchecked(row.index(), self.info.size())) }
+        // unsafe { transmute(blob.get_unchecked_mut(row.index(), /* self.info.size() */)) }
     }
     // 一定会返回分配后的内存
     #[inline(always)]

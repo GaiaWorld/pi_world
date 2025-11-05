@@ -10,6 +10,8 @@
 #![feature(specialization)]
 #![allow(invalid_type_param_default)]
 #![allow(elided_named_lifetimes)]
+#![feature(unsafe_cell_access)]
+#![feature(vec_into_raw_parts)]
 
 
 // // 当编译wasm时启用重新编译Rust标准库使用test做基准测试会出现重复链接的编译错误
@@ -74,6 +76,7 @@ pub mod editor;
 pub mod commands;
 pub mod entry_query;
 pub mod world_ptr;
+pub mod blob;
 
 mod test;
 pub mod schedule_config;
