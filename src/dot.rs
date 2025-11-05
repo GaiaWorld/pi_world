@@ -60,18 +60,18 @@ static INDENT: &str = "\t";
 
 impl<'a> Dot<'a> {
     /// Create a `Dot` formatting wrapper with default configuration.
-    #[inline]
+    // #[inline]
     pub fn new(graph: &'a ExecGraph) -> Self {
         Self::with_config(graph, Config::empty())
     }
 
     /// Create a `Dot` formatting wrapper with custom configuration.
-    #[inline]
+    // #[inline]
     pub fn with_config(graph: &'a ExecGraph, config: Config) -> Self {
         Self::with_attr_getters(graph, config, &|_, _| String::new(), &|_, _| String::new())
     }
 
-    #[inline]
+    // #[inline]
     pub fn with_attr_getters(
         graph: &'a ExecGraph,
         config: Config,

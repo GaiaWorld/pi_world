@@ -74,7 +74,7 @@ impl FetchComponents for Entity {
     type State = ();
 
     fn init_state(_world: &mut World, _meta: &mut SystemMeta) -> Self::State {}
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         _state: &'w Self::State,
@@ -85,7 +85,7 @@ impl FetchComponents for Entity {
         ()
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         _state: &'w Self::State,
@@ -96,7 +96,7 @@ impl FetchComponents for Entity {
         Some(())
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(_fetch: &Self::Fetch<'w>, _row: Row, e: Entity) -> Self::Item<'w> {
         e
     }
@@ -116,7 +116,7 @@ impl<T: 'static> FetchComponents for &T {
         )
         .1
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -127,7 +127,7 @@ impl<T: 'static> FetchComponents for &T {
         state.blob_ref_unchecked(index)
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -138,7 +138,7 @@ impl<T: 'static> FetchComponents for &T {
         state.blob_ref(index)
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         fetch.get_unchecked::<T>(row)
     }
@@ -158,7 +158,7 @@ impl<T: 'static> FetchComponents for &mut T {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -169,7 +169,7 @@ impl<T: 'static> FetchComponents for &mut T {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -182,7 +182,7 @@ impl<T: 'static> FetchComponents for &mut T {
         }) 
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Mut::new(fetch, e, row)
     }
@@ -203,7 +203,7 @@ impl<T: 'static> FetchComponents for Ref<T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -214,7 +214,7 @@ impl<T: 'static> FetchComponents for Ref<T> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -227,7 +227,7 @@ impl<T: 'static> FetchComponents for Ref<T> {
         }) 
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         TickRef::new(fetch, row, e)
     }
@@ -247,7 +247,7 @@ impl<T: 'static> FetchComponents for Option<Ref<T>> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -262,7 +262,7 @@ impl<T: 'static> FetchComponents for Option<Ref<T>> {
         }
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -273,7 +273,7 @@ impl<T: 'static> FetchComponents for Option<Ref<T>> {
         Some(Self::init_fetch(_world, state, index, tick, last_run))
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(c) => Some(TickRef::new(c, row, e)),
@@ -296,7 +296,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -306,7 +306,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
     ) -> Self::Fetch<'w> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -318,7 +318,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ T> {
             ColumnTick::new(r, tick, last_run)
         }) 
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -338,7 +338,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -348,7 +348,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
     ) -> Self::Fetch<'w> {
         ColumnTick::new(state.blob_ref_unchecked(index), tick, last_run)
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -360,7 +360,7 @@ impl<T: 'static> FetchComponents for Ticker<'_, &'_ mut T> {
             ColumnTick::new(r, tick, last_run)
         }) 
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         Ticker::new(fetch, e, row)
     }
@@ -380,7 +380,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -395,7 +395,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
         }
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -405,7 +405,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ T>> {
     )  -> Option<Self::Fetch<'w>>{
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -428,7 +428,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -442,7 +442,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
             None
         }
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -452,7 +452,7 @@ impl<T: 'static> FetchComponents for Option<Ticker<'_, &'_ mut T>> {
     )  -> Option<Self::Fetch<'w>>{
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Ticker::new(f, e, row)),
@@ -475,7 +475,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -489,7 +489,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
             None
         }
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -499,7 +499,7 @@ impl<T: 'static> FetchComponents for Option<&T> {
     )  -> Option<Self::Fetch<'w>>{
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(c) => Some(c.column.get_unchecked::<T>(row)),
@@ -522,7 +522,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -536,7 +536,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
             None
         }
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -546,7 +546,7 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
     )  -> Option<Self::Fetch<'w>>{
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, e: Entity) -> Self::Item<'w> {
         match fetch {
             Some(f) => Some(Mut::new(f, e, row)),
@@ -554,6 +554,15 @@ impl<T: 'static> FetchComponents for Option<&mut T> {
         }
     }
 }
+
+fn _init_state_ordefault(world: &mut World, meta: &mut SystemMeta, info: ComponentInfo) -> Share<Column> {
+    meta.add_res(Relation::Read(*info.type_id()));
+    let column = meta
+        .component_relate(world, info, Relation::OptRead(0usize.into()))
+        .1;
+    column
+}
+
 /// 不存在T时，使用默认值。
 /// 默认值取Res<DefaultValue<T>>
 /// DefaultValue<T>默认为DefaultValue::from_world的返回值，也可被应用程序覆盖
@@ -566,14 +575,15 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        meta.add_res(Relation::Read(*info.type_id()));
-        let column = meta
-            .component_relate(world, info, Relation::OptRead(0usize.into()))
-            .1;
+        let column = _init_state_ordefault(world, meta, info);
+        // meta.add_res(Relation::Read(*info.type_id()));
+        // let column = meta
+        //     .component_relate(world, info, Relation::OptRead(0usize.into()))
+        //     .1;
         let _index = world.init_single_res::<T>();
         (column, world.get_share_single_res::<T>().unwrap())
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -587,7 +597,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
             Err(&state.1)
         }
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -597,7 +607,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefault<T> {
     ) -> Option<Self::Fetch<'w>> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     } 
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
             Ok(c) => c.get_unchecked::<T>(row),
@@ -617,14 +627,15 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
 
     fn init_state(world: &mut World, meta: &mut SystemMeta) -> Self::State {
         let info = ComponentInfo::of::<T>(0);
-        meta.add_res(Relation::Read(*info.type_id()));
-        let column = meta
-            .component_relate(world, info, Relation::OptRead(0usize.into()))
-            .1;
+        let column = _init_state_ordefault(world, meta, info);
+        // meta.add_res(Relation::Read(*info.type_id()));
+        // let column = meta
+        //     .component_relate(world, info, Relation::OptRead(0usize.into()))
+        //     .1;
         let _index = world.init_single_res::<T>();
         (column, world.get_share_single_res::<T>().unwrap())
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -638,7 +649,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
             Err((&state.1, last_run))
         }
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -648,7 +659,7 @@ impl<T: 'static + FromWorld> FetchComponents for OrDefaultRef<T> {
     ) -> Option<Self::Fetch<'w>> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, row: Row, _e: Entity) -> Self::Item<'w> {
         match fetch {
             Ok(c) => {
@@ -675,7 +686,7 @@ impl<T: 'static> FetchComponents for Has<T> {
         )
         .1
     }
-    #[inline]
+    //#[inline]
     fn init_fetch<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -685,7 +696,7 @@ impl<T: 'static> FetchComponents for Has<T> {
     ) -> Self::Fetch<'w> {
         state.contains(index)
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -695,7 +706,7 @@ impl<T: 'static> FetchComponents for Has<T> {
     ) -> Option<Self::Fetch<'w>> {
         Some(Self::init_fetch(world, state, index, tick, last_run))
     }
-    #[inline(always)]
+    //#[inline(always)]
     fn fetch<'w>(fetch: &Self::Fetch<'w>, _row: Row, _e: Entity) -> Self::Item<'w> {
         *fetch
     }
@@ -722,7 +733,7 @@ impl<T: 'static> FetchComponents for ComponentId<T> {
     ) -> Self::Fetch<'w> {
         *state
     }
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -759,7 +770,7 @@ impl FetchComponents for ArchetypeName<'_> {
         (archetype.name(), archetype.index())
     }
 
-    #[inline]
+    //#[inline]
     fn init_fetch_opt<'w>(
         world: &'w World,
         state: &'w Self::State,
@@ -782,7 +793,7 @@ pub struct ColumnTick<'a> {
     pub(crate) last_run: Tick,
 }
 impl<'a> ColumnTick<'a> {
-    #[inline(always)]
+    //#[inline(always)]
     pub(crate) fn new(column: BlobRef<'a>, tick: Tick, last_run: Tick) -> Self {
         Self {
             column,
@@ -801,7 +812,7 @@ pub struct TickRef<'a, T> {
 }
 
 impl<'a, T> TickRef<'a, T> {
-    #[inline(always)]
+    //#[inline(always)]
     pub fn new(c: &ColumnTick<'a>, row: Row, e: Entity) -> Self {
         Self {
             c: c.clone(),
@@ -810,25 +821,25 @@ impl<'a, T> TickRef<'a, T> {
             _p: PhantomData,
         }
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn entity(&self) -> Entity {
         self.e
     }
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.c.last_run
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
     }
 }
 impl<'a, T: 'static> Deref for TickRef<'a, T> {
     type Target = T;
-    #[inline(always)]
+    //#[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.c.column.get::<T>(self.row, self.e)
     }
@@ -842,7 +853,7 @@ pub struct ValueRef<'a, T> {
 }
 
 impl<'a, T> ValueRef<'a, T> {
-    #[inline(always)]
+    //#[inline(always)]
     pub fn new(value: &'a T, tick: Tick, last_run: Tick) -> Self {
         Self {
             value,
@@ -854,18 +865,18 @@ impl<'a, T> ValueRef<'a, T> {
     pub fn tick(&self) -> Tick {
         self.tick
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.last_run
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.tick > self.last_run
     }
 }
 impl<'a, T: 'static> Deref for ValueRef<'a, T> {
     type Target = T;
-    #[inline(always)]
+    //#[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.value
     }
@@ -947,7 +958,7 @@ pub struct Mut<'a, T: 'static> {
     _p: PhantomData<T>,
 }
 impl<'a, T: Sized> Mut<'a, T> {
-    #[inline(always)]
+    //#[inline(always)]
     pub fn new(c: &ColumnTick<'a>, e: Entity, row: Row) -> Self {
         Self {
             c: c.clone(),
@@ -956,18 +967,18 @@ impl<'a, T: Sized> Mut<'a, T> {
             _p: PhantomData,
         }
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn entity(&self) -> Entity {
         self.e
     }
     pub fn tick(&self) -> Tick {
         self.c.column.get_tick_unchecked(self.row)
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn last_tick(&self) -> Tick {
         self.c.last_run
     }
-    #[inline(always)]
+    //#[inline(always)]
     pub fn is_changed(&self) -> bool {
         self.c.column.get_tick_unchecked(self.row) > self.c.last_run
     }
@@ -986,13 +997,13 @@ impl<'a, T: Sized> Mut<'a, T> {
 }
 impl<'a, T: 'static> Deref for Mut<'a, T> {
     type Target = T;
-    #[inline(always)]
+    //#[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.c.column.get_unchecked::<T>(self.row)
     }
 }
 impl<'a, T: 'static> DerefMut for Mut<'a, T> {
-    #[inline(always)]
+    //#[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // log::debug!("changed=================={:?}", std::any::type_name::<T>());
         self.c.column.changed_tick(self.e, self.row, self.c.tick);
@@ -1015,7 +1026,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init_state(_world, _meta),)*)
             }
             #[allow(clippy::unused_unit)]
-            #[inline(always)]
+            //#[inline(always)]
             fn init_fetch<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -1027,7 +1038,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init_fetch(_world, $state, _index, _tick, _last_run),)*)
             }
 
-            #[inline]
+            //#[inline]
             fn init_fetch_opt<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -1044,7 +1055,7 @@ macro_rules! impl_tuple_fetch {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline(always)]
+            //#[inline(always)]
             fn fetch<'w>(
                 _fetch: &Self::Fetch<'w>,
                 _row: Row,

@@ -311,9 +311,9 @@ impl<T: 'static + Send + Sync> SystemParam for Option<SingleRes<'_, T>> {
         // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        match get_opt::<T>(&state.state) {
+        match _get_opt(&state.state.world, state.state.index) {
             Some(res) => {
-                state.value = res;
+                state.value = Share::as_ptr(&Share::downcast::<TickRes<T>>(res).unwrap()) as usize as *mut TickRes<T>;
                 Some(SingleRes::new(state))
             },
             None => None,
@@ -341,9 +341,9 @@ impl<T: 'static + Send + Sync> SystemParam for Option<SingleResMut<'_, T>> {
         // world: &'world World,
         state: &'world mut Self::State,
     ) -> Self::Item<'world> {
-        match get_opt::<T>(&state.state) {
+        match _get_opt(&state.state.world, state.state.index) {
             Some(res) => {
-                state.value = res;
+                state.value = Share::as_ptr(&Share::downcast::<TickRes<T>>(res).unwrap()) as usize as *mut TickRes<T>;
                 Some(SingleResMut::new(state))
             },
             None => None,
@@ -358,28 +358,50 @@ impl<T: 'static + Send + Sync> SystemParam for Option<SingleResMut<'_, T>> {
         unsafe { transmute(Self::get_param(state)) }
     }
 }
-
+#[inline]
 fn init_state<T: 'static + Send + Sync>(
     world: &mut World,
     meta: &mut SystemMeta,
 ) -> ResState<T> {
     let t = TypeInfo::of::<T>();
-    let r = Relation::Read(t.type_id);
-    let index = meta.add_single_res(world, t, r);
+    // let r = Relation::Read(t.type_id);
+    // let index = meta.add_single_res(world, t, r);
+    // ResState {
+    //     value: 0 as *mut TickRes<T>,
+    //     state: ResState1 {
+    //         index,
+    //         world: Ptr::new(world),
+    //         system_meta: Ptr::new(meta)
+    //     }
+    // }
+
     ResState {
         value: 0 as *mut TickRes<T>,
-        state: ResState1 {
-            index,
-            world: Ptr::new(world),
-            system_meta: Ptr::new(meta)
-        }
+        state: _init_state(t, world, meta)
+    }
+}
+
+fn _init_state(
+    t: TypeInfo,
+    world: &mut World,
+    meta: &mut SystemMeta,
+) -> ResState1 {
+    let r = Relation::Read(t.type_id);
+    let index = meta.add_single_res(world, t, r);
+    ResState1 {
+        index,
+        world: Ptr::new(world),
+        system_meta: Ptr::new(meta)
     }
 }
 
 #[inline(always)]
 fn init_opt_state<T: 'static + Send + Sync>(state: &mut ResState<T>) {
-    let s = state.state.world.index_single_res_any(state.state.index).unwrap();
-    state.value = Share::as_ptr(&Share::downcast::<TickRes<T>>(s.clone().into_any()).unwrap()) as usize as *mut TickRes<T>;
+    state.value = Share::as_ptr(&Share::downcast::<TickRes<T>>(_init_opt_state(&state.state.world, state.state.index)).unwrap()) as usize as *mut TickRes<T>;
+}
+fn _init_opt_state(world: &World, index: usize) -> Share<dyn Any + Send + Sync> {
+    let s = world.index_single_res_any(index).unwrap();
+    s.clone().into_any()
 }
 
 #[inline(always)]
@@ -387,6 +409,18 @@ fn get_opt<'w, T: 'static + Send + Sync>(state: &'w ResState1) -> Option<*mut Ti
     // println!("get_opt======{:?}", (state.index, std::any::type_name::<T>()));
     match state.world.index_single_res_any(state.index) {
         Some(s) => Some(Share::as_ptr(&Share::downcast::<TickRes<T>>(s.clone().into_any()).unwrap()) as usize as *mut TickRes<T>),
+        None => None,
+    }
+    // let s = .unwrap().clone();
+    // let r = Share::downcast::<TickRes<T>>(s.into_any()).unwrap();
+    // unsafe {
+    //     &mut *( Share::as_ptr(&r) as usize as *mut TickRes<T>)
+    // }
+}
+fn _get_opt(world: &World, index: usize) -> Option<Share<dyn Any + Send + Sync>> {
+    // println!("get_opt======{:?}", (state.index, std::any::type_name::<T>()));
+    match world.index_single_res_any(index) {
+        Some(s) => Some(s.clone().into_any()),
         None => None,
     }
     // let s = .unwrap().clone();
