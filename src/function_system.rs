@@ -179,7 +179,7 @@ impl<P: SystemParam> ParamSystem<P> {
     //         result,
     //     )
     // }
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn align(&mut self) {
         // self.system_meta.this_run = world.increment_tick();
         let param_state: &mut _ = self.param_state.as_mut().unwrap();
@@ -224,7 +224,7 @@ macro_rules! impl_system_function {
                 FnMut($(SystemParamItem<$param>),*) -> Out,
         {
             type Param = ($($param,)*);
-            #[inline(always)]
+            // #[inline(always)]
             fn run(&mut self, param_value: SystemParamItem< ($($param,)*)>) -> Out {
                 // Yes, this is strange, but `rustc` fails to compile this impl
                 // without using this function. It fails to recognize that `func`

@@ -49,7 +49,7 @@ impl<E> EventVec<E> {
         self.listeners.push(ShareUsize::new(0));
         listener_index
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn record(&self, e: E) {
         self.vec.insert(e);
     }
@@ -374,15 +374,33 @@ impl<'w, T: 'static> ComponentEvent<'w, T> {
     }
 }
 
+#[inline]
 fn init_state<E: 'static>(world: &mut World) -> Share<EventVec<E>> {
     let info = TypeInfo::of::<Event<E>>();
+    // let r = world.get_event_record(&info.type_id);
+    // if let Some(er) = r {
+    //     Share::downcast::<EventVec<E>>(er.into_any()).unwrap()
+    // } else {
+    //     let r = Share::new(EventVec::<E>::new(info.type_name.clone()));
+    //     world.init_event_record(info.type_id, r.clone());
+    //     r
+    // }
+    match _init_state(world, &info) {
+        Ok(r) => Share::downcast::<EventVec<E>>(r).unwrap(),
+        Err(r) => {
+            let r = Share::new(EventVec::<E>::new(r));
+            world.init_event_record(info.type_id, r.clone());
+            r
+        },
+    }
+}
+
+fn _init_state(world: &mut World, info: &TypeInfo) -> Result<Share<dyn Any + Send + Sync>, Cow<'static, str>> {
     let r = world.get_event_record(&info.type_id);
     if let Some(er) = r {
-        Share::downcast::<EventVec<E>>(er.into_any()).unwrap()
+        Ok(er.into_any())
     } else {
-        let r = Share::new(EventVec::<E>::new(info.type_name.clone()));
-        world.init_event_record(info.type_id, r.clone());
-        r
+        Err(info.type_name.clone())
     }
 }
 

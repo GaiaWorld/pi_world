@@ -74,7 +74,7 @@ pub trait SystemParam: Sized + Send + Sync {
     // }
 
     /// system align the world archetypes.
-    #[inline]
+    // #[inline]
     #[allow(unused_variables)]
     fn align(state: &mut Self::State) {}
     // 第一次创建参数实例后调用

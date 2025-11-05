@@ -77,7 +77,7 @@ impl<T: 'static> FilterComponents for Without<T> {
         ()
     }
 
-    #[inline]
+    // #[inline]
     fn init_filter_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -124,7 +124,7 @@ impl<T: 'static> FilterComponents for With<T> {
         ()
     }
 
-    #[inline]
+    // #[inline]
     fn init_filter_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -161,7 +161,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
         .1
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     fn init_filter<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -172,7 +172,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
         (state.blob_ref(index), last_run)
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     fn init_filter_opt<'w>(
         _world: &'w World,
         state: &'w Self::State,
@@ -185,7 +185,7 @@ impl<T: 'static> FilterComponents for Changed<T> {
         ((state.blob_ref(index), last_run), is_match)
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     fn filter<'w>(filter: &Self::Filter<'w>, row: Row, _e: Entity) -> bool {
         if let Some(r) = &filter.0 {
             r.get_tick_unchecked(row) <= filter.1
@@ -212,7 +212,7 @@ macro_rules! impl_tuple_filter {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline]
+            // #[inline]
             fn init_filter<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -225,7 +225,7 @@ macro_rules! impl_tuple_filter {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline]
+            // #[inline]
             fn init_filter_opt<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -246,7 +246,7 @@ macro_rules! impl_tuple_filter {
             
 
             #[allow(clippy::unused_unit)]
-            #[inline(always)]
+            // #[inline(always)]
             fn filter<'w>(_filter: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
                 let ($($name,)*) = _filter;
                 $(
@@ -273,7 +273,7 @@ macro_rules! impl_tuple_filter {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline]
+            // #[inline]
             fn init_filter<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -286,7 +286,7 @@ macro_rules! impl_tuple_filter {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline]
+            // #[inline]
             fn init_filter_opt<'w>(
                 _world: &'w World,
                 _state: &'w Self::State,
@@ -305,7 +305,7 @@ macro_rules! impl_tuple_filter {
             }
 
             #[allow(clippy::unused_unit)]
-            #[inline(always)]
+            // #[inline(always)]
             fn filter<'w>(_filter: &Self::Filter<'w>, _row: Row, _e: Entity) -> bool {
                 let ($($name,)*) = _filter;
                 $(

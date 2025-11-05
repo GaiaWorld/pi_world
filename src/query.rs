@@ -16,6 +16,7 @@ use crate::world_ptr::Ptr;
 use fixedbitset::FixedBitSet;
 use pi_null::*;
 use pi_share::Share;
+use pi_slot::SlotMap;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum QueryError {
@@ -455,37 +456,37 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         e: Entity,
     ) -> Result<Q::Item<'w>, QueryError> {
         // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
-        let addr = match self.world.entities.load(e) {
-            Some(v) => v,
-            None => return Err(QueryError::NoSuchEntity(e)),
-        };
+        // let addr = match self.world.entities.load(e) {
+        //     Some(v) => v,
+        //     None => return Err(QueryError::NoSuchEntity(e)),
+        // };
         // println!("check addr======{:?}", (entity, &addr));
         
         // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
-        if addr.archetype_index() != unsafe { *self.cache_index.get() } {
-            if !self.bit_set.contains(
-                addr.archetype_index()
-                    .index()
-                    .wrapping_sub(self.bit_set_start),
-            ) {
-                return Err(QueryError::NoMatchArchetype);
-            }
+
+        let (addr, flag) = match _get_by_tick_catch(e, &self.cache_index, &self.world.entities, &self.bit_set, self.bit_set_start) {
+            Ok(addr) => addr,
+            Err(err) => return Err(err),
+        };
+
+        if flag {
+            let archetype_index = addr.archetype_index();
             unsafe { (&mut *self.fetch.get()).write(transmute::<_, <Q as FetchComponents>::Fetch<'static>>( Q::init_fetch(
                 &self.world,
                 &self.fetch_state,
-                addr.archetype_index(),
+                archetype_index,
                 self.system_meta.this_run,
                 self.system_meta.last_run,
             )))};
             unsafe { (&mut *self.filter.get()).write(transmute::<_, <F as FilterComponents>::Filter<'static>>( F::init_filter(
                 &self.world,
                 &self.filter_state,
-                addr.archetype_index(),
+                archetype_index,
                 self.system_meta.this_run,
                 self.system_meta.last_run,
             )))};
 
-            unsafe { *self.cache_index.get() = addr.archetype_index() };
+            unsafe { *self.cache_index.get() = archetype_index };
         };
         // let (fetch, filter) = unsafe { (&*self.fetch_filter.get()).assume_init_ref() };
         if F::filter(unsafe { (&*self.filter.get()).assume_init_ref() }, addr.row, e) {
@@ -499,22 +500,27 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
         &'w self, 
         e: Entity,
     ) -> Result<Q::Item<'w>, QueryError> {
-        // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
-        let addr = match self.world.entities.load(e) {
-            Some(v) => v,
-            None => return Err(QueryError::NoSuchEntity(e)),
-        };
-        // println!("check addr======{:?}", (entity, &addr));
+        // // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
+        // let addr = match self.world.entities.load(e) {
+        //     Some(v) => v,
+        //     None => return Err(QueryError::NoSuchEntity(e)),
+        // };
+        // // println!("check addr======{:?}", (entity, &addr));
         
-        // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
-        // if addr.archetype_index() != unsafe { *self.cache_index.get() } {
-            if !self.bit_set.contains(
-                addr.archetype_index()
-                    .index()
-                    .wrapping_sub(self.bit_set_start),
-            ) {
-                return Err(QueryError::NoMatchArchetype);
-            }
+        // // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
+        // // if addr.archetype_index() != unsafe { *self.cache_index.get() } {
+        //     if !self.bit_set.contains(
+        //         addr.archetype_index()
+        //             .index()
+        //             .wrapping_sub(self.bit_set_start),
+        //     ) {
+        //         return Err(QueryError::NoMatchArchetype);
+        //     }
+            
+            let addr = match _get_by_tick(e, &self.world.entities, &self.bit_set, self.bit_set_start) {
+                Ok(addr) => addr,
+                Err(err) => return Err(err),
+            };
 
             let fetch = Q::init_fetch(
                 &self.world,
@@ -593,6 +599,60 @@ impl<Q: FetchComponents, F: FilterComponents> QueryState<Q, F> {
     }
 }
 
+fn _get_by_tick_catch<'w>(
+    e: Entity,
+    cache_index: &'w SyncUnsafeCell<ArchetypeIndex>,
+    entities: &'w SlotMap<Entity, EntityAddr>,
+    bit_set: &'w FixedBitSet,
+    bit_set_start: usize,
+) -> Result<(&'w mut EntityAddr, bool), QueryError> {
+
+    let mut flag: bool = false;
+    // let addr = *self.check(&self.world, e /* cache_mapping, */)?;
+    let addr = match entities.load(e) {
+        Some(v) => v,
+        None => return Err(QueryError::NoSuchEntity(e)),
+    };
+    // println!("check addr======{:?}", (entity, &addr));
+    
+    // println!("get======{:?}", (entity, addr.archetype_index(), addr,  world.get_archetype(addr.archetype_index())));
+    flag = addr.archetype_index() != unsafe { *cache_index.get() };
+    if flag {
+        if !bit_set.contains(
+            addr.archetype_index()
+                .index()
+                .wrapping_sub(bit_set_start),
+        ) {
+            return Err(QueryError::NoMatchArchetype);
+        }
+    }
+
+    return Ok((addr, flag));
+}
+
+fn _get_by_tick<'w>(
+    e: Entity,
+    entities: &'w SlotMap<Entity, EntityAddr>,
+    bit_set: &'w FixedBitSet,
+    bit_set_start: usize,
+) -> Result<&'w mut EntityAddr, QueryError> {
+
+    let addr = match entities.load(e) {
+        Some(v) => v,
+        None => return Err(QueryError::NoSuchEntity(e)),
+    };
+
+    if !bit_set.contains(
+        addr.archetype_index()
+            .index()
+            .wrapping_sub(bit_set_start),
+    ) {
+        return Err(QueryError::NoMatchArchetype);
+    }
+
+    return Ok(addr);
+}
+
 #[derive(Debug)]
 pub struct QState {
     pub(crate) related: Share<Related<ComponentIndex>>, // 组件关系表
@@ -616,7 +676,7 @@ impl QState {
     }
 
     // 对齐world上新增的原型
-    #[inline(always)]
+    // #[inline(always)]
     pub fn align(&mut self, world: &World) {
         if world.archetype_arr.len() == self.archetypes_len {
             return;
@@ -624,7 +684,7 @@ impl QState {
         self.align1(world);
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn align1(&mut self, world: &World) {
         let len = world.archetype_arr.len();
         // 检查新增的原型
@@ -650,7 +710,7 @@ impl QState {
         self.archetypes.push(ar.clone());
     }
     // 检查entity是否正确，包括对应的原型是否在本查询内，并将查询到的原型本地位置记到cache_mapping上
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn check<'w>(
         &self,
         world: &'w World,
@@ -750,22 +810,38 @@ impl<'w, Q: FetchComponents, F: FilterComponents> QueryIter<'w, Q, F> {
     fn iter_normal(&mut self) -> Option<Q::Item<'w>> {
         loop {
             // println!("iter_normal: {:?}", (self.e, self.row, self.ar.index(), self.ar.name()));
+            let mut iscontinue = false;
+            // let mut isnotnull = false;
             if self.row.0 > 0 {
                 self.row.0 -= 1;
                 self.e = self.ar.get_unchecked(self.row);
                 // 要求条目不为空
                 // println!("iter_normal1: {:?}", (self.e, self.row));
+                iscontinue = true;
+
+                // if !self.e.is_null() {
+                //     // println!("iter_normal1111: {:?}", (self.e, self.row));
+                //     if F::filter(unsafe { self.filter.assume_init_ref() }, self.row, self.e) {
+                //         continue;
+                //     }
+                //     // println!("iter_normal2222: {:?}", (self.e, self.row));
+                //     let item = Q::fetch(unsafe { self.fetch.assume_init_ref() }, self.row, self.e);
+                //     return Some(item);
+                // }
+                // continue;
+            }
+
+            if iscontinue {
                 if !self.e.is_null() {
-                    // println!("iter_normal1111: {:?}", (self.e, self.row));
-                    if F::filter(unsafe { self.filter.assume_init_ref() }, self.row, self.e) {
-                        continue;
+                    if F::filter(unsafe { self.filter.assume_init_ref() }, self.row, self.e) == false {
+                        let item = Q::fetch(unsafe { self.fetch.assume_init_ref() }, self.row, self.e);
+                        return Some(item);
                     }
-                    // println!("iter_normal2222: {:?}", (self.e, self.row));
-                    let item = Q::fetch(unsafe { self.fetch.assume_init_ref() }, self.row, self.e);
-                    return Some(item);
                 }
                 continue;
             }
+            
+
             // 当前的原型已经迭代完毕
             if self.ar_index.0 == 0 {
                 // 所有原型都迭代过了

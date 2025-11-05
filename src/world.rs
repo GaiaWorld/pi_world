@@ -15,7 +15,7 @@ use crate::alter::{AlterState, QueryAlterState};
 use crate::archetype::{
     Archetype, ArchetypeIndex, ArchetypeInfo, ComponentInfo, Row, ShareArchetype,
 };
-use crate::column::Column;
+use crate::column::{BlobRef, Column};
 #[cfg(debug_assertions)]
 use crate::column::{ARCHETYPE_INDEX, COMPONENT_INDEX};
 use crate::editor::{EditorState, EntityEditor};
@@ -377,15 +377,28 @@ impl World {
     /// 插入指定的单例资源，返回索引
     pub fn insert_single_res<T: 'static>(&mut self, value: T) -> usize {
         let tid = TypeId::of::<T>();
+        let (flag, index) = self._insert_single_res(tid);
+        if flag {
+            self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
+        }
+        // let index = *self.single_res_map.entry(tid).or_insert_with(|| {
+        //     let index = self.single_res_arr.len();
+        //     self.single_res_arr.push(None);
+        //     index
+        // });
+        // if self.single_res_arr[index].is_none() {
+        //     self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
+        // }
+        index
+    }
+    
+    fn _insert_single_res(&mut self, tid: TypeId) -> (bool, usize) {
         let index = *self.single_res_map.entry(tid).or_insert_with(|| {
             let index = self.single_res_arr.len();
             self.single_res_arr.push(None);
             index
         });
-        if self.single_res_arr[index].is_none() {
-            self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
-        }
-        index
+        (self.single_res_arr[index].is_none(), index)
     }
 
     // 如果不存在单例类型， 则注册指定的单例资源（不插入具体值，只添加类型），返回索引
@@ -401,9 +414,13 @@ impl World {
     }
 
     pub fn register_single_res<T: 'static>(&mut self) -> usize {
+        self._register_single_res(TypeId::of::<T>())
+    }
+    
+    pub fn _register_single_res(&mut self, tid: TypeId) -> usize {
         *self
             .single_res_map
-            .entry(TypeId::of::<T>())
+            .entry(tid)
             .or_insert_with(|| {
                 let index = self.single_res_arr.len();
                 self.single_res_arr.push(None);
@@ -414,24 +431,51 @@ impl World {
     /// 如果单例不存在， 插入单例默认值
     pub fn init_single_res<T: 'static + FromWorld>(&mut self) -> usize {
         let tid = TypeId::of::<T>();
+        let (flag, index) = self._init_single_res(tid);
+        if flag {
+            let value = T::from_world(self);
+            self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
+        }
+        // let index = *self.single_res_map.entry(tid).or_insert_with(|| {
+        //     let index = self.single_res_arr.len();
+        //     self.single_res_arr.push(None);
+        //     index
+        // });
+        // if self.single_res_arr[index].is_none() {
+        //     let value = T::from_world(self);
+        //     self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
+        // }
+        index
+    }
+    pub fn _init_single_res(&mut self, tid: TypeId) -> (bool, usize) {
         let index = *self.single_res_map.entry(tid).or_insert_with(|| {
             let index = self.single_res_arr.len();
             self.single_res_arr.push(None);
             index
         });
-        if self.single_res_arr[index].is_none() {
-            let value = T::from_world(self);
-            self.single_res_arr[index] = Some(Share::new(TickRes::new(value)));
-        }
-        index
+        (self.single_res_arr[index].is_none(), index)
     }
 
     /// 用索引获得指定的只读单例资源
     #[inline]
     pub fn index_single_res<T: 'static>(&self, index: usize) -> Option<&TickRes<T>> {
+        // self.single_res_arr.get(index).map_or(None, |r| {
+        //     match r {
+        //         Some(r) => r.as_any().downcast_ref(),
+        //         None => None,
+        //     }
+        // })
+        match self._index_single_res(index) {
+            Some(r) => r.downcast_ref(),
+            None => None,
+        }
+    }
+    
+    // #[inline]
+    fn _index_single_res(&self, index: usize) -> Option<&dyn Any> {
         self.single_res_arr.get(index).map_or(None, |r| {
             match r {
-                Some(r) => r.as_any().downcast_ref(),
+                Some(r) => Some(r.as_any()),
                 None => None,
             }
         })
@@ -442,15 +486,30 @@ impl World {
         &mut self,
         index: usize,
     ) -> Option<&mut TickRes<T>> {
+        // self.single_res_arr.get_mut(index).map_or(None, |r| {
+        //     match r {
+        //         Some(r) => unsafe { Share::get_mut_unchecked(r).as_any_mut().downcast_mut() },
+        //         None => None,
+        //     }
+        // })
+        match self._index_single_res_mut(index) {
+            Some(r) => r.downcast_mut(),
+            None => None,
+        }
+    }
+    fn _index_single_res_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut dyn Any> {
         self.single_res_arr.get_mut(index).map_or(None, |r| {
             match r {
-                Some(r) => unsafe { Share::get_mut_unchecked(r).as_any_mut().downcast_mut() },
+                Some(r) => unsafe { Some(Share::get_mut_unchecked(r).as_any_mut()) },
                 None => None,
             }
         })
     }
     /// 获得指定的单例资源
-    #[inline]
+    // #[inline]
     pub fn get_share_single_res<T: 'static>(&self) -> Option<Share<TickRes<T>>> {
         let tid = TypeId::of::<T>();
         self.get_single_res_any(&tid).map(|r| Share::downcast(r.clone().into_any()).unwrap())
@@ -460,17 +519,29 @@ impl World {
     #[inline]
     pub fn get_single_res<T: 'static>(&self) -> Option<&TickRes<T>> {
         let tid = TypeId::of::<T>();
-        match self.single_res_map.get(&tid) {
-            Some(index) => self.index_single_res(*index),
+        match self._get_single_res(&tid) {
+            Some(val) => val.downcast_ref(),
+            None => return None,
+        }
+    }
+    fn _get_single_res(&self, tid: &TypeId) -> Option<&dyn Any> {
+        match self.single_res_map.get(tid) {
+            Some(index) => self._index_single_res(*index),
             None => return None,
         }
     }
     /// 获得指定的单例资源
-    #[inline]
+    // #[inline]
     pub fn get_single_res_mut<T: 'static>(&mut self) -> Option<&mut TickRes<T>> {
         let tid = TypeId::of::<T>();
-        match self.single_res_map.get(&tid) {
-            Some(index) => self.index_single_res_mut(*index),
+        match self._get_single_res_mut(&tid) {
+            Some(index) => index.downcast_mut(),
+            None => return None,
+        }
+    }
+    fn _get_single_res_mut(&mut self, tid: &TypeId) -> Option<&mut dyn Any> {
+        match self.single_res_map.get(tid) {
+            Some(index) => self._index_single_res_mut(*index),
             None => return None,
         }
     }
@@ -533,6 +604,33 @@ impl World {
         e: Entity,
         index: ComponentIndex,
     ) -> Result<&T, QueryError> {
+        // let addr = match self.entities.get(e) {
+        //     Some(v) => v,
+        //     None => return Err(QueryError::NoSuchEntity(e)),
+        // };
+        // let column = match self.get_column(index) {
+        //     Some(c) => c,
+        //     None => return Err(QueryError::NoSuchComponent(index)),
+        // };
+        // let column = column.blob_ref(addr.archetype_index());
+        // match column {
+        //     Some(c) => Ok(c.get::<T>(addr.row, e)),
+        //     None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
+        // }
+        match self._get_component_by_index(e, index) {
+            Ok((c, addr)) => match c {
+                Some(c) => Ok(c.get::<T>(addr.row, e)),
+                None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
+            },
+            Err(e) => Err(e),
+        }
+    }
+    
+    fn _get_component_by_index<'w>(
+        &'w self,
+        e: Entity,
+        index: ComponentIndex,
+    ) -> Result<(Option<BlobRef<'_>>, &'w EntityAddr), QueryError> {
         let addr = match self.entities.get(e) {
             Some(v) => v,
             None => return Err(QueryError::NoSuchEntity(e)),
@@ -542,10 +640,7 @@ impl World {
             None => return Err(QueryError::NoSuchComponent(index)),
         };
         let column = column.blob_ref(addr.archetype_index());
-        match column {
-            Some(c) => Ok(c.get::<T>(addr.row, e)),
-            None => Err(QueryError::MissingComponent(index, addr.archetype_index())),
-        }
+        return Ok((column, addr));
     }
     /// 获得指定实体的指定组件
     pub fn get_component_mut_by_index<T: 'static>(
@@ -629,12 +724,12 @@ impl World {
         index.into()
     }
     /// 插入一个新的EntityAddr
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn insert_addr(&self, ar_index: ArchetypeIndex, row: Row) -> Entity {
         self.entities.insert(EntityAddr::new(ar_index, row))
     }
     /// 替换Entity的原型及行
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn replace(&self, e: Entity, ar_index: ArchetypeIndex, row: Row) -> EntityAddr {
         let addr = unsafe { self.entities.load_unchecked(e) };
         mem::replace(addr, EntityAddr::new(ar_index, row))
@@ -671,7 +766,7 @@ impl World {
             .insert(EntityAddr::new(0usize.into(), Row::null()))
     }
     /// 替换Entity的原型及行
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn replace_row(&self, e: Entity, row: Row) {
         let addr = unsafe { self.entities.load_unchecked(e) };
         addr.row = row;
@@ -794,7 +889,7 @@ unsafe impl Sync for EntityAddr {}
 unsafe impl Send for EntityAddr {}
 
 impl EntityAddr {
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn new(index: ArchetypeIndex, row: Row) -> Self {
         EntityAddr {
             index,
@@ -805,11 +900,11 @@ impl EntityAddr {
     pub(crate) fn is_mark(&self) -> bool {
         self.index.0 < 0
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn mark(&mut self) {
         self.index = ArchetypeIndex(-self.index.0 - 1);
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn archetype_index(&self) -> ArchetypeIndex {
         if self.index.0 >= 0 || self.index.is_null() {
             self.index

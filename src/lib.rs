@@ -14,6 +14,9 @@
 #![feature(vec_into_raw_parts)]
 
 
+    #![allow(warnings)]
+    use std::{any::TypeId, mem, ops::Deref, ptr};
+
 // // 当编译wasm时启用重新编译Rust标准库使用test做基准测试会出现重复链接的编译错误
 // #[cfg(not(target_arch = "wasm32"))]
 // extern crate test as test1;

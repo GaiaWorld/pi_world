@@ -1049,7 +1049,7 @@ pub struct Node {
     from_count: ShareU32,
 }
 impl Node {
-    #[inline(always)]
+    // #[inline(always)]
     fn new(label: NodeType) -> Self {
         Self {
             edges: [ShareU64::new(NULL_EDGE), ShareU64::new(NULL_EDGE)],
@@ -1070,7 +1070,7 @@ impl Node {
             _ => false,
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn edge(&self, d: Direction) -> (u32, EdgeIndex) {
         let (len, edge) = decode(unsafe { self.edges.get_unchecked(d.index()).load(Ordering::Relaxed) });
         (len, EdgeIndex(edge))
@@ -1116,7 +1116,7 @@ impl Edge {
             ShareU64::new(encode(to_node.0, to_next_edge.0)),
         ])
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn load(&self, d: Direction) -> (NodeIndex, EdgeIndex) {
         unsafe {
             transmute(decode(
@@ -1124,7 +1124,7 @@ impl Edge {
             ))
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     fn store(&self, d: Direction, node: NodeIndex, next_edge: EdgeIndex) {
         unsafe {
             self.0

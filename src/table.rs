@@ -49,7 +49,7 @@ impl Table {
         }
     }
     /// Returns the number of elements in the archetype.
-    #[inline(always)]
+    // #[inline(always)]
     pub fn len(&self) -> Row {
         Row(self.entities.len() as u32)
     }
@@ -59,13 +59,13 @@ impl Table {
         c + self.sorted_columns.capacity() * size_of::<Share<Column>>()
             + self.removes.capacity() * size_of::<Row>() + size_of::<Self>()
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn get_unchecked(&self, row: Row) -> Entity {
         // TODO: 修改为load_unchecked
         // *self.entities.load(row.index()).unwrap()
         *unsafe { self.entities.load_unchecked(row.index()) }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn set(&self, row: Row, e: Entity) {
         // TODO: 修改为load_unchecked
         // let a = self.entities.load(row.index()).unwrap();
@@ -87,7 +87,7 @@ impl Table {
     }
 
     // 判断指定组件索引的组件是否在table中
-    #[inline(always)]
+    // #[inline(always)]
     pub fn contains(&self, index: ComponentIndex) -> bool {
         self.bit_set.contains(index.index())
     }
@@ -112,7 +112,7 @@ impl Table {
         }
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn alloc(&self) -> (&mut Entity, usize) {
         self.entities.alloc()
     }

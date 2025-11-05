@@ -43,7 +43,7 @@ impl Column {
         result += self.info.memsize();
         result
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn new(info: ComponentInfo) -> Self {
         // log::warn!("New Column");
         Self {
@@ -82,7 +82,7 @@ impl Column {
             None => false,
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn blob_ref_unchecked(&self, index: ArchetypeIndex) -> BlobRef<'_> {
         #[cfg(debug_assertions)]
         let debug_a_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
@@ -106,7 +106,7 @@ impl Column {
             index,
         )
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn blob_ref(&self, index: ArchetypeIndex) -> Option<BlobRef<'_>> {
         #[cfg(debug_assertions)]
         let debug_a_index = ARCHETYPE_INDEX.load(std::sync::atomic::Ordering::Relaxed);
@@ -289,7 +289,7 @@ pub struct BlobRef<'a> {
 }
 
 impl<'a> BlobRef<'a> {
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn new(
         blob: &'a mut BlobTicks,
         info: &'a ColumnInfo,
@@ -302,14 +302,14 @@ impl<'a> BlobRef<'a> {
             index,
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn get_tick_unchecked(&self, row: Row) -> Tick {
         self.blob
             .ticks
             .get(row.index())
             .map_or(Tick::default(), |t| *t)
     }
-    #[inline]
+    // #[inline]
     pub fn added_tick(&self, e: Entity, row: Row, tick: Tick) {
         // println!("added_tick===={:?}", (e, row, tick, self.info.type_name()));
         if !self.info.is_tick() {
@@ -320,7 +320,7 @@ impl<'a> BlobRef<'a> {
             vec.record(e);
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn changed_tick(&self, e: Entity, row: Row, tick: Tick) {
         // println!("changed_tick: {:?}", (e, row, tick, self.info.is_tick(), ));
         if !self.info.is_tick() {
@@ -335,7 +335,7 @@ impl<'a> BlobRef<'a> {
             vec.record(e);
         }
     }
-    #[inline]
+    // #[inline]
     pub fn set_tick_unchecked(&self, row: Row, tick: Tick) {
         *self.blob.ticks.load_alloc(row.index()) = tick;
     }
@@ -396,19 +396,19 @@ impl<'a> BlobRef<'a> {
         };
     }
     // 如果没有分配内存，则返回的指针为is_null()
-    #[inline(always)]
+    // #[inline(always)]
     pub fn load(&self, row: Row, e: Entity) -> *mut u8 {
         self.trace(row, e, "load", std::ptr::null_mut());
         self.load_blob(row)
     }
     // 如果没有分配内存，则返回的指针为is_null()
-    #[inline(always)]
+    // #[inline(always)]
     pub fn get_row(&self, row: Row, e: Entity) -> *mut u8 {
         assert!(!row.is_null());
         self.trace(row, e, "get_row", std::ptr::null_mut());
         self.get_blob(row)
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn write_row(&self, row: Row, e: Entity, data: *mut u8) {
         self.trace(row, e, "write_row", data);
         unsafe {
@@ -416,7 +416,7 @@ impl<'a> BlobRef<'a> {
             data.copy_to_nonoverlapping(dst, self.info.size());
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub(crate) fn drop_row(&self, row: Row, e: Entity) {
         assert!(!row.is_null());
         self.trace(row, e, "drop_row", std::ptr::null_mut());
@@ -424,7 +424,7 @@ impl<'a> BlobRef<'a> {
             f(self.get_blob(row))
         }
     }
-    #[inline(always)]
+    // #[inline(always)]
     pub fn drop_row_unchecked(&self, row: Row, e: Entity) {
         assert!(!row.is_null());
         self.trace(row, e, "drop_row_unchecked", std::ptr::null_mut());
@@ -432,7 +432,7 @@ impl<'a> BlobRef<'a> {
     }
 
     // 如果没有分配内存，则返回的指针为is_null()
-    #[inline(always)]
+    // #[inline(always)]
     pub fn get_blob(&self, row: Row) -> *mut u8 {
         let blob: *const Blob = &self.blob.blob;
         let blob = unsafe { &mut *(blob as *mut Blob) };
@@ -440,7 +440,7 @@ impl<'a> BlobRef<'a> {
         // unsafe { transmute(blob.get_mut(row.index(), /* self.info.size() */)) }
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn get_blob_unchecked(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
         let blob: *const Blob = &self.blob.blob;
@@ -449,7 +449,7 @@ impl<'a> BlobRef<'a> {
         // unsafe { transmute(blob.get_unchecked_mut(row.index(), /* self.info.size() */)) }
     }
     // 一定会返回分配后的内存
-    #[inline(always)]
+    // #[inline(always)]
     pub fn load_blob(&self, row: Row) -> *mut u8 {
         assert!(!row.is_null());
         unsafe {
@@ -461,7 +461,7 @@ impl<'a> BlobRef<'a> {
         }
     }
 
-    #[inline(always)]
+    // #[inline(always)]
     pub fn needs_drop(&self) -> bool {
         self.info.drop_fn.is_some()
     }
